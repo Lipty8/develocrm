@@ -68,6 +68,8 @@ test("unit detail exposes persistent commercial context", async () => {
   assert.match(app, /function UnitClientChanges/);
   assert.match(app, /aria-label="Navigace jednotky"/);
   assert.match(app, /unit-detail-tabs/);
+  assert.match(app, /client-changes-tab/);
+  assert.match(app, /unit-tab-new/);
   assert.match(app, /Individuální změna/);
   assert.match(app, /Ceník standardních změn/);
   assert.match(app, /Související dokumenty/);

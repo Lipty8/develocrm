@@ -970,7 +970,7 @@ function UnitDetail({ unit, tab, onTab, onBack, notify, openTask, openClient }: 
         <span><small>PŘEDÁNÍ</small><strong><KeyRound size={16} /> {unit.handover}</strong></span>
         <span className="attention-status"><small>VYŽADUJE POZORNOST</small><strong><AlertTriangle size={16} /> {unit.attention || "Bez otevřených bodů"}</strong></span>
       </div>
-      <nav className="unit-tabs unit-detail-tabs" aria-label="Navigace jednotky">{tabs.map((item) => { const TabIcon = item.icon; return <button key={item.id} className={tab === item.id ? "active" : ""} aria-current={tab === item.id ? "page" : undefined} onClick={() => onTab(item.id)}><TabIcon className="unit-tab-icon" size={17} />{item.label}{item.count && <span aria-label={`${item.count} položek`}>{item.count}</span>}</button>; })}</nav>
+      <nav className="unit-tabs unit-detail-tabs" aria-label="Navigace jednotky">{tabs.map((item) => { const TabIcon = item.icon; return <button key={item.id} className={`${tab === item.id ? "active" : ""} ${item.id === "changes" ? "client-changes-tab" : ""}`.trim()} aria-current={tab === item.id ? "page" : undefined} onClick={() => onTab(item.id)}><TabIcon className="unit-tab-icon" size={17} />{item.label}{item.id === "changes" && <em className="unit-tab-new">NOVÉ</em>}{item.count && <span aria-label={`${item.count} položek`}>{item.count}</span>}</button>; })}</nav>
 
       {tab === "overview" && <UnitOverview unit={unit} notify={notify} openClient={openClient} />}
       {tab === "contracts" && <UnitContracts notify={notify} />}
