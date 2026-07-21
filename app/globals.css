@@ -355,6 +355,143 @@ h1, h2, h3, p { margin: 0; }
 .interest-history-card .project-section-head { padding: 17px 17px 4px; }
 .interest-history-card .data-table { margin-top: 5px; }
 
+/* Desktop readability pass: larger working text without changing UI density */
+.nav-label { font-size: 10.5px; }
+.main-nav > button { font-size: 15px; }
+.sidebar-project strong, .user-profile strong { font-size: 13px; }
+.sidebar-project small, .user-profile small, .sync-state { font-size: 11px; }
+.global-search input { font-size: 14px; }
+.search-results strong { font-size: 13.5px; }
+.search-results small { font-size: 12px; }
+.page-header p { font-size: 14px; }
+.primary-button, .secondary-button, .text-button, .filter-button { font-size: 13px; }
+.secondary-button.compact { font-size: 12px; }
+.badge { font-size: 10.5px; }
+
+.attention-heading p { font-size: 12px; }
+.attention-list strong { font-size: 13px; }
+.attention-list small { font-size: 11.5px; }
+.today-events strong { font-size: 12px; }
+.today-events small, .event-time, .calendar-link { font-size: 10.5px; }
+.project-copy strong { font-size: 12.5px; }
+.project-copy small, .project-progress small { font-size: 10.5px; }
+.mini-task-list strong { font-size: 12px; }
+.mini-task-list small { font-size: 10.5px; }
+.activity-copy strong { font-size: 12px; }
+.activity-copy small, .activity-table time { font-size: 10.5px; }
+
+.filter-group label > span { font-size: 9px; }
+.filter-group select, .inline-search input { font-size: 12px; }
+.active-filters > span, .result-count { font-size: 11px; }
+.active-filters > button:not(.clear-filter), .clear-filter { font-size: 10px; }
+.unit-filter-grid > label > span, .range-filter > span { font-size: 9.5px; }
+.unit-filter-grid select, .range-filter input, .client-filter-row select { font-size: 11px; }
+.filter-panel-heading strong { font-size: 12px; }
+.filter-panel-heading small, .result-count small { font-size: 9.5px; }
+.client-quick-views button, .client-quick-views select { font-size: 11px; }
+.bulk-action-bar > span { font-size: 11.5px; }
+.bulk-action-bar > div > button:not(.ghost-icon) { font-size: 10px; }
+.select-all-results, .select-all-results button { font-size: 10.5px; }
+
+.data-table th { font-size: 9.5px; }
+.data-table td, .data-table td strong { font-size: 12px; }
+.data-table td:first-child strong { font-size: 12.5px; }
+.data-table td small { font-size: 10px; }
+.table-footer { font-size: 10.5px; }
+.unit-card-info strong, .unit-card-price strong { font-size: 12px; }
+.unit-card-info small { font-size: 10px; }
+.client-name-cell strong { font-size: 12px; }
+.client-name-cell small, .multi-value { font-size: 10px; }
+
+.project-card p { font-size: 11px; }
+.project-unit-stats small { font-size: 9px; }
+.project-card-meta strong { font-size: 10.5px; }
+.project-card-meta small { font-size: 8.5px; }
+.large-progress small { font-size: 10.5px; }
+.large-progress strong { font-size: 12px; }
+.project-detail-hero p { font-size: 12px; }
+.project-section-head p, .section-description { font-size: 10px; }
+.project-kpis small, .project-kpis span { font-size: 9.5px; }
+.project-buildings strong { font-size: 11.5px; }
+.project-buildings small { font-size: 9.5px; }
+.project-info-card dt, .project-info-card dd { font-size: 10px; }
+.project-attention strong { font-size: 11px; }
+.project-attention small { font-size: 9.5px; }
+
+.metric-card small { font-size: 10px; }
+.metric-card em { font-size: 9.5px; }
+.contract-copy strong { font-size: 12px; }
+.contract-copy small { font-size: 10.5px; }
+.contract-action small { font-size: 9px; }
+.contract-action strong { font-size: 11px; }
+.contract-flow span { font-size: 9.5px; }
+.handover-time { font-size: 10.5px; }
+.handover-copy strong { font-size: 12px; }
+.handover-copy small { font-size: 10px; }
+.readiness small, .readiness strong { font-size: 9.5px; }
+.readiness-card > p { font-size: 11px; }
+.checklist-summary > span, .checklist-summary strong { font-size: 10.5px; }
+.task-tabs > button:not(.filter-button) { font-size: 12px; }
+.task-section-label { font-size: 10px; }
+.task-main-copy strong { font-size: 12px; }
+.task-main-copy small { font-size: 10px; }
+.task-due { font-size: 10.5px; }
+
+.preview-project, .unit-breadcrumb { font-size: 10.5px; }
+.preview-header p { font-size: 12px; }
+.preview-attention strong { font-size: 11.5px; }
+.preview-attention small { font-size: 10px; }
+.preview-grid small { font-size: 9px; }
+.preview-grid strong { font-size: 12px; }
+.preview-section h3, .preview-flow h3 { font-size: 12px; }
+.preview-section p { font-size: 11px; }
+.preview-flow small, .preview-browser span { font-size: 9px; }
+
+.unit-identity > div > span { font-size: 10.5px; }
+.unit-identity p { font-size: 12px; }
+.unit-status-strip small { font-size: 9px; }
+.unit-status-strip strong { font-size: 11px; }
+.unit-tabs button { font-size: 12px; }
+.sales-progress strong { font-size: 10.5px; }
+.sales-progress small { font-size: 9px; }
+.next-action small { font-size: 8.5px; }
+.next-action strong { font-size: 11.5px; }
+.next-action p { font-size: 10px; }
+.buyers strong { font-size: 12px; }
+.buyers small { font-size: 10px; }
+.buyers em { font-size: 9.5px; }
+.client-note small { font-size: 8.5px; }
+.client-note p { font-size: 10px; }
+.price-summary small { font-size: 9px; }
+.price-summary em { font-size: 9.5px; }
+.price-breakdown strong, .price-breakdown b { font-size: 11px; }
+.price-breakdown small { font-size: 9.5px; }
+.timeline-mini strong { font-size: 11px; }
+.timeline-mini small, .timeline-mini time { font-size: 9.5px; }
+.parameters-card dt, .parameters-card dd { font-size: 10px; }
+.accessory-list strong { font-size: 11px; }
+.accessory-list small { font-size: 9.5px; }
+
+.tab-card-header p, .modal-head p { font-size: 10.5px; }
+.document-list strong { font-size: 11.5px; }
+.document-list small { font-size: 10px; }
+.sharepoint-banner strong, .unassigned-doc strong { font-size: 11px; }
+.sharepoint-banner small, .unassigned-doc small { font-size: 9.5px; }
+.handover-big-progress small { font-size: 10px; }
+.handover-checklist strong { font-size: 11px; }
+.handover-side strong { font-size: 11px; }
+.handover-side small { font-size: 9.5px; }
+.full-timeline time { font-size: 9.5px; }
+.full-timeline strong { font-size: 12px; }
+.full-timeline p { font-size: 10.5px; }
+.modal-form label > span { font-size: 10.5px; }
+.modal-form input, .modal-form select, .modal-form textarea { font-size: 12px; }
+.client-detail-hero p { font-size: 11.5px; }
+.client-relations strong { font-size: 11.5px; }
+.client-relations small { font-size: 9.5px; }
+.client-contact-panel dt { font-size: 9.5px; }
+.client-contact-panel dd { font-size: 11px; }
+
 @media (max-width: 1180px) {
   .main-content { padding-inline: 24px; }.attention-card { grid-column: span 12; }.today-card { grid-column: span 4; }.dashboard-grid > .span-7 { grid-column: span 8; }.task-card { grid-column: span 12; }.project-cards { grid-template-columns: repeat(2,1fr); }.unit-card-grid { grid-template-columns: repeat(3,1fr); }.client-grid { grid-template-columns: repeat(2,1fr); }.unit-status-strip { grid-template-columns: 1fr 1fr; }.unit-status-strip > span:nth-child(2) { border-right: 0; }.unit-status-strip > span:nth-child(-n+2) { border-bottom: 1px solid var(--line); }.unit-overview-grid { grid-template-columns: 1.5fr .8fr; }.contract-main { grid-template-columns: 44px 1fr auto 18px; }.contract-action { display: none; }.handover-list > article { grid-template-columns: 38px 50px 1fr auto 18px; }.handover-list .readiness { display: none; }
   .unit-filter-grid { grid-template-columns: repeat(3, minmax(150px, 1fr)); }.project-kpis { grid-template-columns: repeat(2, 1fr); }.bulk-action-bar { flex-wrap: wrap; }
