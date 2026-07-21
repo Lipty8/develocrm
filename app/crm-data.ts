@@ -31,9 +31,9 @@ export const units: UnitRecord[] = [
 ];
 
 export const projects = [
-  { name: "Rezidence Javorová", location: "Praha 5 · Jinonice", progress: 82, units: 68, sold: 51, attention: 6, color: "sage", stage: "Dokončovací práce", revenue: "482,6 mil. Kč" },
-  { name: "Parková čtvrť", location: "Brno · Černá Pole", progress: 61, units: 94, sold: 63, attention: 9, color: "sand", stage: "Etapa I dokončena", revenue: "536,2 mil. Kč" },
-  { name: "Vily Stráň", location: "Praha-východ · Průhonice", progress: 18, units: 12, sold: 3, attention: 2, color: "slate", stage: "Příprava", revenue: "65,7 mil. Kč" },
+  { name: "Rezidence Javorová", code: "RJ", location: "Praha 5 · Jinonice", progress: 82, units: 68, sold: 51, reserved: 8, available: 9, attention: 6, color: "sage", stage: "Dokončovací práce", revenue: "482,6 mil. Kč", buildings: ["Dům A", "Dům B"], manager: "Martin Jelínek", plannedHandover: "Q4 2026" },
+  { name: "Parková čtvrť", code: "PČ", location: "Brno · Černá Pole", progress: 61, units: 94, sold: 63, reserved: 12, available: 19, attention: 9, color: "sand", stage: "Etapa I dokončena", revenue: "536,2 mil. Kč", buildings: ["Etapa I", "Etapa II"], manager: "Pavel Sedlák", plannedHandover: "Q2 2027" },
+  { name: "Vily Stráň", code: "VS", location: "Praha-východ · Průhonice", progress: 18, units: 12, sold: 3, reserved: 1, available: 8, attention: 2, color: "slate", stage: "Příprava", revenue: "65,7 mil. Kč", buildings: ["Vila E", "Vila F", "Vila G"], manager: "Klára Bendová", plannedHandover: "Q4 2027" },
 ];
 
 export const tasks = [
@@ -60,11 +60,16 @@ export const payments = [
 ];
 
 export const clients = [
-  { name: "Jana a Petr Novákovi", type: "2 fyzické osoby", contact: "jana.novakova@email.cz · +420 602 145 778", units: ["A203"], projects: "Rezidence Javorová", state: "Aktivní klient", initials: "JN" },
-  { name: "Alto Services s.r.o.", type: "Právnická osoba", contact: "office@altoservices.cz · +420 222 784 110", units: ["B308"], projects: "Rezidence Javorová", state: "Aktivní klient", initials: "AS" },
-  { name: "Tomáš Janda", type: "Fyzická osoba", contact: "tomas.janda@email.cz · +420 723 441 029", units: ["D404"], projects: "Parková čtvrť", state: "Vyžaduje pozornost", initials: "TJ" },
-  { name: "Marek Veselý", type: "Fyzická osoba", contact: "m.vesely@email.cz · +420 777 842 105", units: ["C102"], projects: "Parková čtvrť", state: "Předání", initials: "MV" },
-  { name: "Lucie Malá", type: "Fyzická osoba", contact: "lucie.mala@email.cz · +420 608 905 314", units: ["B104"], projects: "Rezidence Javorová", state: "Zájemce", initials: "LM" },
+  { id: "c1", name: "Jana a Petr Novákovi", type: "2 fyzické osoby", kind: "FO", email: "jana.novakova@email.cz", phone: "+420 602 145 778", contact: "jana.novakova@email.cz · +420 602 145 778", units: ["A203"], projects: "Rezidence Javorová", projectNames: ["Rezidence Javorová"], state: "Aktivní klient", contractStatus: "Podepsaná KS", initials: "JN" },
+  { id: "c2", name: "Alto Services s.r.o.", type: "Právnická osoba", kind: "PO", email: "office@altoservices.cz", phone: "+420 222 784 110", contact: "office@altoservices.cz · +420 222 784 110", units: ["B308", "E106"], projects: "Rezidence Javorová, Vily Stráň", projectNames: ["Rezidence Javorová", "Vily Stráň"], state: "Aktivní klient", contractStatus: "Podepsaná KS", initials: "AS" },
+  { id: "c3", name: "Tomáš Janda", type: "Fyzická osoba", kind: "FO", email: "tomas.janda@email.cz", phone: "+420 723 441 029", contact: "tomas.janda@email.cz · +420 723 441 029", units: ["D404"], projects: "Parková čtvrť", projectNames: ["Parková čtvrť"], state: "Aktivní klient", contractStatus: "Podepsaná SBK", initials: "TJ" },
+  { id: "c4", name: "Marek Veselý", type: "Fyzická osoba", kind: "FO", email: "m.vesely@email.cz", phone: "+420 777 842 105", contact: "m.vesely@email.cz · +420 777 842 105", units: ["C102"], projects: "Parková čtvrť", projectNames: ["Parková čtvrť"], state: "Předání", contractStatus: "Podepsaná KS", initials: "MV" },
+  { id: "c5", name: "Lucie Malá", type: "Fyzická osoba", kind: "FO", email: "lucie.mala@email.cz", phone: "+420 608 905 314", contact: "lucie.mala@email.cz · +420 608 905 314", units: ["B104", "C211"], projects: "Rezidence Javorová, Parková čtvrť", projectNames: ["Rezidence Javorová", "Parková čtvrť"], state: "Zájemce", contractStatus: "Bez smlouvy", initials: "LM" },
+  { id: "c6", name: "David Kříž", type: "Fyzická osoba", kind: "FO", email: "david.kriz@email.cz", phone: "+420 731 225 980", contact: "david.kriz@email.cz · +420 731 225 980", units: ["A305"], projects: "Rezidence Javorová", projectNames: ["Rezidence Javorová"], state: "Aktivní klient", contractStatus: "RS k podpisu", initials: "DK" },
+  { id: "c7", name: "Kateřina Dvořáková", type: "Fyzická osoba", kind: "FO", email: "katerina.dvorakova@email.cz", phone: "+420 606 411 728", contact: "katerina.dvorakova@email.cz · +420 606 411 728", units: ["C211"], projects: "Parková čtvrť", projectNames: ["Parková čtvrť"], state: "Předáno", contractStatus: "Podepsaná KS", initials: "KD" },
+  { id: "c8", name: "NORD Invest a.s.", type: "Právnická osoba", kind: "PO", email: "reality@nordinvest.cz", phone: "+420 221 903 440", contact: "reality@nordinvest.cz · +420 221 903 440", units: ["A101", "B207"], projects: "Rezidence Javorová", projectNames: ["Rezidence Javorová"], state: "Zájemce", contractStatus: "Bez smlouvy", initials: "NI" },
+  { id: "c9", name: "Eva Benešová", type: "Fyzická osoba", kind: "FO", email: "eva.benesova@email.cz", phone: "+420 725 819 302", contact: "eva.benesova@email.cz · +420 725 819 302", units: ["E106"], projects: "Vily Stráň", projectNames: ["Vily Stráň"], state: "Zájemce", contractStatus: "Předrezervace", initials: "EB" },
+  { id: "c10", name: "Rodinné bydlení s.r.o.", type: "Právnická osoba", kind: "PO", email: "info@rodinnebydleni.cz", phone: "+420 224 618 901", contact: "info@rodinnebydleni.cz · +420 224 618 901", units: ["D404", "E106"], projects: "Parková čtvrť, Vily Stráň", projectNames: ["Parková čtvrť", "Vily Stráň"], state: "Zájemce", contractStatus: "Bez smlouvy", initials: "RB" },
 ];
 
 export const activity = [
