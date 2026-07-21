@@ -580,15 +580,15 @@ function ProjectDetail({ project, tab, onTab, onBack, notify, openClient, ...uni
   const projectPayments = payments.filter((payment) => payment.project === project.name);
   const projectHandovers = units.filter((unit) => unit.project === project.name && unit.handover !== "Neplánováno");
   const salePercent = Math.round((project.sold + project.handedOver) / project.units * 100);
-  const tabs: { id: ProjectTab; label: string; count?: number }[] = [
-    { id: "overview", label: "Přehled" },
-    { id: "units", label: "Jednotky", count: project.units },
-    { id: "clients", label: "Klienti", count: projectClients.length },
-    { id: "contracts", label: "Smlouvy", count: projectContracts.length },
-    { id: "payments", label: "Platby", count: projectPayments.length },
-    { id: "changes", label: "Klientské změny", count: 4 },
-    { id: "handovers", label: "Předání", count: projectHandovers.length },
-    { id: "documents", label: "Dokumenty", count: 18 },
+  const tabs: { id: ProjectTab; label: string; icon: typeof Home; count?: number }[] = [
+    { id: "overview", label: "Přehled", icon: LayoutDashboard },
+    { id: "units", label: "Jednotky", icon: Home, count: project.units },
+    { id: "clients", label: "Klienti", icon: Users, count: projectClients.length },
+    { id: "contracts", label: "Smlouvy", icon: FileText, count: projectContracts.length },
+    { id: "payments", label: "Platby", icon: CircleDollarSign, count: projectPayments.length },
+    { id: "changes", label: "Klientské změny", icon: SlidersHorizontal, count: 4 },
+    { id: "handovers", label: "Předání", icon: KeyRound, count: projectHandovers.length },
+    { id: "documents", label: "Dokumenty", icon: FolderOpen, count: 18 },
   ];
   return (
     <div className="project-detail">
@@ -610,7 +610,7 @@ function ProjectDetail({ project, tab, onTab, onBack, notify, openClient, ...uni
           <span className="sale-rate"><small>Prodejnost</small><strong>{salePercent} %</strong><i><b style={{ width: `${salePercent}%` }} /></i></span>
         </div>
       </section>
-      <div className="unit-tabs project-tabs">{tabs.map((item) => <button key={item.id} className={tab === item.id ? "active" : ""} onClick={() => onTab(item.id)}>{item.label}{item.count !== undefined && <span>{item.count}</span>}</button>)}</div>
+      <nav className="unit-tabs project-tabs" aria-label="Navigace projektu">{tabs.map((item) => { const TabIcon = item.icon; return <button key={item.id} className={tab === item.id ? "active" : ""} aria-current={tab === item.id ? "page" : undefined} onClick={() => onTab(item.id)}><TabIcon className="project-tab-icon" size={17} />{item.label}{item.count !== undefined && <span aria-label={`${item.count} položek`}>{item.count}</span>}</button>; })}</nav>
       {tab === "overview" && <ProjectOverview project={project} onTab={onTab} />}
       {tab === "units" && <ProjectUnitList project={project} {...unitListProps} />}
       {tab === "clients" && <ProjectClients project={project} openClient={openClient} openUnit={unitListProps.openUnit} notify={notify} />}
