@@ -3,7 +3,7 @@ BEGIN;
 CREATE TABLE unit_price_history (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL, project_id uuid NOT NULL, unit_id uuid NOT NULL,
   price_type text NOT NULL CHECK (price_type IN ('list_price','individual_discount','sale_price','contract_price')),
-  amount numeric(15,2) NOT NULL CHECK (amount>=0), currency char(3) NOT NULL DEFAULT 'CZK', valid_from timestamptz NOT NULL,
+  amount numeric(15,2) NOT NULL CHECK (amount>=0), amount_net numeric(15,2) CHECK (amount_net IS NULL OR (amount_net>=0 AND amount_net<=amount)), currency char(3) NOT NULL DEFAULT 'CZK', valid_from timestamptz NOT NULL,
   reason text NOT NULL CHECK (length(btrim(reason))>=3), recorded_by_membership_id uuid NOT NULL,
   approved_by_membership_id uuid, approved_at timestamptz, recorded_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT unit_prices_unit_fk FOREIGN KEY (tenant_id,project_id,unit_id) REFERENCES units(tenant_id,project_id,id) ON DELETE RESTRICT,

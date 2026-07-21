@@ -1,3 +1,5 @@
+import { dejviceClients, dejviceContracts, dejvicePriceHistories, dejviceProject, dejviceUnitContexts, dejviceUnits } from "./dejvice-pilot-data";
+
 export type UnitStatus = "Volný" | "Předrezervace" | "RS" | "SBK" | "KS" | "Předáno" | "Blokováno";
 
 export type UnitRecord = {
@@ -15,6 +17,12 @@ export type UnitRecord = {
   client?: string;
   attention?: string;
   accessory: string;
+  usableArea?: number;
+  priceNet?: number;
+  balcony?: number | null;
+  terrace?: number | null;
+  garden?: number | null;
+  floorplanAvailable?: boolean;
 };
 
 export type InterestHistoryRecord = { date: string; project: string; unit: string; type: string; result: string };
@@ -29,7 +37,7 @@ export type UnitCommercialContext = {
   stage: string | null;
   hold: { id: string; type: string; expiresAt: string } | null;
 };
-export type PriceHistoryRecord={id:string;unit:string;type:string;amount:number;currency:string;validFrom:string;validTo:string|null;reason:string;author:string;approver:string|null};
+export type PriceHistoryRecord={id:string;unit:string;type:string;amount:number;amountNet?:number;currency:string;validFrom:string;validTo:string|null;reason:string;author:string;approver:string|null};
 export type ContractRecord={id?:string;unit:string;client:string;project:string;type:string;state:string;updated:string;owner:string;action:string;title?:string;reference?:string;parties?:Array<{id:string;name:string;role:string;signatureStatus:string}>;versions?:Array<{id:string;number:number;name:string;status:string;basedOnVersionId:string|null;source:string;createdAt:string;signedAt:string|null}>};
 
 export const units: UnitRecord[] = [
@@ -43,12 +51,14 @@ export const units: UnitRecord[] = [
   { id: "C211", project: "Parková čtvrť", building: "Etapa I", layout: "3+kk", area: 79.4, floor: "2. NP", orientation: "J", price: 8790000, status: "Předáno", construction: "Dokončeno", handover: "Předáno 8. 7.", client: "Kateřina Dvořáková", accessory: "Sklep S14 · Parking P16" },
   { id: "D404", project: "Parková čtvrť", building: "Etapa II", layout: "4+kk", area: 112.7, floor: "4. NP", orientation: "J / Z", price: 13990000, status: "SBK", construction: "Ve výstavbě", handover: "Q2 2027", client: "Tomáš Janda", attention: "2. splátka po splatnosti", accessory: "Sklep S52 · Parking P74 · Parking P75" },
   { id: "E106", project: "Vily Stráň", building: "Vila E", layout: "5+kk", area: 168.2, floor: "2 podlaží", orientation: "J / V / Z", price: 21900000, status: "Volný", construction: "Příprava", handover: "Q4 2027", accessory: "Garáž G06 · Sklad 9,8 m²" },
+  ...dejviceUnits as UnitRecord[],
 ];
 
 export const projects = [
   { name: "Rezidence Javorová", code: "RJ", location: "Praha 5 · Jinonice", progress: 82, units: 68, available: 9, preReserved: 4, reserved: 8, sold: 39, handedOver: 8, attention: 6, color: "sage", stage: "Dokončovací práce", revenue: "482,6 mil. Kč", buildings: ["Dům A", "Dům B"], manager: "Martin Jelínek", plannedHandover: "Q4 2026" },
   { name: "Parková čtvrť", code: "PČ", location: "Brno · Černá Pole", progress: 61, units: 94, available: 19, preReserved: 6, reserved: 12, sold: 42, handedOver: 15, attention: 9, color: "sand", stage: "Etapa I dokončena", revenue: "536,2 mil. Kč", buildings: ["Etapa I", "Etapa II"], manager: "Pavel Sedlák", plannedHandover: "Q2 2027" },
   { name: "Vily Stráň", code: "VS", location: "Praha-východ · Průhonice", progress: 18, units: 12, available: 8, preReserved: 1, reserved: 1, sold: 2, handedOver: 0, attention: 2, color: "slate", stage: "Příprava", revenue: "65,7 mil. Kč", buildings: ["Vila E", "Vila F", "Vila G"], manager: "Klára Bendová", plannedHandover: "Q4 2027" },
+  dejviceProject,
 ];
 
 export const tasks = [
@@ -65,6 +75,7 @@ export const contracts:ContractRecord[] = [
   { unit: "B308", client: "Alto Services s.r.o.", project: "Rezidence Javorová", type: "KS", state: "V přípravě", updated: "včera 11:05", owner: "Iva", action: "Doplnit přílohy" },
   { unit: "D404", client: "Tomáš Janda", project: "Parková čtvrť", type: "Dodatek č. 2", state: "Ke kontrole", updated: "18. 7. 14:30", owner: "Pavel", action: "Právní kontrola" },
   { unit: "C102", client: "Marek Veselý", project: "Parková čtvrť", type: "KS", state: "Podepsána", updated: "14. 7. 10:22", owner: "Iva", action: "Bez akce" },
+  ...dejviceContracts,
 ];
 
 export const unitPriceHistories:Record<string,PriceHistoryRecord[]>={
@@ -73,6 +84,7 @@ export const unitPriceHistories:Record<string,PriceHistoryRecord[]>={
     {id:"preview-price-2",unit:"A203",type:"sale_price",amount:8790000,currency:"CZK",validFrom:"2026-04-01",validTo:"2026-07-01",reason:"Aktualizace prodejní ceny Q2",author:"Pavel Sedlák",approver:null},
     {id:"preview-price-1",unit:"A203",type:"list_price",amount:8640000,currency:"CZK",validFrom:"2026-01-15",validTo:null,reason:"První ceník",author:"Pavel Sedlák",approver:null},
   ],
+  ...dejvicePriceHistories,
 };
 
 export const payments = [
@@ -93,6 +105,7 @@ export const clients: ClientRecord[] = [
   { id: "c8", name: "NORD Invest a.s.", type: "Právnická osoba", kind: "PO", email: "reality@nordinvest.cz", phone: "+420 221 903 440", contact: "reality@nordinvest.cz · +420 221 903 440", units: ["A101", "B207"], projects: "Rezidence Javorová", projectNames: ["Rezidence Javorová"], state: "Zájemce", contractStatus: "Bez smlouvy", initials: "NI" },
   { id: "c9", name: "Eva Benešová", type: "Fyzická osoba", kind: "FO", email: "eva.benesova@email.cz", phone: "+420 725 819 302", contact: "eva.benesova@email.cz · +420 725 819 302", units: ["E106"], projects: "Vily Stráň", projectNames: ["Vily Stráň"], state: "Zájemce", contractStatus: "Předrezervace", initials: "EB" },
   { id: "c10", name: "Rodinné bydlení s.r.o.", type: "Právnická osoba", kind: "PO", email: "info@rodinnebydleni.cz", phone: "+420 224 618 901", contact: "info@rodinnebydleni.cz · +420 224 618 901", units: ["D404", "E106"], projects: "Parková čtvrť, Vily Stráň", projectNames: ["Parková čtvrť", "Vily Stráň"], state: "Zájemce", contractStatus: "Bez smlouvy", initials: "RB" },
+  ...dejviceClients as ClientRecord[],
 ];
 
 export const unitCommercialContexts: Record<string, UnitCommercialContext> = {
@@ -109,6 +122,7 @@ export const unitCommercialContexts: Record<string, UnitCommercialContext> = {
     stage: "sbk", hold: null,
   },
   B104: { buyers: [{ partyId:"c5",name:"Lucie Malá",email:"lucie.mala@email.cz",role:"buyer",share:1 }], interests: [], stage:"pre_reservation", hold:{ id:"preview-b104",type:"pre_reservation",expiresAt:"2026-07-22T16:00:00.000Z" } },
+  ...dejviceUnitContexts,
 };
 
 export const activity = [

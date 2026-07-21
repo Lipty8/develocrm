@@ -1052,12 +1052,12 @@ function UnitDetail({ unit, tab, onTab, onBack, notify, openTask, openClient }: 
 
       {tab === "overview" && <UnitOverview unit={unit} notify={notify} openClient={openClient} />}
       {tab === "contracts" && <UnitContracts unit={unit} notify={notify} />}
-      {tab === "payments" && <UnitPayments />}
+      {tab === "payments" && <UnitPayments unit={unit} />}
       {tab === "changes" && <UnitClientChanges unit={unit} notify={notify} />}
-      {tab === "documents" && <UnitDocuments notify={notify} />}
-      {tab === "handover" && <UnitHandover notify={notify} />}
-      {tab === "tasks" && <UnitTasks openTask={openTask} />}
-      {tab === "history" && <UnitHistory />}
+      {tab === "documents" && <UnitDocuments unit={unit} notify={notify} />}
+      {tab === "handover" && <UnitHandover unit={unit} notify={notify} />}
+      {tab === "tasks" && <UnitTasks unit={unit} openTask={openTask} />}
+      {tab === "history" && <UnitHistory unit={unit} />}
     </div>
   );
 }
@@ -1068,6 +1068,8 @@ function UnitOverview({ unit, notify, openClient }: { unit: UnitRecord; notify: 
   const commercial=unitCommercialContexts[unit.id];
   const buyers=commercial?.buyers ?? [];
   const interestRows=commercial?.interests ?? [];
+  const isDejvice=unit.project==="Rezidence Dejvice";
+  const accessoryItems=unit.accessory.split(" · ").filter(Boolean);
   const stageIndex=({interest:0,pre_reservation:1,reservation:2,rs:2,sbk:3,ks:4,handover:5} as Record<string,number>)[commercial?.stage ?? ""] ?? -1;
   return (
     <>
@@ -1076,21 +1078,21 @@ function UnitOverview({ unit, notify, openClient }: { unit: UnitRecord; notify: 
         <section className="card sales-process-card">
           <SectionTitle title="Prodejní proces" />
           <div className="sales-progress">{["Zájem", "Předrezervace", "RS", "SBK", "KS", "Předání"].map((stage, index) => <div key={stage} className={index < stageIndex ? "complete" : index === stageIndex ? "current" : ""}><span>{index < stageIndex ? <Check size={14} /> : index + 1}</span><strong>{stage}</strong><small>{index === stageIndex ? (commercial?.hold ? `Platí do ${new Date(commercial.hold.expiresAt).toLocaleDateString("cs-CZ")}` : "Aktuální etapa") : index < stageIndex ? "Hotovo" : "Čeká"}</small></div>)}</div>
-          <div className="next-action"><span className="next-action-icon"><Sparkles size={19} /></span><div><small>DOPORUČENÝ DALŠÍ KROK</small><strong>Doplňte číslo účtu a vygenerujte novou verzi SBK</strong><p>Kontrola našla 1 chybějící povinný údaj.</p></div><button className="primary-button" onClick={() => notify("Otevírám údaje klienta")}>Doplnit údaj <ArrowRight size={16} /></button></div>
+          <div className="next-action"><span className="next-action-icon"><Sparkles size={19} /></span><div><small>DOPORUČENÝ DALŠÍ KROK</small><strong>{isDejvice?(unit.attention?"Ověřit vazbu importovanou ze zdroje":commercial?.stage==="rs"?"Ověřit aktuální stav rezervační smlouvy":"Bez nutné obchodní akce"):"Doplňte číslo účtu a vygenerujte novou verzi SBK"}</strong><p>{isDejvice?(unit.attention??"Zdroj neobsahuje další potvrzený krok."):"Kontrola našla 1 chybějící povinný údaj."}</p></div><button className="primary-button" onClick={() => notify(isDejvice?"Otevírám importní kontext":"Otevírám údaje klienta")}>{isDejvice?"Zobrazit kontext":"Doplnit údaj"} <ArrowRight size={16} /></button></div>
         </section>
         <section className="card client-detail-card">
           <SectionTitle title="Klient" action="Otevřít kartu klienta" onAction={() => buyers[0] ? openClient(buyers[0].name) : notify("Jednotka zatím nemá přiřazeného klienta")} />
           <div className="buyers">{buyers.length?buyers.map((buyer)=><div key={buyer.partyId}><Avatar initials={initials(buyer.name)} /><span><strong>{buyer.name}</strong><small>{buyer.role==="co_buyer"?"Spolukupující":"Kupující"}{buyer.share?` · podíl ${Math.round(buyer.share*100)} %`:""}</small><em><Mail size={14} /> {buyer.email}</em></span></div>):<div><span><strong>Bez přiřazeného klienta</strong><small>Jednotka je aktuálně dostupná.</small></span></div>}</div>
-          <div className="client-note"><MessageSquare size={16} /><span><small>INTERNÍ POZNÁMKA</small><p>Preferují komunikaci e-mailem. Financování z vlastních zdrojů.</p></span></div>
+          {!isDejvice&&<div className="client-note"><MessageSquare size={16} /><span><small>INTERNÍ POZNÁMKA</small><p>Preferují komunikaci e-mailem. Financování z vlastních zdrojů.</p></span></div>}
         </section>
         <section className="card accessories-card">
           <SectionTitle title="Příslušenství" />
-          <div className="accessory-list"><span><i className="accessory-icon"><Home size={17} /></i><span><strong>Sklep S18</strong><small>plocha 4,6 m² · 1. podzemní podlaží</small></span><Badge tone="success">Přiřazeno</Badge></span><span><i className="accessory-icon"><KeyRound size={17} /></i><span><strong>Parkovací stání P32</strong><small>podzemní garáž · sekce A</small></span><Badge tone="success">Přiřazeno</Badge></span><span><i className="accessory-icon"><Activity size={17} /></i><span><strong>Wallbox WB32</strong><small>vazba na parkovací stání P32</small></span><Badge tone="blue">Objednáno</Badge></span></div>
+          <div className="accessory-list">{isDejvice?accessoryItems.map(item=><span key={item}><i className="accessory-icon">{item.startsWith("Sklep")?<Home size={17}/>:<KeyRound size={17}/>}</i><span><strong>{item}</strong><small>Přiřazeno podle pilotního importu</small></span><Badge tone="success">Přiřazeno</Badge></span>):<><span><i className="accessory-icon"><Home size={17} /></i><span><strong>Sklep S18</strong><small>plocha 4,6 m² · 1. podzemní podlaží</small></span><Badge tone="success">Přiřazeno</Badge></span><span><i className="accessory-icon"><KeyRound size={17} /></i><span><strong>Parkovací stání P32</strong><small>podzemní garáž · sekce A</small></span><Badge tone="success">Přiřazeno</Badge></span><span><i className="accessory-icon"><Activity size={17} /></i><span><strong>Wallbox WB32</strong><small>vazba na parkovací stání P32</small></span><Badge tone="blue">Objednáno</Badge></span></>}</div>
         </section>
         <section className="card price-card">
           <SectionTitle title="Cena" action="Otevřít historii cen" onAction={() => setPriceHistoryOpen(true)} />
           <div className="price-summary"><span><small>AKTUÁLNÍ CENA CELKEM</small><strong>{formatMoney(unit.price)}</strong><em>včetně DPH</em></span><button className="secondary-button compact" onClick={() => notify("Cenu lze nyní upravit")}><CreditCard size={16} /> Upravit cenu</button></div>
-          <div className="price-breakdown"><span><i className="price-dot apartment" /><span><strong>Základní cena jednotky</strong><small>{unit.layout} · {unit.area.toLocaleString("cs-CZ")} m²</small></span><b>8 350 000 Kč</b></span><span><i className="price-dot storage" /><span><strong>Příslušenství</strong><small>sklep, parkovací stání a wallbox</small></span><b>640 000 Kč</b></span></div>
+          <div className="price-breakdown">{isDejvice?<span><i className="price-dot apartment" /><span><strong>První známá ceníková cena</strong><small>{unit.layout} · {unit.area.toLocaleString("cs-CZ")} m²{unit.priceNet?" · bez DPH":""}</small></span><b>{unit.priceNet?formatMoney(unit.priceNet):formatMoney(unit.price)}</b></span>:<><span><i className="price-dot apartment" /><span><strong>Základní cena jednotky</strong><small>{unit.layout} · {unit.area.toLocaleString("cs-CZ")} m²</small></span><b>8 350 000 Kč</b></span><span><i className="price-dot storage" /><span><strong>Příslušenství</strong><small>sklep, parkovací stání a wallbox</small></span><b>640 000 Kč</b></span></>}</div>
         </section>
         <section className="card interest-history-card">
           <SectionTitle title="Historie zájmu" />
@@ -1099,12 +1101,12 @@ function UnitOverview({ unit, notify, openClient }: { unit: UnitRecord; notify: 
         </section>
         <section className="card recent-card">
           <SectionTitle title="Poslední aktivita" action="Celá historie" onAction={() => notify("Otevřete záložku Historie")} />
-          <div className="timeline-mini">{unitTimeline.slice(0, 4).map((item) => <div key={item.date}><span className={`timeline-icon ${item.icon}`}>{item.icon === "contract" ? <FileText size={16} /> : item.icon === "payment" ? <Banknote size={16} /> : item.icon === "build" ? <HardHat size={16} /> : <History size={16} />}</span><span><strong>{item.title}</strong><small>{item.detail}</small></span><time>{item.date}</time></div>)}</div>
+          <div className="timeline-mini">{(isDejvice?[{date:"21. 7. 2026",title:"Importována pilotní data",detail:"Zdroj Rezidence_Dejvice_IMPORT_CLEAN.xlsx",icon:"history"}]:unitTimeline.slice(0,4)).map((item) => <div key={item.date}><span className={`timeline-icon ${item.icon}`}>{item.icon === "contract" ? <FileText size={16} /> : item.icon === "payment" ? <Banknote size={16} /> : item.icon === "build" ? <HardHat size={16} /> : <History size={16} />}</span><span><strong>{item.title}</strong><small>{item.detail}</small></span><time>{item.date}</time></div>)}</div>
         </section>
       </div>
       <aside className="unit-side-column">
-        <section className="card floorplan-card"><div className="section-title"><h2>Půdorys</h2><button className="ghost-icon" onClick={() => setFloorplanOpen(true)} aria-label="Otevřít velký půdorys"><ExternalLink size={17} /></button></div><button className="floorplan-preview-button" onClick={() => setFloorplanOpen(true)} aria-label="Zvětšit půdorys"><div className="large-floorplan"><div className="room living"><span>OBÝVACÍ POKOJ + KK<small>32,1 m²</small></span></div><div className="room bed"><span>LOŽNICE<small>14,8 m²</small></span></div><div className="room bath"><span>KOUPELNA<small>5,4 m²</small></span></div><div className="room hall"><span>CHODBA<small>8,3 m²</small></span></div><div className="room bed2"><span>POKOJ<small>12,4 m²</small></span></div><div className="room wc"><span>WC</span></div><div className="balcony">LODŽIE · 8,2 m²</div></div><span className="enlarge-hint"><Eye size={15} /> Otevřít větší náhled</span></button><button className="secondary-button full" onClick={() => notify(`Stahuji půdorys ${unit.id}`)}><Download size={16} /> Stáhnout půdorys</button></section>
-        <section className="card parameters-card"><SectionTitle title="Základní parametry" /><dl><div><dt>Dispozice</dt><dd>{unit.layout}</dd></div><div><dt>Podlahová plocha</dt><dd>{unit.area.toLocaleString("cs-CZ")} m²</dd></div><div><dt>Podlaží</dt><dd>{unit.floor}</dd></div><div><dt>Balkon / lodžie</dt><dd>8,2 m²</dd></div><div><dt>Orientace</dt><dd>{unit.orientation}</dd></div><div><dt>Standard</dt><dd>Premium</dd></div><div><dt>Vlastnictví</dt><dd>Osobní</dd></div></dl></section>
+        {unit.floorplanAvailable===false?<section className="card floorplan-card"><SectionTitle title="Půdorys"/><div className="empty-filter-state"><FileText size={22}/><strong>Půdorys není ve zdroji</strong><small>Pilotní Excel neobsahuje soubor ani odkaz na půdorys.</small></div></section>:<section className="card floorplan-card"><div className="section-title"><h2>Půdorys</h2><button className="ghost-icon" onClick={() => setFloorplanOpen(true)} aria-label="Otevřít velký půdorys"><ExternalLink size={17} /></button></div><button className="floorplan-preview-button" onClick={() => setFloorplanOpen(true)} aria-label="Zvětšit půdorys"><div className="large-floorplan"><div className="room living"><span>OBÝVACÍ POKOJ + KK<small>32,1 m²</small></span></div><div className="room bed"><span>LOŽNICE<small>14,8 m²</small></span></div><div className="room bath"><span>KOUPELNA<small>5,4 m²</small></span></div><div className="room hall"><span>CHODBA<small>8,3 m²</small></span></div><div className="room bed2"><span>POKOJ<small>12,4 m²</small></span></div><div className="room wc"><span>WC</span></div><div className="balcony">LODŽIE · 8,2 m²</div></div><span className="enlarge-hint"><Eye size={15} /> Otevřít větší náhled</span></button><button className="secondary-button full" onClick={() => notify(`Stahuji půdorys ${unit.id}`)}><Download size={16} /> Stáhnout půdorys</button></section>}
+        <section className="card parameters-card"><SectionTitle title="Základní parametry" /><dl><div><dt>Dispozice</dt><dd>{unit.layout}</dd></div><div><dt>Podlahová plocha</dt><dd>{unit.area.toLocaleString("cs-CZ")} m²</dd></div>{unit.usableArea&&<div><dt>Užitná plocha</dt><dd>{unit.usableArea.toLocaleString("cs-CZ")} m²</dd></div>}<div><dt>Podlaží</dt><dd>{unit.floor}</dd></div>{unit.balcony!=null&&<div><dt>Balkon</dt><dd>{unit.balcony.toLocaleString("cs-CZ")} m²</dd></div>}{unit.terrace!=null&&<div><dt>Terasa</dt><dd>{unit.terrace.toLocaleString("cs-CZ")} m²</dd></div>}{unit.garden!=null&&<div><dt>Zahrada</dt><dd>{unit.garden.toLocaleString("cs-CZ")} m²</dd></div>}{!isDejvice&&<><div><dt>Orientace</dt><dd>{unit.orientation}</dd></div><div><dt>Standard</dt><dd>Premium</dd></div><div><dt>Vlastnictví</dt><dd>Osobní</dd></div></>}</dl></section>
       </aside>
     </div>
     {floorplanOpen && <div className="modal-layer"><button className="modal-scrim" onClick={() => setFloorplanOpen(false)} aria-label="Zavřít půdorys" /><div className="modal floorplan-modal"><div className="modal-head"><div><h2>Půdorys jednotky {unit.id}</h2><p>{unit.layout} · {unit.area.toLocaleString("cs-CZ")} m² · {unit.floor}</p></div><button className="icon-button" onClick={() => setFloorplanOpen(false)}><X size={19} /></button></div><div className="modal-floorplan"><div className="large-floorplan"><div className="room living"><span>OBÝVACÍ POKOJ + KK<small>32,1 m²</small></span></div><div className="room bed"><span>LOŽNICE<small>14,8 m²</small></span></div><div className="room bath"><span>KOUPELNA<small>5,4 m²</small></span></div><div className="room hall"><span>CHODBA<small>8,3 m²</small></span></div><div className="room bed2"><span>POKOJ<small>12,4 m²</small></span></div><div className="room wc"><span>WC</span></div><div className="balcony">LODŽIE · 8,2 m²</div></div></div></div></div>}
@@ -1118,7 +1120,8 @@ function UnitContracts({ unit,notify }: { unit:UnitRecord;notify: (message: stri
   return <section className="card detail-tab-card"><div className="tab-card-header"><div><h2>Smlouvy jednotky {unit.id}</h2><p>Workflow a logické verze smluv používají jeden zdroj dat.</p></div><button className="primary-button" onClick={() => notify("Vyberte typ nové smlouvy")}><Plus size={17} /> Nová smlouva</button></div><div className="document-list">{rows.map(row=>{const latest=row.versions?.[0];return <article key={row.id??`${row.unit}-${row.type}`}><span className="document-icon"><FileText size={21} /></span><span><strong>{row.title??row.type}</strong><small>{row.reference?`${row.reference} · `:""}{latest?`verze v${String(latest.number).padStart(2,"0")} · ${latest.name}`:"Bez verze"}</small></span><Badge>{row.state}</Badge><button className="secondary-button compact" onClick={()=>notify(`${row.title??row.type}: ${row.action}`)}>{row.action} <ChevronRight size={15}/></button></article>})}{!rows.length&&<div className="empty-filter-state"><FileText size={22}/><strong>Jednotka zatím nemá smlouvu</strong><small>Nová smlouva bude navázána na existující obchodní proces.</small></div>}</div><div className="sharepoint-banner"><FolderOpen size={21}/><span><strong>Repository je připravené pro budoucí dokumenty</strong><small>DOCX ani SharePoint synchronizace v této etapě nejsou aktivní.</small></span></div></section>;
 }
 
-function UnitPayments() {
+function UnitPayments({unit}:{unit:UnitRecord}) {
+  if(unit.project==="Rezidence Dejvice")return <PilotEmptyState title="Platby" detail="Pilotní zdroj neobsahuje platební kalendář ani skutečné platby."/>;
   const rows = [
     { name: "Rezervační poplatek", due: "20. 3. 2026", amount: 250000, paid: 250000, state: "Uhrazeno" },
     { name: "2. splátka · 25 %", due: "15. 7. 2026", amount: 2247500, paid: 2247500, state: "Uhrazeno" },
@@ -1128,6 +1131,7 @@ function UnitPayments() {
 }
 
 function UnitClientChanges({ unit, notify }: { unit: UnitRecord; notify: (message: string) => void }) {
+  if(unit.project==="Rezidence Dejvice")return <PilotEmptyState title="Klientské změny" detail="Pilotní zdroj neobsahuje klientské změny."/>;
   const changes = [
     { name: "Změna podlahy v obytných místnostech", category: "Povrchy", source: "Individuální změna", state: "Ke schválení", tone: "warning", price: null, deadline: "24. 7. 2026", requested: "11. 7. 2026", documents: ["Specifikace_podlahy.pdf", "Nabídka_dodavatele.xlsx"] },
     { name: "Doplnění elektro vývodů", category: "Elektro", source: "Ceník standardních změn", state: "Schváleno", tone: "success", price: 18500, deadline: "29. 7. 2026", requested: "4. 7. 2026", documents: ["Objednávka_KZ-0142.pdf", "Výkres_elektro_rev02.pdf"] },
@@ -1158,7 +1162,8 @@ function UnitClientChanges({ unit, notify }: { unit: UnitRecord; notify: (messag
   );
 }
 
-function UnitDocuments({ notify }: { notify: (message: string) => void }) {
+function UnitDocuments({ unit,notify }: { unit:UnitRecord;notify: (message: string) => void }) {
+  if(unit.project==="Rezidence Dejvice")return <PilotEmptyState title="Dokumenty" detail="Pilotní zdroj neobsahuje dokumenty ani SharePoint odkazy."/>;
   const docs = [
     { name: "SBK_A203_v04.docx", category: "Smlouva · SBK", author: "Pavel Sedlák", date: "dnes 9:42", version: "v04" },
     { name: "Půdorys_A203_rev03.pdf", category: "Technická dokumentace", author: "SharePoint", date: "18. 7. 2026", version: "rev03" },
@@ -1168,17 +1173,24 @@ function UnitDocuments({ notify }: { notify: (message: string) => void }) {
   return <section className="card detail-tab-card"><div className="tab-card-header"><div><h2>Dokumenty</h2><p>Metadata a souborové verze synchronizované se SharePointem.</p></div><div><button className="secondary-button" onClick={() => notify("Otevírám SharePoint") }><ExternalLink size={16} /> SharePoint</button><button className="primary-button" onClick={() => notify("Vyberte soubor k nahrání") }><Upload size={16} /> Nahrát</button></div></div><div className="module-toolbar"><div className="inline-search"><Search size={17} /><input placeholder="Hledat dokument…" /></div><button className="filter-button"><Filter size={16} /> Typ dokumentu</button></div><div className="document-list">{docs.map((doc) => <article key={doc.name}><span className="document-icon"><FileText size={21} /></span><span><strong>{doc.name}</strong><small>{doc.category} · {doc.author} · {doc.date}</small></span><Badge tone="neutral">{doc.version}</Badge><button className="ghost-icon" onClick={() => notify(`Otevírám ${doc.name}`)}><Eye size={18} /></button><button className="ghost-icon"><MoreHorizontal size={18} /></button></article>)}</div><div className="unassigned-doc"><AlertTriangle size={19} /><span><strong>1 nezařazený dokument na SharePointu</strong><small>CRM našlo nový soubor ve složce jednotky bez vazby na obchodní objekt.</small></span><button className="secondary-button compact" onClick={() => notify("Dokument lze nyní přiřadit")}>Přiřadit dokument</button></div></section>;
 }
 
-function UnitHandover({ notify }: { notify: (message: string) => void }) {
+function UnitHandover({ unit,notify }: { unit:UnitRecord;notify: (message: string) => void }) {
+  if(unit.project==="Rezidence Dejvice")return <PilotEmptyState title="Předání" detail="Pilotní zdroj neobsahuje termín ani data předání."/>;
   const checklist = ["Dokumentace jednotky", "Revize a certifikáty", "Odečty měřidel", "Sada klíčů a čipů", "Kontrola klientských změn", "Fotodokumentace"];
   return <div className="handover-detail-grid"><section className="card detail-tab-card"><div className="tab-card-header"><div><h2>Příprava předání</h2><p>Plánovaný termín: 30. 9. 2026 · 10:00</p></div><Badge tone="warning">Připravenost 72 %</Badge></div><div className="handover-big-progress"><span><strong>72 %</strong><small>4 z 6 oblastí připraveno</small></span><div><i style={{ width: "72%" }} /></div></div><div className="handover-checklist">{checklist.map((item, index) => <button key={item} onClick={() => notify(`${item}: stav byl aktualizován`)}><span className={index < 4 ? "checked" : ""}>{index < 4 && <Check size={14} />}</span><strong>{item}</strong><Badge tone={index < 4 ? "success" : "warning"}>{index < 4 ? "Hotovo" : "Doplnit"}</Badge><ChevronRight size={17} /></button>)}</div></section><aside className="card handover-side"><h3>Rychlé akce</h3><button><CreditCard size={18} /><span><strong>Zapsat odečty</strong><small>Elektřina, voda, teplo</small></span><ChevronRight size={16} /></button><button><KeyRound size={18} /><span><strong>Klíče a čipy</strong><small>Evidence předaných kusů</small></span><ChevronRight size={16} /></button><button><AlertTriangle size={18} /><span><strong>Nedodělky</strong><small>0 otevřených položek</small></span><ChevronRight size={16} /></button><button onClick={() => notify("Protokol je připraven ke generování")}><FileText size={18} /><span><strong>Vygenerovat protokol</strong><small>Word šablona · DOCX</small></span><ChevronRight size={16} /></button></aside></div>;
 }
 
-function UnitTasks({ openTask }: { openTask: () => void }) {
+function UnitTasks({ unit,openTask }: { unit:UnitRecord;openTask: () => void }) {
+  if(unit.project==="Rezidence Dejvice")return <PilotEmptyState title="Úkoly" detail="K jednotce zatím nejsou importovány žádné úkoly."/>;
   return <section className="card detail-tab-card"><div className="tab-card-header"><div><h2>Úkoly jednotky</h2><p>Ruční i automatické úkoly navázané na A203.</p></div><button className="primary-button" onClick={openTask}><Plus size={17} /> Nový úkol</button></div><div className="large-task-list"><article><button className="task-check large" /><span className="priority-bar vysoka" /><span className="task-main-copy"><strong>Doplnit číslo účtu klienta</strong><small>Automaticky vytvořeno · blokuje generování SBK</small></span><Badge tone="danger">Vysoká</Badge><span className="task-due urgent"><Clock3 size={15} />Dnes</span><Avatar initials="IN" small /></article><article><button className="task-check large" /><span className="priority-bar stredni" /><span className="task-main-copy"><strong>Zapracovat připomínky klienta</strong><small>Smlouva SBK · verze v04</small></span><Badge tone="warning">Střední</Badge><span className="task-due"><Clock3 size={15} />Zítra</span><Avatar initials="PS" small /></article></div></section>;
 }
 
-function UnitHistory() {
+function UnitHistory({unit}:{unit:UnitRecord}) {
+  if(unit.project==="Rezidence Dejvice")return <section className="card detail-tab-card history-tab"><div className="tab-card-header"><div><h2>Kompletní historie jednotky</h2><p>Auditní stopa bez domyšlených událostí.</p></div></div><div className="full-timeline"><article><div className="timeline-icon history"><History size={17}/></div><div><time>21. 7. 2026</time><strong>Importována pilotní data</strong><p>Zdroj Rezidence_Dejvice_IMPORT_CLEAN.xlsx.</p></div></article></div></section>;
   return <section className="card detail-tab-card history-tab"><div className="tab-card-header"><div><h2>Kompletní historie jednotky</h2><p>Auditní stopa obchodních, finančních a dokumentových změn.</p></div><button className="filter-button"><Filter size={16} /> Typ události</button></div><div className="full-timeline">{unitTimeline.map((item) => <article key={item.date}><div className={`timeline-icon ${item.icon}`}>{item.icon === "contract" ? <FileText size={17} /> : item.icon === "payment" ? <Banknote size={17} /> : item.icon === "build" ? <HardHat size={17} /> : <History size={17} />}</div><div><time>{item.date}</time><strong>{item.title}</strong><p>{item.detail}</p></div></article>)}</div></section>;
+}
+
+function PilotEmptyState({title,detail}:{title:string;detail:string}){
+  return <section className="card detail-tab-card"><div className="tab-card-header"><div><h2>{title}</h2><p>{detail}</p></div></div><div className="empty-filter-state"><FileText size={22}/><strong>Bez zdrojových dat</strong><small>Do CRM nebyla doplněna žádná zástupná data.</small></div></section>;
 }
 
 function TaskModal({ close, save }: { close: () => void; save: (title: string) => void }) {

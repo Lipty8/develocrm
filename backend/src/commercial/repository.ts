@@ -1,6 +1,6 @@
 import type { Database } from "../database.js";
 
-export type PriceItem={id:string;unit:string;type:string;amount:number;currency:string;validFrom:string;validTo:string|null;reason:string;author:string;approver:string|null};
+export type PriceItem={id:string;unit:string;type:string;amount:number;amountNet?:number;currency:string;validFrom:string;validTo:string|null;reason:string;author:string;approver:string|null};
 export type ContractItem={id:string;unit:string;project:string;client:string;type:string;state:string;updated:string;owner:string;action:string;title:string;reference:string;parties:Array<{id:string;name:string;role:string;signatureStatus:string}>;versions:Array<{id:string;number:number;name:string;status:string;basedOnVersionId:string|null;source:string;createdAt:string;signedAt:string|null}>};
 export type CommercialSnapshot={currentPrices:Record<string,number>;priceHistories:Record<string,PriceItem[]>;contracts:ContractItem[];contractSummary:Record<string,number>};
 type Context={tenantId:string;userId:string;membershipId:string};
@@ -10,8 +10,8 @@ export class CommercialRepository {
 
   async getSnapshot(input:Context):Promise<CommercialSnapshot>{
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async(client)=>{
-      const prices=await client.query<{id:string;unit:string;type:string;amount:number;currency:string;valid_from:string;valid_to:string|null;reason:string;author:string;approver:string|null}>(
-        `SELECT price.id,unit.code unit,price.price_type type,price.amount::float8 amount,price.currency,
+      const prices=await client.query<{id:string;unit:string;type:string;amount:number;amount_net:number|null;currency:string;valid_from:string;valid_to:string|null;reason:string;author:string;approver:string|null}>(
+        `SELECT price.id,unit.code unit,price.price_type type,price.amount::float8 amount,price.amount_net::float8 amount_net,price.currency,
           price.valid_from,price.valid_to,price.reason,author.display_name author,approver.display_name approver
          FROM unit_price_intervals price JOIN units unit ON unit.tenant_id=price.tenant_id AND unit.id=price.unit_id
          JOIN tenant_memberships author_membership ON author_membership.tenant_id=price.tenant_id AND author_membership.id=price.recorded_by_membership_id
@@ -36,7 +36,7 @@ export class CommercialRepository {
          WHERE contract.tenant_id=$1 AND app.has_project_permission(contract.tenant_id,$2,contract.project_id,'contract.read')
          ORDER BY contract.updated_at DESC`,[input.tenantId,input.membershipId]);
       const priceHistories:Record<string,PriceItem[]>={};
-      for(const row of prices.rows)(priceHistories[row.unit]??=[]).push({id:row.id,unit:row.unit,type:row.type,amount:row.amount,currency:row.currency,validFrom:row.valid_from,validTo:row.valid_to,reason:row.reason,author:row.author,approver:row.approver});
+      for(const row of prices.rows)(priceHistories[row.unit]??=[]).push({id:row.id,unit:row.unit,type:row.type,amount:row.amount,...(row.amount_net===null?{}:{amountNet:row.amount_net}),currency:row.currency,validFrom:row.valid_from,validTo:row.valid_to,reason:row.reason,author:row.author,approver:row.approver});
       const currentPrices=Object.fromEntries(await Promise.all(Object.keys(priceHistories).map(async unit=>{
         const unitId=(await client.query<{id:string}>("SELECT id FROM units WHERE tenant_id=$1 AND code=$2",[input.tenantId,unit])).rows[0]?.id;
         const amount=unitId?(await client.query<{amount:number}>("SELECT app.current_unit_price($1,$2)::float8 amount",[input.tenantId,unitId])).rows[0]?.amount:0;

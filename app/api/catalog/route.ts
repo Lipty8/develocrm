@@ -9,7 +9,8 @@ type BackendCatalog = {
   }>;
   units: Array<{
     id: string; code: string; projectName: string; structureName: string | null; layout: string | null;
-    areaM2: number; floorLabel: string | null; orientation: string | null; commercialStatus: string;
+    areaM2: number; usableAreaM2: number | null; floorLabel: string | null; orientation: string | null;
+    balconyM2: number | null; terraceM2: number | null; gardenM2: number | null; commercialStatus: string;
     constructionStatus: string | null;
     accessories: Array<{ code: string; type: string; category: string; areaM2: number | null }>;
   }>;
@@ -63,6 +64,7 @@ function adaptBackendCatalog(catalog: BackendCatalog): CatalogSnapshot {
       id: unit.code, project: unit.projectName, building: unit.structureName ?? "Bez zařazení",
       layout: unit.layout ?? "—", area: unit.areaM2, floor: unit.floorLabel ?? "—",
       orientation: unit.orientation ?? "—", price: preview?.price ?? 0,
+      usableArea: unit.usableAreaM2 ?? undefined, balcony: unit.balconyM2, terrace: unit.terraceM2, garden: unit.gardenM2,
       status: commercialLabel(unit.commercialStatus), construction: constructionLabel(unit.constructionStatus),
       handover: preview?.handover ?? "Neplánováno", client: preview?.client, attention: preview?.attention,
       accessory: unit.accessories.map((item) => `${item.type} ${item.code}${item.areaM2 ? ` · ${item.areaM2} m²` : ""}`).join(" · ") || "Bez příslušenství",

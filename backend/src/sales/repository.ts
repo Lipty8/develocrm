@@ -58,7 +58,7 @@ export class SalesRepository {
            ORDER BY sales_case.opened_at DESC LIMIT 1
          ) stage ON true
          LEFT JOIN LATERAL (
-           SELECT jsonb_agg(jsonb_build_object('date',to_char(interest.first_interest_at,'DD. MM. YYYY'),
+           SELECT jsonb_agg(jsonb_build_object('date',COALESCE(to_char(interest.first_interest_at,'DD. MM. YYYY'),'Datum neuvedeno'),
              'project',project.name,'unit',unit.code,'type',CASE interest.status WHEN 'converted' THEN 'Obchodní proces' WHEN 'active' THEN 'Aktivní zájem' ELSE 'Ukončený zájem' END,
              'result',COALESCE(latest.outcome,CASE interest.status WHEN 'converted' THEN 'Pokračuje' WHEN 'active' THEN 'Aktivní' ELSE 'Bez realizace' END))
              ORDER BY interest.first_interest_at DESC) items
@@ -90,7 +90,7 @@ export class SalesRepository {
            WHERE participant.tenant_id=unit.tenant_id AND participant.sales_case_id=active_case.id AND participant.left_at IS NULL
          ) buyers ON true
          LEFT JOIN LATERAL (
-           SELECT jsonb_agg(jsonb_build_object('date',to_char(interest.first_interest_at,'DD. MM. YYYY'),'partyId',party.id,'name',party.display_name,
+           SELECT jsonb_agg(jsonb_build_object('date',COALESCE(to_char(interest.first_interest_at,'DD. MM. YYYY'),'Datum neuvedeno'),'partyId',party.id,'name',party.display_name,
              'type',CASE interest.status WHEN 'converted' THEN 'Převedeno do obchodního procesu' WHEN 'active' THEN 'Aktivní zájem' ELSE 'Ukončený zájem' END,
              'result',COALESCE(latest.outcome,CASE interest.status WHEN 'converted' THEN 'Aktivní klient' WHEN 'active' THEN 'Aktivní' ELSE 'Bez realizace' END)) ORDER BY interest.first_interest_at DESC) items
            FROM unit_interests interest JOIN parties party ON party.tenant_id=interest.tenant_id AND party.id=interest.party_id

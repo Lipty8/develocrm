@@ -9,7 +9,8 @@ export type CatalogProject = {
 
 export type CatalogUnit = {
   id: string; code: string; projectId: string; projectName: string; structureName: string | null;
-  layout: string | null; areaM2: number; floorLabel: string | null; orientation: string | null;
+  layout: string | null; areaM2: number; usableAreaM2: number | null; floorLabel: string | null; orientation: string | null;
+  balconyM2: number | null; terraceM2: number | null; gardenM2: number | null;
   commercialStatus: string; constructionStatus: string | null;
   accessories: Array<{ id: string; code: string; type: string; category: string; areaM2: number | null }>;
 };
@@ -52,12 +53,14 @@ export class InventoryRepository {
       );
       const units = await client.query<{
         id: string; code: string; project_id: string; project_name: string; structure_name: string | null;
-        layout: string | null; area_m2: string; floor_label: string | null; orientation: string | null;
+        layout: string | null; area_m2: string; usable_area_m2: string | null; floor_label: string | null; orientation: string | null;
+        balcony_m2: string | null; terrace_m2: string | null; garden_m2: string | null;
         commercial_status: string; construction_status: string | null; accessories: CatalogUnit["accessories"];
       }>(
         `SELECT unit.id, unit.code, unit.project_id, project.name AS project_name,
-                structure.name AS structure_name, unit.layout, unit.area_m2::text, unit.floor_label,
-                unit.orientation, unit.commercial_status,
+                structure.name AS structure_name, unit.layout, unit.area_m2::text, unit.usable_area_m2::text,
+                unit.floor_label, unit.orientation, unit.balcony_m2::text, unit.terrace_m2::text, unit.garden_m2::text,
+                unit.commercial_status,
                 app.effective_unit_construction_status(unit.tenant_id, unit.id) AS construction_status,
                 COALESCE(accessory_rows.items, '[]'::jsonb) AS accessories
          FROM units unit
@@ -88,6 +91,10 @@ export class InventoryRepository {
         units: units.rows.map((row): CatalogUnit => ({
           id: row.id, code: row.code, projectId: row.project_id, projectName: row.project_name,
           structureName: row.structure_name, layout: row.layout, areaM2: Number(row.area_m2),
+          usableAreaM2: row.usable_area_m2 === null ? null : Number(row.usable_area_m2),
+          balconyM2: row.balcony_m2 === null ? null : Number(row.balcony_m2),
+          terraceM2: row.terrace_m2 === null ? null : Number(row.terrace_m2),
+          gardenM2: row.garden_m2 === null ? null : Number(row.garden_m2),
           floorLabel: row.floor_label, orientation: row.orientation, commercialStatus: row.commercial_status,
           constructionStatus: row.construction_status, accessories: row.accessories,
         })),
