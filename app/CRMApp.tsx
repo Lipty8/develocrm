@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -102,6 +102,35 @@ function TableColumnFilter({ label, active = false, className = "", children }: 
   return <th className={`column-filter ${active ? "active" : ""} ${className}`.trim()}><span className="column-filter-heading">{label}{children && <Filter size={12} />}</span>{children && <span className="column-filter-control">{children}</span>}</th>;
 }
 
+function MultiSelectFilter({ options, selected, onChange, allLabel, ariaLabel }: { options: string[]; selected: string[]; onChange: (value: string[]) => void; allLabel: string; ariaLabel: string }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    return () => document.removeEventListener("mousedown", closeOnOutsideClick);
+  }, []);
+
+  const toggle = (option: string) => onChange(selected.includes(option) ? selected.filter((item) => item !== option) : [...selected, option]);
+  const summary = selected.length === 0 ? allLabel : selected.length === 1 ? selected[0] : `${selected.length} vybráno`;
+
+  return (
+    <div className={`multi-select-filter ${open ? "open" : ""}`} ref={rootRef} onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); }}>
+      <button type="button" className="multi-select-trigger" onClick={() => setOpen((value) => !value)} aria-label={ariaLabel} aria-expanded={open} title={selected.join(", ")}>
+        <span>{summary}</span><ChevronDown size={14} />
+      </button>
+      {open && <div className="multi-select-menu" role="group" aria-label={ariaLabel}>
+        <button type="button" className={`multi-select-all ${selected.length === 0 ? "selected" : ""}`} onClick={() => onChange([])}><span className="filter-check">{selected.length === 0 && <Check size={11} />}</span>{allLabel}</button>
+        <div className="multi-select-options">{options.map((option) => <label key={option}><input type="checkbox" checked={selected.includes(option)} onChange={() => toggle(option)} /><span className="filter-check">{selected.includes(option) && <Check size={11} />}</span><span>{option}</span></label>)}</div>
+        {selected.length > 0 && <button type="button" className="multi-select-clear" onClick={() => onChange([])}>Zrušit výběr</button>}
+      </div>}
+    </div>
+  );
+}
+
 function Avatar({ initials, small = false }: { initials: string; small?: boolean }) {
   return <span className={`avatar ${small ? "avatar-small" : ""}`}>{initials}</span>;
 }
@@ -130,10 +159,10 @@ export default function CRMApp() {
   const [selectedClientName, setSelectedClientName] = useState<string | null>(null);
   const [unitView, setUnitView] = useState<"table" | "cards">("table");
   const [projectFilter, setProjectFilter] = useState("Všechny projekty");
-  const [buildingFilter, setBuildingFilter] = useState("Všechny budovy / etapy");
-  const [floorFilter, setFloorFilter] = useState("Všechna podlaží");
-  const [statusFilter, setStatusFilter] = useState("Všechny stavy");
-  const [layoutFilter, setLayoutFilter] = useState("Všechny dispozice");
+  const [buildingFilter, setBuildingFilter] = useState<string[]>([]);
+  const [floorFilter, setFloorFilter] = useState<string[]>([]);
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  const [layoutFilter, setLayoutFilter] = useState<string[]>([]);
   const [areaFrom, setAreaFrom] = useState("");
   const [areaTo, setAreaTo] = useState("");
   const [priceFrom, setPriceFrom] = useState("");
@@ -169,10 +198,10 @@ export default function CRMApp() {
   const filteredUnits = useMemo(() => {
     return units.filter((unit) => {
       const matchesProject = projectFilter === "Všechny projekty" || unit.project === projectFilter;
-      const matchesBuilding = buildingFilter === "Všechny budovy / etapy" || unit.building === buildingFilter;
-      const matchesFloor = floorFilter === "Všechna podlaží" || unit.floor === floorFilter;
-      const matchesStatus = statusFilter === "Všechny stavy" || unit.status === statusFilter;
-      const matchesLayout = layoutFilter === "Všechny dispozice" || unit.layout === layoutFilter;
+      const matchesBuilding = buildingFilter.length === 0 || buildingFilter.includes(unit.building);
+      const matchesFloor = floorFilter.length === 0 || floorFilter.includes(unit.floor);
+      const matchesStatus = statusFilter.length === 0 || statusFilter.includes(unit.status);
+      const matchesLayout = layoutFilter.length === 0 || layoutFilter.includes(unit.layout);
       const matchesAreaFrom = !areaFrom || unit.area >= Number(areaFrom);
       const matchesAreaTo = !areaTo || unit.area <= Number(areaTo);
       const matchesPriceFrom = !priceFrom || unit.price >= Number(priceFrom) * 1_000_000;
@@ -209,10 +238,10 @@ export default function CRMApp() {
     setSelectedProject(project);
     setProjectTab(tab);
     setProjectFilter(project.name);
-    setBuildingFilter("Všechny budovy / etapy");
-    setFloorFilter("Všechna podlaží");
-    setStatusFilter("Všechny stavy");
-    setLayoutFilter("Všechny dispozice");
+    setBuildingFilter([]);
+    setFloorFilter([]);
+    setStatusFilter([]);
+    setLayoutFilter([]);
     setAreaFrom("");
     setAreaTo("");
     setPriceFrom("");
@@ -560,14 +589,14 @@ type UnitListProps = {
   filteredUnits: UnitRecord[];
   previewUnit: (unit: UnitRecord) => void;
   openUnit: (unit: UnitRecord) => void;
-  buildingFilter: string;
-  setBuildingFilter: (value: string) => void;
-  floorFilter: string;
-  setFloorFilter: (value: string) => void;
-  statusFilter: string;
-  setStatusFilter: (value: string) => void;
-  layoutFilter: string;
-  setLayoutFilter: (value: string) => void;
+  buildingFilter: string[];
+  setBuildingFilter: (value: string[]) => void;
+  floorFilter: string[];
+  setFloorFilter: (value: string[]) => void;
+  statusFilter: string[];
+  setStatusFilter: (value: string[]) => void;
+  layoutFilter: string[];
+  setLayoutFilter: (value: string[]) => void;
   areaFrom: string;
   setAreaFrom: (value: string) => void;
   areaTo: string;
@@ -686,13 +715,13 @@ function ProjectUnitList(props: UnitListProps) {
   const buildings = Array.from(new Set(projectUnits.map((unit) => unit.building)));
   const floors = Array.from(new Set(projectUnits.map((unit) => unit.floor)));
   const visibleUnits = filteredUnits.filter((unit) => unit.id.toLowerCase().includes(unitQuery.toLowerCase()) && (unit.client || "").toLowerCase().includes(clientQuery.toLowerCase()));
-  const activeCount = [unitQuery, buildingFilter !== "Všechny budovy / etapy", floorFilter !== "Všechna podlaží", statusFilter !== "Všechny stavy", layoutFilter !== "Všechny dispozice", areaFrom, areaTo, priceFrom, priceTo, clientQuery].filter(Boolean).length;
-  const reset = () => { setUnitQuery(""); setClientQuery(""); props.setBuildingFilter("Všechny budovy / etapy"); props.setFloorFilter("Všechna podlaží"); props.setStatusFilter("Všechny stavy"); props.setLayoutFilter("Všechny dispozice"); props.setAreaFrom(""); props.setAreaTo(""); props.setPriceFrom(""); props.setPriceTo(""); };
+  const activeCount = [unitQuery, buildingFilter.length, floorFilter.length, statusFilter.length, layoutFilter.length, areaFrom, areaTo, priceFrom, priceTo, clientQuery].filter(Boolean).length;
+  const reset = () => { setUnitQuery(""); setClientQuery(""); props.setBuildingFilter([]); props.setFloorFilter([]); props.setStatusFilter([]); props.setLayoutFilter([]); props.setAreaFrom(""); props.setAreaTo(""); props.setPriceFrom(""); props.setPriceTo(""); };
   return (
     <section className="card units-section">
       <div className="project-scope-banner"><Building2 size={17} /><span><strong>{project.name}</strong><small>Zobrazeny jsou pouze jednotky tohoto projektu.</small></span></div>
       <div className="units-result-bar"><span><strong>{visibleUnits.length}</strong> jednotek odpovídá filtrům {activeCount > 0 && <Badge tone="blue">{activeCount} aktivních</Badge>}</span><div className="unit-result-actions">{activeCount > 0 && <button className="text-button" onClick={reset}>Vymazat filtry</button>}<div className="view-toggle"><button className={unitView === "table" ? "active" : ""} onClick={() => setUnitView("table")} aria-label="Tabulkové zobrazení"><Table2 size={17} /></button><button className={unitView === "cards" ? "active" : ""} onClick={() => setUnitView("cards")} aria-label="Kartové zobrazení"><List size={17} /></button></div></div></div>
-      {unitView === "table" ? <div className="unit-table-wrap"><table className="data-table unit-table filter-table"><thead><tr><TableColumnFilter label="Jednotka" active={Boolean(unitQuery)}><input value={unitQuery} onChange={(event) => setUnitQuery(event.target.value)} placeholder="A203…" aria-label="Filtrovat jednotky" /></TableColumnFilter><TableColumnFilter label="Budova / etapa" active={buildingFilter !== "Všechny budovy / etapy"}><select value={buildingFilter} onChange={(event) => props.setBuildingFilter(event.target.value)} aria-label="Filtrovat budovu nebo etapu"><option>Všechny budovy / etapy</option>{buildings.map((building) => <option key={building}>{building}</option>)}</select></TableColumnFilter><TableColumnFilter label="Podlaží" active={floorFilter !== "Všechna podlaží"}><select value={floorFilter} onChange={(event) => props.setFloorFilter(event.target.value)} aria-label="Filtrovat podlaží"><option>Všechna podlaží</option>{floors.map((floor) => <option key={floor}>{floor}</option>)}</select></TableColumnFilter><TableColumnFilter label="Dispozice" active={layoutFilter !== "Všechny dispozice"}><select value={layoutFilter} onChange={(event) => props.setLayoutFilter(event.target.value)} aria-label="Filtrovat dispozici"><option>Všechny dispozice</option><option>1+kk</option><option>2+kk</option><option>3+kk</option><option>4+kk</option><option>5+kk</option></select></TableColumnFilter><TableColumnFilter label="Plocha m²" active={Boolean(areaFrom || areaTo)}><span className="column-range"><input inputMode="decimal" value={areaFrom} onChange={(event) => props.setAreaFrom(event.target.value)} placeholder="Od" aria-label="Plocha od" /><i>–</i><input inputMode="decimal" value={areaTo} onChange={(event) => props.setAreaTo(event.target.value)} placeholder="Do" aria-label="Plocha do" /></span></TableColumnFilter><TableColumnFilter label="Aktuální cena" active={Boolean(priceFrom || priceTo)}><span className="column-range"><input inputMode="decimal" value={priceFrom} onChange={(event) => props.setPriceFrom(event.target.value)} placeholder="Od mil." aria-label="Cena od" /><i>–</i><input inputMode="decimal" value={priceTo} onChange={(event) => props.setPriceTo(event.target.value)} placeholder="Do mil." aria-label="Cena do" /></span></TableColumnFilter><TableColumnFilter label="Obchodní stav" active={statusFilter !== "Všechny stavy"}><select value={statusFilter} onChange={(event) => props.setStatusFilter(event.target.value)} aria-label="Filtrovat obchodní stav"><option>Všechny stavy</option><option>Volný</option><option>Předrezervace</option><option>RS</option><option>SBK</option><option>KS</option><option>Předáno</option></select></TableColumnFilter><TableColumnFilter label="Klient" active={Boolean(clientQuery)}><input value={clientQuery} onChange={(event) => setClientQuery(event.target.value)} placeholder="Jméno…" aria-label="Filtrovat klienta" /></TableColumnFilter><th /></tr></thead><tbody>{visibleUnits.map((unit) => <tr key={unit.id} onClick={() => openUnit(unit)} tabIndex={0} onKeyDown={(event) => event.key === "Enter" && openUnit(unit)}><td><strong>{unit.id}</strong></td><td>{unit.building}</td><td>{unit.floor}</td><td>{unit.layout}</td><td>{unit.area.toLocaleString("cs-CZ")} m²</td><td><strong>{formatMoney(unit.price)}</strong></td><td><Badge>{unit.status}</Badge></td><td>{unit.client || <span className="muted">—</span>}</td><td><ChevronRight size={18} /></td></tr>)}</tbody></table></div> : <div className="unit-card-grid">{visibleUnits.map((unit) => <button className="unit-card" key={unit.id} onClick={() => previewUnit(unit)}><span className="unit-card-top"><strong>{unit.id}</strong><Badge>{unit.status}</Badge></span><span className="unit-card-plan"><span className="plan-room r1" /><span className="plan-room r2" /><span className="plan-room r3" /><Home size={22} /></span><span className="unit-card-info"><strong>{unit.layout} · {unit.area.toLocaleString("cs-CZ")} m²</strong><small>{unit.building} · {unit.floor}</small></span><span className="unit-card-price"><strong>{formatMoney(unit.price)}</strong><ChevronRight size={17} /></span></button>)}</div>}
+      {unitView === "table" ? <div className="unit-table-wrap"><table className="data-table unit-table filter-table"><thead><tr><TableColumnFilter label="Jednotka" active={Boolean(unitQuery)}><input value={unitQuery} onChange={(event) => setUnitQuery(event.target.value)} placeholder="A203…" aria-label="Filtrovat jednotky" /></TableColumnFilter><TableColumnFilter label="Budova / etapa" active={buildingFilter.length > 0}><MultiSelectFilter options={buildings} selected={buildingFilter} onChange={props.setBuildingFilter} allLabel="Všechny budovy / etapy" ariaLabel="Filtrovat budovu nebo etapu" /></TableColumnFilter><TableColumnFilter label="Podlaží" active={floorFilter.length > 0}><MultiSelectFilter options={floors} selected={floorFilter} onChange={props.setFloorFilter} allLabel="Všechna podlaží" ariaLabel="Filtrovat podlaží" /></TableColumnFilter><TableColumnFilter label="Dispozice" active={layoutFilter.length > 0}><MultiSelectFilter options={["1+kk", "2+kk", "3+kk", "4+kk", "5+kk"]} selected={layoutFilter} onChange={props.setLayoutFilter} allLabel="Všechny dispozice" ariaLabel="Filtrovat dispozici" /></TableColumnFilter><TableColumnFilter label="Plocha m²" active={Boolean(areaFrom || areaTo)}><span className="column-range"><input inputMode="decimal" value={areaFrom} onChange={(event) => props.setAreaFrom(event.target.value)} placeholder="Od" aria-label="Plocha od" /><i>–</i><input inputMode="decimal" value={areaTo} onChange={(event) => props.setAreaTo(event.target.value)} placeholder="Do" aria-label="Plocha do" /></span></TableColumnFilter><TableColumnFilter label="Aktuální cena" active={Boolean(priceFrom || priceTo)}><span className="column-range"><input inputMode="decimal" value={priceFrom} onChange={(event) => props.setPriceFrom(event.target.value)} placeholder="Od mil." aria-label="Cena od" /><i>–</i><input inputMode="decimal" value={priceTo} onChange={(event) => props.setPriceTo(event.target.value)} placeholder="Do mil." aria-label="Cena do" /></span></TableColumnFilter><TableColumnFilter label="Obchodní stav" active={statusFilter.length > 0}><MultiSelectFilter options={["Volný", "Předrezervace", "RS", "SBK", "KS", "Předáno"]} selected={statusFilter} onChange={props.setStatusFilter} allLabel="Všechny stavy" ariaLabel="Filtrovat obchodní stav" /></TableColumnFilter><TableColumnFilter label="Klient" active={Boolean(clientQuery)}><input value={clientQuery} onChange={(event) => setClientQuery(event.target.value)} placeholder="Jméno…" aria-label="Filtrovat klienta" /></TableColumnFilter><th /></tr></thead><tbody>{visibleUnits.map((unit) => <tr key={unit.id} onClick={() => openUnit(unit)} tabIndex={0} onKeyDown={(event) => event.key === "Enter" && openUnit(unit)}><td><strong>{unit.id}</strong></td><td>{unit.building}</td><td>{unit.floor}</td><td>{unit.layout}</td><td>{unit.area.toLocaleString("cs-CZ")} m²</td><td><strong>{formatMoney(unit.price)}</strong></td><td><Badge>{unit.status}</Badge></td><td>{unit.client || <span className="muted">—</span>}</td><td><ChevronRight size={18} /></td></tr>)}</tbody></table></div> : <div className="unit-card-grid">{visibleUnits.map((unit) => <button className="unit-card" key={unit.id} onClick={() => previewUnit(unit)}><span className="unit-card-top"><strong>{unit.id}</strong><Badge>{unit.status}</Badge></span><span className="unit-card-plan"><span className="plan-room r1" /><span className="plan-room r2" /><span className="plan-room r3" /><Home size={22} /></span><span className="unit-card-info"><strong>{unit.layout} · {unit.area.toLocaleString("cs-CZ")} m²</strong><small>{unit.building} · {unit.floor}</small></span><span className="unit-card-price"><strong>{formatMoney(unit.price)}</strong><ChevronRight size={17} /></span></button>)}</div>}
       {!visibleUnits.length && <div className="empty-filter-state"><Search size={22} /><strong>Žádná jednotka neodpovídá kombinaci filtrů</strong><small>Zkuste upravit filtry přímo v hlavičce tabulky.</small><button className="secondary-button compact" onClick={reset}>Vymazat filtry</button></div>}
       <div className="table-footer"><span>Zobrazeno {visibleUnits.length} výsledků v projektu {project.name}</span><div><button disabled><ChevronRight className="rotate-180" size={16} /></button><button className="active">1</button><button><ChevronRight size={16} /></button></div></div>
     </section>
@@ -738,11 +767,11 @@ function ProjectModuleFrame({ project, title, description, action, onAction, chi
 function ClientsPage({ openUnit, selectedClientName, setSelectedClientName, notify }: { openUnit: (unit: UnitRecord) => void; selectedClientName: string | null; setSelectedClientName: (name: string | null) => void; notify: (message: string) => void }) {
   const [query, setQuery] = useState("");
   const [quickProject, setQuickProject] = useState("Všichni");
-  const [typeFilter, setTypeFilter] = useState("Všechny typy");
-  const [projectFilter, setProjectFilter] = useState("Všechny projekty");
+  const [typeFilter, setTypeFilter] = useState<string[]>([]);
+  const [projectFilter, setProjectFilter] = useState<string[]>([]);
   const [unitFilter, setUnitFilter] = useState("");
-  const [relationFilter, setRelationFilter] = useState("Všechny vztahy");
-  const [contractFilter, setContractFilter] = useState("Všechny smluvní stavy");
+  const [relationFilter, setRelationFilter] = useState<string[]>([]);
+  const [contractFilter, setContractFilter] = useState<string[]>([]);
   const [phoneFilter, setPhoneFilter] = useState("");
   const [emailFilter, setEmailFilter] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -750,11 +779,11 @@ function ClientsPage({ openUnit, selectedClientName, setSelectedClientName, noti
   const filtered = useMemo(() => clients.filter((client) => {
     const searchMatch = client.name.toLowerCase().includes(query.toLowerCase());
     const quickMatch = quickProject === "Všichni" || client.projectNames.includes(quickProject);
-    const typeMatch = typeFilter === "Všechny typy" || client.kind === typeFilter;
-    const projectMatch = projectFilter === "Všechny projekty" || client.projectNames.includes(projectFilter);
+    const typeMatch = typeFilter.length === 0 || typeFilter.includes(client.kind);
+    const projectMatch = projectFilter.length === 0 || projectFilter.some((project) => client.projectNames.includes(project));
     const unitMatch = client.units.join(" ").toLowerCase().includes(unitFilter.toLowerCase());
-    const relationMatch = relationFilter === "Všechny vztahy" || client.state === relationFilter;
-    const contractMatch = contractFilter === "Všechny smluvní stavy" || client.contractStatus === contractFilter;
+    const relationMatch = relationFilter.length === 0 || relationFilter.includes(client.state);
+    const contractMatch = contractFilter.length === 0 || contractFilter.includes(client.contractStatus);
     const phoneMatch = client.phone.toLowerCase().includes(phoneFilter.toLowerCase());
     const emailMatch = client.email.toLowerCase().includes(emailFilter.toLowerCase());
     return searchMatch && quickMatch && typeMatch && projectMatch && unitMatch && relationMatch && contractMatch && phoneMatch && emailMatch;
@@ -777,7 +806,7 @@ function ClientsPage({ openUnit, selectedClientName, setSelectedClientName, noti
       <div className="client-quick-views"><div className="client-view-title"><span><Building2 size={17} /></span><span><small>RYCHLÝ POHLED</small><strong>Klienti podle projektu</strong></span></div><div className="client-view-options"><button className={quickProject === "Všichni" ? "active" : ""} onClick={() => setQuickProject("Všichni")}>Všichni <span>{clients.length}</span></button>{projects.slice(0, 2).map((project) => <button key={project.name} className={quickProject === project.name ? "active" : ""} onClick={() => setQuickProject(project.name)}>{project.name}</button>)}<label><select aria-label="Další projekty" value={projects.slice(2).some((project) => project.name === quickProject) ? quickProject : "Další projekty"} onChange={(event) => setQuickProject(event.target.value)}><option disabled>Další projekty</option>{projects.slice(2).map((project) => <option key={project.name}>{project.name}</option>)}</select><ChevronDown size={14} /></label></div></div>
       {selected.size > 0 && <div className="bulk-action-bar"><span><CheckCircle2 size={18} /><strong>Vybráno {selected.size} klientů</strong></span><div><button onClick={copyEmails}><Mail size={15} /> Kopírovat e-maily pro BCC</button><button onClick={() => downloadCsv(false)}><Download size={15} /> Excel / CSV</button><button onClick={() => downloadCsv(true)}><FileText size={15} /> Pouze e-maily</button><button className="ghost-icon" onClick={() => setSelected(new Set())} aria-label="Zrušit výběr"><X size={17} /></button></div></div>}
       {allPageSelected && filtered.length > pageRows.length && selected.size < filtered.length && <div className="select-all-results"><Check size={15} /> Vybráno všech {pageRows.length} klientů na této stránce. <button onClick={selectAllResults}>Vybrat všech {filtered.length} výsledků aktuálního filtru</button></div>}
-      <div className="unit-table-wrap"><table className="data-table client-table filter-table"><thead><tr><th className="checkbox-cell"><button className={`table-checkbox ${allPageSelected ? "checked" : ""}`} onClick={togglePage} aria-label="Vybrat klienty na stránce">{allPageSelected && <Check size={13} />}</button></th><TableColumnFilter label="Jméno / název" active={Boolean(query)}><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Hledat jméno…" aria-label="Filtrovat jméno nebo název" /></TableColumnFilter><TableColumnFilter label="Typ" active={typeFilter !== "Všechny typy"}><select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} aria-label="Filtrovat typ klienta"><option>Všechny typy</option><option>FO</option><option>PO</option></select></TableColumnFilter><TableColumnFilter label="Projekt" active={projectFilter !== "Všechny projekty"}><select value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)} aria-label="Filtrovat projekt"><option>Všechny projekty</option>{projects.map((project) => <option key={project.name}>{project.name}</option>)}</select></TableColumnFilter><TableColumnFilter label="Jednotka / jednotky" active={Boolean(unitFilter)}><input value={unitFilter} onChange={(event) => setUnitFilter(event.target.value)} placeholder="A203…" aria-label="Filtrovat jednotku" /></TableColumnFilter><TableColumnFilter label="Stav vztahu" active={relationFilter !== "Všechny vztahy"}><select value={relationFilter} onChange={(event) => setRelationFilter(event.target.value)} aria-label="Filtrovat stav vztahu"><option>Všechny vztahy</option><option>Zájemce</option><option>Aktivní klient</option><option>Předání</option><option>Předáno</option></select></TableColumnFilter><TableColumnFilter label="Smluvní stav" active={contractFilter !== "Všechny smluvní stavy"}><select value={contractFilter} onChange={(event) => setContractFilter(event.target.value)} aria-label="Filtrovat smluvní stav"><option>Všechny smluvní stavy</option><option>Podepsaná KS</option><option>Podepsaná SBK</option><option>RS k podpisu</option><option>Předrezervace</option><option>Bez smlouvy</option></select></TableColumnFilter><TableColumnFilter label="Telefon" active={Boolean(phoneFilter)}><input value={phoneFilter} onChange={(event) => setPhoneFilter(event.target.value)} placeholder="Telefon…" aria-label="Filtrovat telefon" /></TableColumnFilter><TableColumnFilter label="E-mail" active={Boolean(emailFilter)}><input value={emailFilter} onChange={(event) => setEmailFilter(event.target.value)} placeholder="E-mail…" aria-label="Filtrovat e-mail" /></TableColumnFilter><th /></tr></thead><tbody>{pageRows.map((client) => <tr key={client.id} onClick={() => setSelectedClientName(client.name)}><td className="checkbox-cell"><button className={`table-checkbox ${selected.has(client.id) ? "checked" : ""}`} onClick={(event) => { event.stopPropagation(); toggle(client.id); }} aria-label={`Vybrat ${client.name}`}>{selected.has(client.id) && <Check size={13} />}</button></td><td><span className="client-name-cell"><Avatar initials={client.initials} small /><span><strong>{client.name}</strong></span></span></td><td><Badge tone="neutral">{client.kind}</Badge></td><td><span className="multi-value">{client.projectNames.map((project) => <small key={project}>{project}</small>)}</span></td><td>{client.units.map((unit) => <button className="unit-link" key={unit} onClick={(event) => { event.stopPropagation(); openUnit(units.find((item) => item.id === unit) || units[0]); }}>{unit}</button>)}</td><td><Badge>{client.state}</Badge></td><td>{client.contractStatus}</td><td>{client.phone}</td><td><a href={`mailto:${client.email}`} onClick={(event) => event.stopPropagation()}>{client.email}</a></td><td><ChevronRight size={17} /></td></tr>)}</tbody></table></div>
+      <div className="unit-table-wrap"><table className="data-table client-table filter-table"><thead><tr><th className="checkbox-cell"><button className={`table-checkbox ${allPageSelected ? "checked" : ""}`} onClick={togglePage} aria-label="Vybrat klienty na stránce">{allPageSelected && <Check size={13} />}</button></th><TableColumnFilter label="Jméno / název" active={Boolean(query)}><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Hledat jméno…" aria-label="Filtrovat jméno nebo název" /></TableColumnFilter><TableColumnFilter label="Typ" active={typeFilter.length > 0}><MultiSelectFilter options={["FO", "PO"]} selected={typeFilter} onChange={setTypeFilter} allLabel="Všechny typy" ariaLabel="Filtrovat typ klienta" /></TableColumnFilter><TableColumnFilter label="Projekt" active={projectFilter.length > 0}><MultiSelectFilter options={projects.map((project) => project.name)} selected={projectFilter} onChange={setProjectFilter} allLabel="Všechny projekty" ariaLabel="Filtrovat projekt" /></TableColumnFilter><TableColumnFilter label="Jednotka / jednotky" active={Boolean(unitFilter)}><input value={unitFilter} onChange={(event) => setUnitFilter(event.target.value)} placeholder="A203…" aria-label="Filtrovat jednotku" /></TableColumnFilter><TableColumnFilter label="Stav vztahu" active={relationFilter.length > 0}><MultiSelectFilter options={["Zájemce", "Aktivní klient", "Předání", "Předáno"]} selected={relationFilter} onChange={setRelationFilter} allLabel="Všechny vztahy" ariaLabel="Filtrovat stav vztahu" /></TableColumnFilter><TableColumnFilter label="Smluvní stav" active={contractFilter.length > 0}><MultiSelectFilter options={["Podepsaná KS", "Podepsaná SBK", "RS k podpisu", "Předrezervace", "Bez smlouvy"]} selected={contractFilter} onChange={setContractFilter} allLabel="Všechny smluvní stavy" ariaLabel="Filtrovat smluvní stav" /></TableColumnFilter><TableColumnFilter label="Telefon" active={Boolean(phoneFilter)}><input value={phoneFilter} onChange={(event) => setPhoneFilter(event.target.value)} placeholder="Telefon…" aria-label="Filtrovat telefon" /></TableColumnFilter><TableColumnFilter label="E-mail" active={Boolean(emailFilter)}><input value={emailFilter} onChange={(event) => setEmailFilter(event.target.value)} placeholder="E-mail…" aria-label="Filtrovat e-mail" /></TableColumnFilter><th /></tr></thead><tbody>{pageRows.map((client) => <tr key={client.id} onClick={() => setSelectedClientName(client.name)}><td className="checkbox-cell"><button className={`table-checkbox ${selected.has(client.id) ? "checked" : ""}`} onClick={(event) => { event.stopPropagation(); toggle(client.id); }} aria-label={`Vybrat ${client.name}`}>{selected.has(client.id) && <Check size={13} />}</button></td><td><span className="client-name-cell"><Avatar initials={client.initials} small /><span><strong>{client.name}</strong></span></span></td><td><Badge tone="neutral">{client.kind}</Badge></td><td><span className="multi-value">{client.projectNames.map((project) => <small key={project}>{project}</small>)}</span></td><td>{client.units.map((unit) => <button className="unit-link" key={unit} onClick={(event) => { event.stopPropagation(); openUnit(units.find((item) => item.id === unit) || units[0]); }}>{unit}</button>)}</td><td><Badge>{client.state}</Badge></td><td>{client.contractStatus}</td><td>{client.phone}</td><td><a href={`mailto:${client.email}`} onClick={(event) => event.stopPropagation()}>{client.email}</a></td><td><ChevronRight size={17} /></td></tr>)}</tbody></table></div>
       {!filtered.length && <div className="empty-filter-state"><Search size={22} /><strong>Žádný klient neodpovídá filtrům</strong><small>Změňte projekt, stav vztahu nebo hledaný výraz.</small></div>}
       <div className="table-footer"><span>Zobrazeno {pageRows.length} z {filtered.length} výsledků · jedna společná databáze napříč firmou</span><div><button disabled><ChevronRight className="rotate-180" size={16} /></button><button className="active">1</button><button><ChevronRight size={16} /></button></div></div>
     </section>
@@ -821,22 +850,22 @@ function ContractsPage({ openUnit, notify }: { openUnit: (unit: UnitRecord) => v
 
 function PaymentsPage({ openUnit, notify }: { openUnit: (unit: UnitRecord) => void; notify: (message: string) => void }) {
   const [paymentQuery, setPaymentQuery] = useState("");
-  const [installmentFilter, setInstallmentFilter] = useState("Všechny splátky");
-  const [dueFilter, setDueFilter] = useState("Všechny termíny");
+  const [installmentFilter, setInstallmentFilter] = useState<string[]>([]);
+  const [dueFilter, setDueFilter] = useState<string[]>([]);
   const [amountFrom, setAmountFrom] = useState("");
-  const [coverageFilter, setCoverageFilter] = useState("Všechny úhrady");
-  const [paymentStateFilter, setPaymentStateFilter] = useState("Všechny stavy");
+  const [coverageFilter, setCoverageFilter] = useState<string[]>([]);
+  const [paymentStateFilter, setPaymentStateFilter] = useState<string[]>([]);
   const installmentOptions = Array.from(new Set(payments.map((payment) => payment.installment)));
   const dueOptions = Array.from(new Set(payments.map((payment) => payment.due)));
   const paymentStates = Array.from(new Set(payments.map((payment) => payment.state)));
   const filteredPayments = payments.filter((payment) => {
     const queryMatch = `${payment.unit} ${payment.client} ${payment.project}`.toLowerCase().includes(paymentQuery.toLowerCase());
-    const installmentMatch = installmentFilter === "Všechny splátky" || payment.installment === installmentFilter;
-    const dueMatch = dueFilter === "Všechny termíny" || payment.due === dueFilter;
+    const installmentMatch = installmentFilter.length === 0 || installmentFilter.includes(payment.installment);
+    const dueMatch = dueFilter.length === 0 || dueFilter.includes(payment.due);
     const amountMatch = !amountFrom || payment.amount >= Number(amountFrom.replace(",", ".")) * 1000000;
     const coverage = payment.paid === payment.amount ? "Uhrazeno" : payment.paid > 0 ? "Částečně uhrazeno" : "Neuhrazeno";
-    const coverageMatch = coverageFilter === "Všechny úhrady" || coverage === coverageFilter;
-    const stateMatch = paymentStateFilter === "Všechny stavy" || payment.state === paymentStateFilter;
+    const coverageMatch = coverageFilter.length === 0 || coverageFilter.includes(coverage);
+    const stateMatch = paymentStateFilter.length === 0 || paymentStateFilter.includes(payment.state);
     return queryMatch && installmentMatch && dueMatch && amountMatch && coverageMatch && stateMatch;
   });
   return (
@@ -848,7 +877,7 @@ function PaymentsPage({ openUnit, notify }: { openUnit: (unit: UnitRecord) => vo
       </div>
       <section className="card module-card">
         <div className="table-action-bar"><span><strong>{filteredPayments.length}</strong> plateb odpovídá filtrům</span><button className="secondary-button compact" onClick={() => notify("Bankovní výpis byl načten")}><Upload size={16} /> Import výpisu</button></div>
-        <div className="unit-table-wrap"><table className="data-table payment-table filter-table"><thead><tr><TableColumnFilter label="Jednotka / klient" active={Boolean(paymentQuery)}><input value={paymentQuery} onChange={(event) => setPaymentQuery(event.target.value)} placeholder="Jednotka, klient…" aria-label="Filtrovat platbu podle jednotky nebo klienta" /></TableColumnFilter><TableColumnFilter label="Splátka" active={installmentFilter !== "Všechny splátky"}><select value={installmentFilter} onChange={(event) => setInstallmentFilter(event.target.value)} aria-label="Filtrovat splátku"><option>Všechny splátky</option>{installmentOptions.map((installment) => <option key={installment}>{installment}</option>)}</select></TableColumnFilter><TableColumnFilter label="Splatnost" active={dueFilter !== "Všechny termíny"}><select value={dueFilter} onChange={(event) => setDueFilter(event.target.value)} aria-label="Filtrovat splatnost"><option>Všechny termíny</option>{dueOptions.map((due) => <option key={due}>{due}</option>)}</select></TableColumnFilter><TableColumnFilter label="Předpis" active={Boolean(amountFrom)}><input inputMode="decimal" value={amountFrom} onChange={(event) => setAmountFrom(event.target.value)} placeholder="Od mil. Kč" aria-label="Filtrovat minimální předpis" /></TableColumnFilter><TableColumnFilter label="Uhrazeno" active={coverageFilter !== "Všechny úhrady"}><select value={coverageFilter} onChange={(event) => setCoverageFilter(event.target.value)} aria-label="Filtrovat úhradu"><option>Všechny úhrady</option><option>Uhrazeno</option><option>Částečně uhrazeno</option><option>Neuhrazeno</option></select></TableColumnFilter><TableColumnFilter label="Stav" active={paymentStateFilter !== "Všechny stavy"}><select value={paymentStateFilter} onChange={(event) => setPaymentStateFilter(event.target.value)} aria-label="Filtrovat stav platby"><option>Všechny stavy</option>{paymentStates.map((state) => <option key={state}>{state}</option>)}</select></TableColumnFilter><th /></tr></thead><tbody>
+        <div className="unit-table-wrap"><table className="data-table payment-table filter-table"><thead><tr><TableColumnFilter label="Jednotka / klient" active={Boolean(paymentQuery)}><input value={paymentQuery} onChange={(event) => setPaymentQuery(event.target.value)} placeholder="Jednotka, klient…" aria-label="Filtrovat platbu podle jednotky nebo klienta" /></TableColumnFilter><TableColumnFilter label="Splátka" active={installmentFilter.length > 0}><MultiSelectFilter options={installmentOptions} selected={installmentFilter} onChange={setInstallmentFilter} allLabel="Všechny splátky" ariaLabel="Filtrovat splátku" /></TableColumnFilter><TableColumnFilter label="Splatnost" active={dueFilter.length > 0}><MultiSelectFilter options={dueOptions} selected={dueFilter} onChange={setDueFilter} allLabel="Všechny termíny" ariaLabel="Filtrovat splatnost" /></TableColumnFilter><TableColumnFilter label="Předpis" active={Boolean(amountFrom)}><input inputMode="decimal" value={amountFrom} onChange={(event) => setAmountFrom(event.target.value)} placeholder="Od mil. Kč" aria-label="Filtrovat minimální předpis" /></TableColumnFilter><TableColumnFilter label="Uhrazeno" active={coverageFilter.length > 0}><MultiSelectFilter options={["Uhrazeno", "Částečně uhrazeno", "Neuhrazeno"]} selected={coverageFilter} onChange={setCoverageFilter} allLabel="Všechny úhrady" ariaLabel="Filtrovat úhradu" /></TableColumnFilter><TableColumnFilter label="Stav" active={paymentStateFilter.length > 0}><MultiSelectFilter options={paymentStates} selected={paymentStateFilter} onChange={setPaymentStateFilter} allLabel="Všechny stavy" ariaLabel="Filtrovat stav platby" /></TableColumnFilter><th /></tr></thead><tbody>
           {filteredPayments.map((payment) => {
             const percent = Math.round(payment.paid / payment.amount * 100);
             return <tr key={`${payment.unit}-${payment.installment}`} onClick={() => openUnit(units.find((unit) => unit.id === payment.unit) || units[0])}><td><strong>{payment.unit} · {payment.client}</strong><small>{payment.project}</small></td><td>{payment.installment}</td><td>{payment.due}</td><td><strong>{formatMoney(payment.amount)}</strong></td><td><strong>{formatMoney(payment.paid)}</strong><span className="payment-progress"><i style={{ width: `${percent}%` }} /></span></td><td><Badge>{payment.state}</Badge></td><td><ChevronRight size={18} /></td></tr>;
