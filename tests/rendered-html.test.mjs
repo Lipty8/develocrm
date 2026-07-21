@@ -25,6 +25,9 @@ test("implements the project-to-unit navigation hierarchy", async () => {
   assert.match(app, /PRODEJNÍ VÝKON/);
   assert.match(app, /Rozložení projektu/);
   assert.match(app, /project-sale-ring/);
+  assert.match(app, /aria-label="Pohledy úkolů"/);
+  assert.match(app, /client-view-title/);
+  assert.match(app, /Filtry databáze/);
 });
 
 test("keeps unit filters combinable and project clients in one table", async () => {
@@ -48,6 +51,8 @@ test("unit detail exposes persistent commercial context", async () => {
 
   assert.match(app, /Přehled.*Smlouvy.*Platby.*Klientské změny.*Dokumenty.*Předání.*Úkoly.*Historie/s);
   assert.match(app, /function UnitClientChanges/);
+  assert.match(app, /aria-label="Navigace jednotky"/);
+  assert.match(app, /unit-detail-tabs/);
   assert.match(app, /Individuální změna/);
   assert.match(app, /Ceník standardních změn/);
   assert.match(app, /Související dokumenty/);
