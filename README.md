@@ -1,5 +1,25 @@
 # vinext-starter
 
+## Produkční backend — implementační blok A
+
+Schválený PostgreSQL základ pro tenanty, Entra identity a RBAC je v `backend/`.
+Stávající Cloudflare D1 schéma slouží zatím pouze klikacímu prototypu a není
+produkčním zdrojem pravdy.
+
+```bash
+pnpm run backend:build
+pnpm run backend:test
+pnpm run backend:dev
+```
+
+Před spuštěním API použijte proměnné z `backend/.env.example` v bezpečné správě
+secrets. Migraci `backend/migrations/0001_block_a_identity.sql` spouští vlastník
+databáze; runtime používá roli `develocrm_app`, která nemá `BYPASSRLS`.
+
+Blok B navazuje migrací `backend/migrations/0002_block_b_inventory.sql` a
+opakovatelným preview seedem `backend/seeds/0001_preview_block_b.sql`. Migrace
+se spouštějí v číselném pořadí; seed je určen pouze pro testovací prostředí.
+
 A clean full-stack starter running on
 [vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
 Drizzle support.

@@ -4,6 +4,8 @@ import test from "node:test";
 
 const appUrl = new URL("../app/CRMApp.tsx", import.meta.url);
 const dataUrl = new URL("../app/crm-data.ts", import.meta.url);
+const catalogRepositoryUrl = new URL("../app/repositories/catalog-repository.ts", import.meta.url);
+const catalogRouteUrl = new URL("../app/api/catalog/route.ts", import.meta.url);
 
 test("implements the project-to-unit navigation hierarchy", async () => {
   const app = await readFile(appUrl, "utf8");
@@ -78,4 +80,18 @@ test("unit detail exposes persistent commercial context", async () => {
   assert.match(app, /Prodejní proces/);
   assert.match(app, /Stavební stav/);
   assert.match(app, /Otevřít větší náhled/);
+});
+
+test("project and unit screens load through the switchable catalog repository", async () => {
+  const [app, repository, route] = await Promise.all([
+    readFile(appUrl, "utf8"),
+    readFile(catalogRepositoryUrl, "utf8"),
+    readFile(catalogRouteUrl, "utf8"),
+  ]);
+  assert.match(app, /catalogRepository\.getCatalog/);
+  assert.match(repository, /interface CatalogRepository/);
+  assert.match(route, /DEVELOCRM_API_URL/);
+  assert.match(route, /preview-seed/);
+  assert.match(route, /backend-api/);
+  assert.match(route, /adaptBackendCatalog/);
 });

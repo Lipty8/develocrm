@@ -59,6 +59,8 @@ import {
   units,
   type UnitRecord,
 } from "./crm-data";
+import { identityRepository, prototypeSession, type IdentitySession } from "./repositories/identity-repository";
+import { catalogRepository } from "./repositories/catalog-repository";
 
 type Page = "dashboard" | "projects" | "clients" | "contracts" | "payments" | "handovers" | "tasks";
 type UnitTab = "overview" | "contracts" | "payments" | "changes" | "documents" | "handover" | "tasks" | "history";
@@ -87,7 +89,7 @@ const pageTitles: Record<Page, { title: string; subtitle: string }> = {
 
 const statusClass = (value: string) => {
   if (["Uhrazeno", "Podepsána", "Podepsaná KS", "Předáno", "Dokončeno", "Hotovo"].includes(value)) return "success";
-  if (["Po splatnosti", "Vyžaduje pozornost", "Vysoká"].includes(value)) return "danger";
+  if (["Po splatnosti", "Vyžaduje pozornost", "Vysoká", "Blokováno"].includes(value)) return "danger";
   if (["Předrezervace", "Odeslána", "Čeká na úhradu", "Střední"].includes(value)) return "warning";
   if (["KS", "SBK", "Ve vyjednávání", "Ke kontrole", "Předání"].includes(value)) return "purple";
   if (["RS", "V přípravě", "Aktivní klient"].includes(value)) return "blue";
@@ -148,7 +150,28 @@ function SectionTitle({ title, action, onAction }: { title: string; action?: str
   );
 }
 
+function initials(name: string): string {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "U";
+}
+
+function roleLabel(roles: string[]): string {
+  const labels: Record<string, string> = {
+    admin: "Administrátor",
+    project_manager: "Vedoucí projektu",
+    sales: "Obchod",
+    back_office: "Obchodní administrativa",
+  };
+  return labels[roles[0]] ?? "Uživatel CRM";
+}
+
+function vocativeFirstName(displayName: string): string {
+  const firstName = displayName.trim().split(/\s+/)[0] || "";
+  return firstName === "Iva" ? "Ivo" : firstName;
+}
+
 export default function CRMApp() {
+  const [identitySession, setIdentitySession] = useState<IdentitySession>(prototypeSession);
+  const [catalogVersion, setCatalogVersion] = useState(0);
   const [page, setPage] = useState<Page>("dashboard");
   const [mobileNav, setMobileNav] = useState(false);
   const [unitDetail, setUnitDetail] = useState<UnitRecord | null>(null);
@@ -174,6 +197,22 @@ export default function CRMApp() {
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
+    const controller = new AbortController();
+    identityRepository.getSession(controller.signal).then(setIdentitySession).catch(() => undefined);
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    catalogRepository.getCatalog(controller.signal).then((catalog) => {
+      projects.splice(0, projects.length, ...catalog.projects);
+      units.splice(0, units.length, ...catalog.units);
+      setCatalogVersion((version) => version + 1);
+    }).catch(() => undefined);
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
     let active = true;
     fetch("/api/tasks")
       .then((response) => response.ok ? response.json() : Promise.reject())
@@ -196,6 +235,7 @@ export default function CRMApp() {
   }, []);
 
   const filteredUnits = useMemo(() => {
+    void catalogVersion;
     return units.filter((unit) => {
       const matchesProject = projectFilter === "Všechny projekty" || unit.project === projectFilter;
       const matchesBuilding = buildingFilter.length === 0 || buildingFilter.includes(unit.building);
@@ -208,9 +248,10 @@ export default function CRMApp() {
       const matchesPriceTo = !priceTo || unit.price <= Number(priceTo) * 1_000_000;
       return matchesProject && matchesBuilding && matchesFloor && matchesStatus && matchesLayout && matchesAreaFrom && matchesAreaTo && matchesPriceFrom && matchesPriceTo;
     });
-  }, [projectFilter, buildingFilter, floorFilter, statusFilter, layoutFilter, areaFrom, areaTo, priceFrom, priceTo]);
+  }, [projectFilter, buildingFilter, floorFilter, statusFilter, layoutFilter, areaFrom, areaTo, priceFrom, priceTo, catalogVersion]);
 
   const searchResults = useMemo(() => {
+    void catalogVersion;
     const query = search.trim().toLowerCase();
     if (query.length < 2) return [];
     const unitResults = units
@@ -222,7 +263,7 @@ export default function CRMApp() {
       .slice(0, 3)
       .map((client) => ({ type: "Klient", title: client.name, detail: client.projects, unit: undefined }));
     return [...unitResults, ...clientResults];
-  }, [search]);
+  }, [search, catalogVersion]);
 
   const navigate = (nextPage: Page) => {
     setPage(nextPage);
@@ -345,8 +386,8 @@ export default function CRMApp() {
         <div className="sidebar-footer">
           <div className="sync-state"><CheckCircle2 size={15} /><span>SharePoint synchronizován</span></div>
           <button className="user-profile">
-            <Avatar initials="IN" />
-            <span><strong>Iva Novotná</strong><small>Obchodní administrativa</small></span>
+            <Avatar initials={initials(identitySession.user.displayName)} />
+            <span><strong>{identitySession.user.displayName}</strong><small>{roleLabel(identitySession.workspace.roles)}</small></span>
             <MoreHorizontal size={17} />
           </button>
         </div>
@@ -384,7 +425,7 @@ export default function CRMApp() {
           <div className="topbar-actions">
             <button className="icon-button" aria-label="Nápověda"><span className="help-icon">?</span></button>
             <button className="icon-button bell-button" aria-label="Oznámení"><Bell size={19} /><span /></button>
-            <Avatar initials="IN" small />
+            <Avatar initials={initials(identitySession.user.displayName)} small />
           </div>
         </header>
 
@@ -426,7 +467,7 @@ export default function CRMApp() {
               <div className="page-header">
                 <div>
                   <div className="eyebrow">ÚTERÝ 21. ČERVENCE 2026</div>
-                  <h1>{pageTitles[page].title}</h1>
+                  <h1>{page === "dashboard" ? `Dobré ráno, ${vocativeFirstName(identitySession.user.displayName)}` : pageTitles[page].title}</h1>
                   <p>{pageTitles[page].subtitle}</p>
                 </div>
                 <div className="page-actions">
