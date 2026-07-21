@@ -31,9 +31,9 @@ export const units: UnitRecord[] = [
 ];
 
 export const projects = [
-  { name: "Rezidence Javorová", code: "RJ", location: "Praha 5 · Jinonice", progress: 82, units: 68, sold: 51, reserved: 8, available: 9, attention: 6, color: "sage", stage: "Dokončovací práce", revenue: "482,6 mil. Kč", buildings: ["Dům A", "Dům B"], manager: "Martin Jelínek", plannedHandover: "Q4 2026" },
-  { name: "Parková čtvrť", code: "PČ", location: "Brno · Černá Pole", progress: 61, units: 94, sold: 63, reserved: 12, available: 19, attention: 9, color: "sand", stage: "Etapa I dokončena", revenue: "536,2 mil. Kč", buildings: ["Etapa I", "Etapa II"], manager: "Pavel Sedlák", plannedHandover: "Q2 2027" },
-  { name: "Vily Stráň", code: "VS", location: "Praha-východ · Průhonice", progress: 18, units: 12, sold: 3, reserved: 1, available: 8, attention: 2, color: "slate", stage: "Příprava", revenue: "65,7 mil. Kč", buildings: ["Vila E", "Vila F", "Vila G"], manager: "Klára Bendová", plannedHandover: "Q4 2027" },
+  { name: "Rezidence Javorová", code: "RJ", location: "Praha 5 · Jinonice", progress: 82, units: 68, available: 9, preReserved: 4, reserved: 8, sold: 39, handedOver: 8, attention: 6, color: "sage", stage: "Dokončovací práce", revenue: "482,6 mil. Kč", buildings: ["Dům A", "Dům B"], manager: "Martin Jelínek", plannedHandover: "Q4 2026" },
+  { name: "Parková čtvrť", code: "PČ", location: "Brno · Černá Pole", progress: 61, units: 94, available: 19, preReserved: 6, reserved: 12, sold: 42, handedOver: 15, attention: 9, color: "sand", stage: "Etapa I dokončena", revenue: "536,2 mil. Kč", buildings: ["Etapa I", "Etapa II"], manager: "Pavel Sedlák", plannedHandover: "Q2 2027" },
+  { name: "Vily Stráň", code: "VS", location: "Praha-východ · Průhonice", progress: 18, units: 12, available: 8, preReserved: 1, reserved: 1, sold: 2, handedOver: 0, attention: 2, color: "slate", stage: "Příprava", revenue: "65,7 mil. Kč", buildings: ["Vila E", "Vila F", "Vila G"], manager: "Klára Bendová", plannedHandover: "Q4 2027" },
 ];
 
 export const tasks = [

@@ -62,7 +62,7 @@ import {
 
 type Page = "dashboard" | "projects" | "clients" | "contracts" | "payments" | "handovers" | "tasks";
 type UnitTab = "overview" | "contracts" | "payments" | "documents" | "handover" | "tasks" | "history";
-type ProjectTab = "overview" | "units" | "accessories" | "prices" | "documents" | "activity";
+type ProjectTab = "overview" | "units" | "clients" | "contracts" | "payments" | "changes" | "handovers" | "documents";
 type ProjectRecord = (typeof projects)[number];
 
 const navItems: { id: Page; label: string; icon: typeof Home }[] = [
@@ -127,6 +127,7 @@ export default function CRMApp() {
   const [unitView, setUnitView] = useState<"table" | "cards">("table");
   const [projectFilter, setProjectFilter] = useState("Všechny projekty");
   const [buildingFilter, setBuildingFilter] = useState("Všechny budovy / etapy");
+  const [floorFilter, setFloorFilter] = useState("Všechna podlaží");
   const [statusFilter, setStatusFilter] = useState("Všechny stavy");
   const [layoutFilter, setLayoutFilter] = useState("Všechny dispozice");
   const [areaFrom, setAreaFrom] = useState("");
@@ -165,15 +166,16 @@ export default function CRMApp() {
     return units.filter((unit) => {
       const matchesProject = projectFilter === "Všechny projekty" || unit.project === projectFilter;
       const matchesBuilding = buildingFilter === "Všechny budovy / etapy" || unit.building === buildingFilter;
+      const matchesFloor = floorFilter === "Všechna podlaží" || unit.floor === floorFilter;
       const matchesStatus = statusFilter === "Všechny stavy" || unit.status === statusFilter;
       const matchesLayout = layoutFilter === "Všechny dispozice" || unit.layout === layoutFilter;
       const matchesAreaFrom = !areaFrom || unit.area >= Number(areaFrom);
       const matchesAreaTo = !areaTo || unit.area <= Number(areaTo);
       const matchesPriceFrom = !priceFrom || unit.price >= Number(priceFrom) * 1_000_000;
       const matchesPriceTo = !priceTo || unit.price <= Number(priceTo) * 1_000_000;
-      return matchesProject && matchesBuilding && matchesStatus && matchesLayout && matchesAreaFrom && matchesAreaTo && matchesPriceFrom && matchesPriceTo;
+      return matchesProject && matchesBuilding && matchesFloor && matchesStatus && matchesLayout && matchesAreaFrom && matchesAreaTo && matchesPriceFrom && matchesPriceTo;
     });
-  }, [projectFilter, buildingFilter, statusFilter, layoutFilter, areaFrom, areaTo, priceFrom, priceTo]);
+  }, [projectFilter, buildingFilter, floorFilter, statusFilter, layoutFilter, areaFrom, areaTo, priceFrom, priceTo]);
 
   const searchResults = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -204,6 +206,13 @@ export default function CRMApp() {
     setProjectTab(tab);
     setProjectFilter(project.name);
     setBuildingFilter("Všechny budovy / etapy");
+    setFloorFilter("Všechna podlaží");
+    setStatusFilter("Všechny stavy");
+    setLayoutFilter("Všechny dispozice");
+    setAreaFrom("");
+    setAreaTo("");
+    setPriceFrom("");
+    setPriceTo("");
     setUnitDetail(null);
     setUnitPreview(null);
     setMobileNav(false);
@@ -355,15 +364,16 @@ export default function CRMApp() {
               tab={projectTab}
               onTab={setProjectTab}
               onBack={() => { setSelectedProject(null); setProjectFilter("Všechny projekty"); }}
-              openProject={(name) => openProject(projects.find((item) => item.name === name) || projects[0], "units")}
+              openClient={openClient}
               unitView={unitView}
               setUnitView={setUnitView}
               filteredUnits={filteredUnits}
               previewUnit={setUnitPreview}
-              projectFilter={projectFilter}
-              setProjectFilter={setProjectFilter}
+              openUnit={openUnit}
               buildingFilter={buildingFilter}
               setBuildingFilter={setBuildingFilter}
+              floorFilter={floorFilter}
+              setFloorFilter={setFloorFilter}
               statusFilter={statusFilter}
               setStatusFilter={setStatusFilter}
               layoutFilter={layoutFilter}
@@ -503,13 +513,18 @@ function Dashboard({ navigate, openUnit, taskRows, toggleTask }: { navigate: (pa
 }
 
 function Projects({ openProject }: { openProject: (project: ProjectRecord) => void }) {
+  const totals = projects.reduce((sum, project) => ({
+    units: sum.units + project.units,
+    reserved: sum.reserved + project.reserved,
+    sold: sum.sold + project.sold + project.handedOver,
+  }), { units: 0, reserved: 0, sold: 0 });
   return (
     <div className="projects-page">
       <div className="portfolio-summary card">
         <div><span className="metric-icon green"><Building2 size={20} /></span><span><small>Aktivní projekty</small><strong>3</strong></span></div>
-        <div><span className="metric-icon blue"><Home size={20} /></span><span><small>Jednotky celkem</small><strong>174</strong></span></div>
-        <div><span className="metric-icon sand"><Clock3 size={20} /></span><span><small>Rezervované</small><strong>21</strong></span></div>
-        <div><span className="metric-icon purple"><CheckCircle2 size={20} /></span><span><small>Prodané</small><strong>117</strong></span></div>
+        <div><span className="metric-icon blue"><Home size={20} /></span><span><small>Jednotky celkem</small><strong>{totals.units}</strong></span></div>
+        <div><span className="metric-icon sand"><Clock3 size={20} /></span><span><small>Rezervované</small><strong>{totals.reserved}</strong></span></div>
+        <div><span className="metric-icon purple"><CheckCircle2 size={20} /></span><span><small>Prodané a předané</small><strong>{totals.sold}</strong></span></div>
       </div>
       <div className="project-cards">
         {projects.map((project) => (
@@ -523,7 +538,7 @@ function Projects({ openProject }: { openProject: (project: ProjectRecord) => vo
                 <span><i className="sold" /><strong>{project.sold}</strong><small>prodaných</small></span>
                 <span><strong>{project.units}</strong><small>celkem</small></span>
               </div>
-              <div className="large-progress"><span><small>Prodej projektu</small><strong>{Math.round(project.sold / project.units * 100)} %</strong></span><div><i style={{ width: `${project.sold / project.units * 100}%` }} /></div></div>
+              <div className="large-progress"><span><small>Prodejnost projektu</small><strong>{Math.round((project.sold + project.handedOver) / project.units * 100)} %</strong></span><div><i style={{ width: `${(project.sold + project.handedOver) / project.units * 100}%` }} /></div></div>
               <div className="project-card-meta"><span><small>VEDOUCÍ PROJEKTU</small><strong>{project.manager}</strong></span><span><small>PLÁNOVANÉ PŘEDÁNÍ</small><strong>{project.plannedHandover}</strong></span></div>
               <button className="secondary-button full" onClick={() => openProject(project)}>Otevřít detail projektu <ArrowRight size={16} /></button>
             </div>
@@ -535,70 +550,143 @@ function Projects({ openProject }: { openProject: (project: ProjectRecord) => vo
 }
 
 type UnitListProps = {
-  unitView: "table" | "cards"; setUnitView: (value: "table" | "cards") => void; filteredUnits: UnitRecord[]; previewUnit: (unit: UnitRecord) => void;
-  projectFilter: string; setProjectFilter: (value: string) => void; buildingFilter: string; setBuildingFilter: (value: string) => void;
-  statusFilter: string; setStatusFilter: (value: string) => void; layoutFilter: string; setLayoutFilter: (value: string) => void;
-  areaFrom: string; setAreaFrom: (value: string) => void; areaTo: string; setAreaTo: (value: string) => void;
-  priceFrom: string; setPriceFrom: (value: string) => void; priceTo: string; setPriceTo: (value: string) => void;
-  openProject: (name: string) => void;
+  project: ProjectRecord;
+  unitView: "table" | "cards";
+  setUnitView: (value: "table" | "cards") => void;
+  filteredUnits: UnitRecord[];
+  previewUnit: (unit: UnitRecord) => void;
+  openUnit: (unit: UnitRecord) => void;
+  buildingFilter: string;
+  setBuildingFilter: (value: string) => void;
+  floorFilter: string;
+  setFloorFilter: (value: string) => void;
+  statusFilter: string;
+  setStatusFilter: (value: string) => void;
+  layoutFilter: string;
+  setLayoutFilter: (value: string) => void;
+  areaFrom: string;
+  setAreaFrom: (value: string) => void;
+  areaTo: string;
+  setAreaTo: (value: string) => void;
+  priceFrom: string;
+  setPriceFrom: (value: string) => void;
+  priceTo: string;
+  setPriceTo: (value: string) => void;
 };
 
-function ProjectDetail({ project, tab, onTab, onBack, notify, ...unitListProps }: UnitListProps & { project: ProjectRecord; tab: ProjectTab; onTab: (tab: ProjectTab) => void; onBack: () => void; notify: (message: string) => void }) {
+function ProjectDetail({ project, tab, onTab, onBack, notify, openClient, ...unitListProps }: UnitListProps & { tab: ProjectTab; onTab: (tab: ProjectTab) => void; onBack: () => void; notify: (message: string) => void; openClient: (name: string) => void }) {
+  const projectClients = clients.filter((client) => client.projectNames.includes(project.name));
+  const projectContracts = contracts.filter((contract) => contract.project === project.name);
+  const projectPayments = payments.filter((payment) => payment.project === project.name);
+  const projectHandovers = units.filter((unit) => unit.project === project.name && unit.handover !== "Neplánováno");
+  const salePercent = Math.round((project.sold + project.handedOver) / project.units * 100);
   const tabs: { id: ProjectTab; label: string; count?: number }[] = [
-    { id: "overview", label: "Přehled" }, { id: "units", label: "Jednotky", count: project.units }, { id: "accessories", label: "Příslušenství" }, { id: "prices", label: "Ceníky" }, { id: "documents", label: "Dokumenty", count: 18 }, { id: "activity", label: "Aktivita" },
+    { id: "overview", label: "Přehled" },
+    { id: "units", label: "Jednotky", count: project.units },
+    { id: "clients", label: "Klienti", count: projectClients.length },
+    { id: "contracts", label: "Smlouvy", count: projectContracts.length },
+    { id: "payments", label: "Platby", count: projectPayments.length },
+    { id: "changes", label: "Klientské změny", count: 4 },
+    { id: "handovers", label: "Předání", count: projectHandovers.length },
+    { id: "documents", label: "Dokumenty", count: 18 },
   ];
   return (
     <div className="project-detail">
-      <div className="unit-breadcrumb"><button onClick={onBack}><ArrowLeft size={16} /> Přehled projektů</button><ChevronRight size={14} /><strong>{project.name}</strong></div>
+      <div className="unit-breadcrumb"><button onClick={onBack}><ArrowLeft size={16} /> Všechny projekty</button><ChevronRight size={14} /><strong>{project.name}</strong></div>
       <div className="project-detail-hero card">
         <div className={`project-detail-mark ${project.color}`}>{project.code}</div>
-        <div><span className="eyebrow">DEVELOPERSKÝ PROJEKT</span><h1>{project.name} <Badge tone="neutral">{project.stage}</Badge></h1><p><MapPin size={14} /> {project.location} · {project.buildings.join(" · ")}</p></div>
-        <div className="project-detail-actions"><button className="secondary-button" onClick={() => notify("Ceník se připravuje ke stažení")}><Download size={16} /> Export ceníku</button><button className="primary-button" onClick={() => onTab("units")}><Home size={16} /> Zobrazit jednotky</button></div>
+        <div><span className="eyebrow">AKTUÁLNÍ PROJEKT</span><h1>{project.name} <Badge tone="neutral">{project.stage}</Badge></h1><p><MapPin size={14} /> {project.location} · {project.buildings.join(" · ")}</p></div>
+        <div className="project-detail-actions"><button className="secondary-button" onClick={() => notify("Ceník se připravuje ke stažení")}><Download size={16} /> Export ceníku</button><button className="primary-button" onClick={() => onTab("units")}><Home size={16} /> Otevřít jednotky</button></div>
       </div>
-      <div className="unit-tabs project-tabs">{tabs.map((item) => <button key={item.id} className={tab === item.id ? "active" : ""} onClick={() => onTab(item.id)}>{item.label}{item.count && <span>{item.count}</span>}</button>)}</div>
-      {tab === "overview" && <ProjectOverview project={project} onUnits={() => onTab("units")} />}
-      {tab === "units" && <ProjectUnitList {...unitListProps} />}
-      {tab === "accessories" && <ProjectAccessories project={project} notify={notify} />}
-      {tab === "prices" && <ProjectPrices project={project} notify={notify} />}
+      <section className="card project-context-card" aria-label="Souhrn projektu">
+        <div className="project-context-meta"><span><small>AKTUÁLNÍ FÁZE</small><strong>{project.stage}</strong></span><span><small>VEDOUCÍ PROJEKTU</small><strong>{project.manager}</strong></span><span><small>PLÁNOVANÉ PŘEDÁNÍ</small><strong>{project.plannedHandover}</strong></span></div>
+        <div className="project-context-stats">
+          <span><small>Celkem</small><strong>{project.units}</strong></span>
+          <span className="available"><small>Volné</small><strong>{project.available}</strong></span>
+          <span className="pre-reserved"><small>Předrezervované</small><strong>{project.preReserved}</strong></span>
+          <span className="reserved"><small>Rezervované</small><strong>{project.reserved}</strong></span>
+          <span className="sold"><small>Prodané</small><strong>{project.sold}</strong></span>
+          <span className="handed-over"><small>Předané</small><strong>{project.handedOver}</strong></span>
+          <span className="sale-rate"><small>Prodejnost</small><strong>{salePercent} %</strong><i><b style={{ width: `${salePercent}%` }} /></i></span>
+        </div>
+      </section>
+      <div className="unit-tabs project-tabs">{tabs.map((item) => <button key={item.id} className={tab === item.id ? "active" : ""} onClick={() => onTab(item.id)}>{item.label}{item.count !== undefined && <span>{item.count}</span>}</button>)}</div>
+      {tab === "overview" && <ProjectOverview project={project} onTab={onTab} />}
+      {tab === "units" && <ProjectUnitList project={project} {...unitListProps} />}
+      {tab === "clients" && <ProjectClients project={project} openClient={openClient} openUnit={unitListProps.openUnit} notify={notify} />}
+      {tab === "contracts" && <ProjectContracts project={project} openUnit={unitListProps.openUnit} notify={notify} />}
+      {tab === "payments" && <ProjectPayments project={project} openUnit={unitListProps.openUnit} />}
+      {tab === "changes" && <ProjectClientChanges project={project} openUnit={unitListProps.openUnit} notify={notify} />}
+      {tab === "handovers" && <ProjectHandovers project={project} openUnit={unitListProps.openUnit} notify={notify} />}
       {tab === "documents" && <ProjectDocuments project={project} notify={notify} />}
-      {tab === "activity" && <ProjectActivity />}
     </div>
   );
 }
 
-function ProjectOverview({ project, onUnits }: { project: ProjectRecord; onUnits: () => void }) {
+function ProjectOverview({ project, onTab }: { project: ProjectRecord; onTab: (tab: ProjectTab) => void }) {
+  const projectTasks = initialTasks.filter((task) => task.project === project.name);
+  const projectPayments = payments.filter((payment) => payment.project === project.name);
+  const projectHandovers = units.filter((unit) => unit.project === project.name && unit.handover !== "Neplánováno");
+  const projectUnitIds = units.filter((unit) => unit.project === project.name).map((unit) => unit.id);
+  const projectActivity = activity.filter((item) => projectUnitIds.some((unitId) => item.meta.includes(unitId)));
+  const firstUnit = projectUnitIds[0] || "—";
+  const nextPayment = projectPayments.find((payment) => payment.state !== "Uhrazeno");
+  const nextHandover = projectHandovers[0];
+  const deadlines = [
+    { date: "23. 7.", detail: `Kontrola smluvních dat ${firstUnit}`, tab: "contracts" as ProjectTab, icon: FileText },
+    { date: nextPayment?.due || "31. 7.", detail: nextPayment ? `Splatnost · ${nextPayment.unit}` : "Kontrola splátkového kalendáře", tab: "payments" as ProjectTab, icon: Clock3 },
+    { date: project.plannedHandover, detail: nextHandover ? `Příprava předání ${nextHandover.id}` : "Milník předávání projektu", tab: "handovers" as ProjectTab, icon: CalendarDays },
+  ];
+  const paid = projectPayments.reduce((sum, payment) => sum + payment.paid, 0);
+  const expected = projectPayments.reduce((sum, payment) => sum + payment.amount, 0);
+  const distribution = [
+    { label: "Volné", value: project.available, className: "available" },
+    { label: "Předrezervované", value: project.preReserved, className: "pre-reserved" },
+    { label: "Rezervované", value: project.reserved, className: "reserved" },
+    { label: "Prodané", value: project.sold, className: "sold" },
+    { label: "Předané", value: project.handedOver, className: "handed-over" },
+  ];
   return (
-    <div className="project-overview-grid">
+    <div className="project-dashboard-grid">
       <div className="project-main-column">
-        <div className="project-kpis">
-          <button className="card" onClick={onUnits}><small>JEDNOTEK CELKEM</small><strong>{project.units}</strong><span>Zobrazit seznam <ArrowRight size={14} /></span></button>
-          <button className="card" onClick={onUnits}><small>VOLNÉ</small><strong className="green-number">{project.available}</strong><span>{Math.round(project.available / project.units * 100)} % projektu</span></button>
-          <button className="card" onClick={onUnits}><small>REZERVOVANÉ</small><strong className="amber-number">{project.reserved}</strong><span>předrezervace + RS</span></button>
-          <button className="card" onClick={onUnits}><small>PRODANÉ</small><strong>{project.sold}</strong><span>{Math.round(project.sold / project.units * 100)} % projektu</span></button>
-        </div>
-        <section className="card project-buildings"><SectionTitle title="Budovy / etapy" action="Otevřít jednotky" onAction={onUnits} /><div>{project.buildings.map((building, index) => <button key={building} onClick={onUnits}><span className="building-symbol"><Building2 size={19} /></span><span><strong>{building}</strong><small>{index === 0 ? "Dokončovací práce" : project.stage}</small></span><span><strong>{Math.round(project.units / project.buildings.length)}</strong><small>jednotek</small></span><span className="building-progress"><i style={{ width: `${index === 0 ? 84 : 62}%` }} /></span><ChevronRight size={17} /></button>)}</div></section>
-        <section className="card"><div className="project-section-head"><SectionTitle title="Poslední aktivita" /><Badge tone="neutral">Dnes</Badge></div><div className="timeline-mini project-activity-list">{activity.slice(0, 4).map((item, index) => <div key={`${item.title}-${index}`}><span className={`timeline-icon ${item.kind}`}>{item.kind === "payment" ? <Banknote size={16} /> : item.kind === "handover" ? <KeyRound size={16} /> : <FileText size={16} />}</span><span><strong>{item.title}</strong><small>{item.meta}</small></span><time>{item.time}</time></div>)}</div></section>
+        <section className="card project-sales-card">
+          <div className="project-section-head"><div><h2>Obchodní stav projektu</h2><p>Aktuální rozložení všech {project.units} jednotek.</p></div><button className="text-button" onClick={() => onTab("units")}>Otevřít jednotky <ArrowRight size={15} /></button></div>
+          <div className="project-sales-bar">{distribution.map((item) => <i key={item.label} className={item.className} style={{ width: `${item.value / project.units * 100}%` }} />)}</div>
+          <div className="project-sales-legend">{distribution.map((item) => <span key={item.label}><i className={item.className} /><small>{item.label}</small><strong>{item.value}</strong></span>)}</div>
+        </section>
+        <section className="card project-work-card">
+          <div className="project-section-head"><div><h2>Úkoly a vyžaduje pozornost</h2><p>Nejdůležitější práce v kontextu projektu.</p></div><Badge tone="danger">{project.attention} položek</Badge></div>
+          <div className="project-work-list">
+            {projectTasks.slice(0, 3).map((task) => { const title = task.title.toLowerCase(); return <button key={task.id} onClick={() => onTab(title.includes("platb") ? "payments" : title.includes("předání") ? "handovers" : "units")}><span className={`attention-type ${task.priority === "Vysoká" ? "danger" : "warning"}`}><AlertTriangle size={17} /></span><span><strong>{task.title}</strong><small>{task.object} · {task.owner}</small></span><Badge>{task.due}</Badge><ChevronRight size={16} /></button>; })}
+            <button onClick={() => onTab("contracts")}><span className="attention-type blue"><FileText size={17} /></span><span><strong>Dokončit rozpracované smlouvy</strong><small>{contracts.filter((contract) => contract.project === project.name && contract.state !== "Podepsána").length} smlouvy čekají na další krok</small></span><Badge tone="blue">Smlouvy</Badge><ChevronRight size={16} /></button>
+          </div>
+        </section>
+        <section className="card project-activity-card"><div className="project-section-head"><div><h2>Poslední aktivita</h2><p>Smlouvy, platby, dokumenty a změny jednotek.</p></div><Badge tone="neutral">{project.name}</Badge></div><div className="timeline-mini project-activity-list">{projectActivity.length ? projectActivity.slice(0, 5).map((item, index) => <div key={`${item.title}-${index}`}><span className={`timeline-icon ${item.kind}`}>{item.kind === "payment" ? <Banknote size={16} /> : item.kind === "handover" ? <KeyRound size={16} /> : <FileText size={16} />}</span><span><strong>{item.title}</strong><small>{item.meta}</small></span><time>{item.time}</time></div>) : <div><span className="timeline-icon"><Activity size={16} /></span><span><strong>Zatím bez nové aktivity</strong><small>Nové změny projektu se zobrazí zde.</small></span></div>}</div></section>
       </div>
       <aside className="project-side-column">
-        <section className="card project-info-card"><SectionTitle title="Informace o projektu" /><dl><div><dt>Vedoucí projektu</dt><dd>{project.manager}</dd></div><div><dt>Fáze</dt><dd>{project.stage}</dd></div><div><dt>Předání</dt><dd>{project.plannedHandover}</dd></div><div><dt>Objem prodeje</dt><dd>{project.revenue}</dd></div><div><dt>Budovy / etapy</dt><dd>{project.buildings.length}</dd></div></dl></section>
-        <section className="card project-attention"><SectionTitle title="Vyžaduje pozornost" /><button><span className="attention-type danger"><Banknote size={17} /></span><span><strong>2 platby po splatnosti</strong><small>Celkem 1 742 000 Kč</small></span><ChevronRight size={16} /></button><button><span className="attention-type warning"><Clock3 size={17} /></span><span><strong>3 rezervace brzy končí</strong><small>Nejbližší zítra</small></span><ChevronRight size={16} /></button><button><span className="attention-type blue"><FileText size={17} /></span><span><strong>1 dokument k přiřazení</strong><small>Nalezen ve složce projektu</small></span><ChevronRight size={16} /></button></section>
+        <section className="card project-deadlines-card"><SectionTitle title="Nejbližší termíny" /><div>{deadlines.map((deadline) => { const Icon = deadline.icon; return <button key={`${deadline.date}-${deadline.detail}`} onClick={() => onTab(deadline.tab)}><Icon size={18} /><span><strong>{deadline.date}</strong><small>{deadline.detail}</small></span><ChevronRight size={16} /></button>; })}</div></section>
+        <section className="card project-brief-card"><div className="project-section-head"><div><h2>Platby</h2><p>Stručný finanční přehled.</p></div><button className="text-button" onClick={() => onTab("payments")}>Detail <ArrowRight size={14} /></button></div><strong>{formatMoney(paid)}</strong><small>uhrazeno z evidovaných {formatMoney(expected)}</small><span className="payment-progress"><i style={{ width: `${expected ? paid / expected * 100 : 0}%` }} /></span><p>{projectPayments.filter((payment) => payment.state === "Po splatnosti").length} položek po splatnosti</p></section>
+        <section className="card project-brief-card"><div className="project-section-head"><div><h2>Připravovaná předání</h2><p>Nejbližší jednotky k dokončení.</p></div><button className="text-button" onClick={() => onTab("handovers")}>Detail <ArrowRight size={14} /></button></div>{projectHandovers.length ? projectHandovers.slice(0, 3).map((unit) => <button className="project-brief-row" key={unit.id} onClick={() => onTab("handovers")}><span><strong>{unit.id}</strong><small>{unit.client || "Bez klienta"}</small></span><Badge>{unit.handover}</Badge></button>) : <p>Termíny předání zatím nejsou naplánované.</p>}</section>
       </aside>
     </div>
   );
 }
 
 function ProjectUnitList(props: UnitListProps) {
-  const { unitView, setUnitView, filteredUnits, previewUnit, projectFilter, buildingFilter, statusFilter, layoutFilter, areaFrom, areaTo, priceFrom, priceTo } = props;
-  const buildings = Array.from(new Set(units.filter((unit) => projectFilter === "Všechny projekty" || unit.project === projectFilter).map((unit) => unit.building)));
-  const activeCount = [projectFilter !== "Všechny projekty", buildingFilter !== "Všechny budovy / etapy", statusFilter !== "Všechny stavy", layoutFilter !== "Všechny dispozice", areaFrom, areaTo, priceFrom, priceTo].filter(Boolean).length;
-  const reset = () => { props.setBuildingFilter("Všechny budovy / etapy"); props.setStatusFilter("Všechny stavy"); props.setLayoutFilter("Všechny dispozice"); props.setAreaFrom(""); props.setAreaTo(""); props.setPriceFrom(""); props.setPriceTo(""); };
+  const { project, unitView, setUnitView, filteredUnits, previewUnit, openUnit, buildingFilter, floorFilter, statusFilter, layoutFilter, areaFrom, areaTo, priceFrom, priceTo } = props;
+  const projectUnits = units.filter((unit) => unit.project === project.name);
+  const buildings = Array.from(new Set(projectUnits.map((unit) => unit.building)));
+  const floors = Array.from(new Set(projectUnits.map((unit) => unit.floor)));
+  const activeCount = [buildingFilter !== "Všechny budovy / etapy", floorFilter !== "Všechna podlaží", statusFilter !== "Všechny stavy", layoutFilter !== "Všechny dispozice", areaFrom, areaTo, priceFrom, priceTo].filter(Boolean).length;
+  const reset = () => { props.setBuildingFilter("Všechny budovy / etapy"); props.setFloorFilter("Všechna podlaží"); props.setStatusFilter("Všechny stavy"); props.setLayoutFilter("Všechny dispozice"); props.setAreaFrom(""); props.setAreaTo(""); props.setPriceFrom(""); props.setPriceTo(""); };
   return (
     <section className="card units-section">
+      <div className="project-scope-banner"><Building2 size={17} /><span><strong>{project.name}</strong><small>Zobrazeny jsou pouze jednotky tohoto projektu.</small></span></div>
       <div className="unit-filter-panel">
         <div className="filter-panel-heading"><span><SlidersHorizontal size={17} /><strong>Filtry jednotek</strong>{activeCount > 0 && <Badge tone="blue">{activeCount} aktivních</Badge>}</span><button className="text-button" onClick={reset}>Vymazat filtry</button></div>
-        <div className="unit-filter-grid">
-          <label><span>Projekt</span><select value={projectFilter} onChange={(event) => props.openProject(event.target.value)}>{projects.map((project) => <option key={project.name}>{project.name}</option>)}</select><ChevronDown size={14} /></label>
+        <div className="unit-filter-grid project-unit-filter-grid">
           <label><span>Budova / etapa</span><select value={buildingFilter} onChange={(event) => props.setBuildingFilter(event.target.value)}><option>Všechny budovy / etapy</option>{buildings.map((building) => <option key={building}>{building}</option>)}</select><ChevronDown size={14} /></label>
+          <label><span>Podlaží</span><select value={floorFilter} onChange={(event) => props.setFloorFilter(event.target.value)}><option>Všechna podlaží</option>{floors.map((floor) => <option key={floor}>{floor}</option>)}</select><ChevronDown size={14} /></label>
           <label><span>Obchodní stav</span><select value={statusFilter} onChange={(event) => props.setStatusFilter(event.target.value)}><option>Všechny stavy</option><option>Volný</option><option>Předrezervace</option><option>RS</option><option>SBK</option><option>KS</option><option>Předáno</option></select><ChevronDown size={14} /></label>
           <label><span>Dispozice</span><select value={layoutFilter} onChange={(event) => props.setLayoutFilter(event.target.value)}><option>Všechny dispozice</option><option>1+kk</option><option>2+kk</option><option>3+kk</option><option>4+kk</option><option>5+kk</option></select><ChevronDown size={14} /></label>
           <div className="range-filter"><span>Plocha m²</span><div><input inputMode="decimal" value={areaFrom} onChange={(event) => props.setAreaFrom(event.target.value)} placeholder="Od" aria-label="Plocha od" /><i>–</i><input inputMode="decimal" value={areaTo} onChange={(event) => props.setAreaTo(event.target.value)} placeholder="Do" aria-label="Plocha do" /></div></div>
@@ -606,28 +694,47 @@ function ProjectUnitList(props: UnitListProps) {
         </div>
       </div>
       <div className="units-result-bar"><span><strong>{filteredUnits.length}</strong> jednotek odpovídá filtrům</span><div className="view-toggle"><button className={unitView === "table" ? "active" : ""} onClick={() => setUnitView("table")} aria-label="Tabulkové zobrazení"><Table2 size={17} /></button><button className={unitView === "cards" ? "active" : ""} onClick={() => setUnitView("cards")} aria-label="Kartové zobrazení"><List size={17} /></button></div></div>
-      {unitView === "table" ? <div className="unit-table-wrap"><table className="data-table unit-table"><thead><tr><th>Jednotka</th><th>Projekt / budova</th><th>Dispozice</th><th>Plocha</th><th>Cena</th><th>Obchodní stav</th><th>Klient</th><th /></tr></thead><tbody>{filteredUnits.map((unit) => <tr key={unit.id} onClick={() => previewUnit(unit)} tabIndex={0} onKeyDown={(event) => event.key === "Enter" && previewUnit(unit)}><td><strong>{unit.id}</strong><small>{unit.floor}</small></td><td><strong>{unit.project}</strong><small>{unit.building}</small></td><td>{unit.layout}</td><td>{unit.area.toLocaleString("cs-CZ")} m²</td><td><strong>{formatMoney(unit.price)}</strong></td><td><Badge>{unit.status}</Badge></td><td>{unit.client || <span className="muted">—</span>}</td><td><ChevronRight size={18} /></td></tr>)}</tbody></table></div> : <div className="unit-card-grid">{filteredUnits.map((unit) => <button className="unit-card" key={unit.id} onClick={() => previewUnit(unit)}><span className="unit-card-top"><strong>{unit.id}</strong><Badge>{unit.status}</Badge></span><span className="unit-card-plan"><span className="plan-room r1" /><span className="plan-room r2" /><span className="plan-room r3" /><Home size={22} /></span><span className="unit-card-info"><strong>{unit.layout} · {unit.area.toLocaleString("cs-CZ")} m²</strong><small>{unit.project} · {unit.building}</small></span><span className="unit-card-price"><strong>{formatMoney(unit.price)}</strong><ChevronRight size={17} /></span></button>)}</div>}
-      {!filteredUnits.length && <div className="empty-filter-state"><Search size={22} /><strong>Žádná jednotka neodpovídá kombinaci filtrů</strong><small>Zkuste upravit rozsah plochy, cenu nebo obchodní stav.</small><button className="secondary-button compact" onClick={reset}>Vymazat filtry</button></div>}
-      <div className="table-footer"><span>Zobrazeno {filteredUnits.length} výsledků</span><div><button disabled><ChevronRight className="rotate-180" size={16} /></button><button className="active">1</button><button><ChevronRight size={16} /></button></div></div>
+      {unitView === "table" ? <div className="unit-table-wrap"><table className="data-table unit-table"><thead><tr><th>Jednotka</th><th>Budova / etapa</th><th>Podlaží</th><th>Dispozice</th><th>Plocha</th><th>Aktuální cena</th><th>Obchodní stav</th><th>Klient</th><th /></tr></thead><tbody>{filteredUnits.map((unit) => <tr key={unit.id} onClick={() => openUnit(unit)} tabIndex={0} onKeyDown={(event) => event.key === "Enter" && openUnit(unit)}><td><strong>{unit.id}</strong></td><td>{unit.building}</td><td>{unit.floor}</td><td>{unit.layout}</td><td>{unit.area.toLocaleString("cs-CZ")} m²</td><td><strong>{formatMoney(unit.price)}</strong></td><td><Badge>{unit.status}</Badge></td><td>{unit.client || <span className="muted">—</span>}</td><td><ChevronRight size={18} /></td></tr>)}</tbody></table></div> : <div className="unit-card-grid">{filteredUnits.map((unit) => <button className="unit-card" key={unit.id} onClick={() => previewUnit(unit)}><span className="unit-card-top"><strong>{unit.id}</strong><Badge>{unit.status}</Badge></span><span className="unit-card-plan"><span className="plan-room r1" /><span className="plan-room r2" /><span className="plan-room r3" /><Home size={22} /></span><span className="unit-card-info"><strong>{unit.layout} · {unit.area.toLocaleString("cs-CZ")} m²</strong><small>{unit.building} · {unit.floor}</small></span><span className="unit-card-price"><strong>{formatMoney(unit.price)}</strong><ChevronRight size={17} /></span></button>)}</div>}
+      {!filteredUnits.length && <div className="empty-filter-state"><Search size={22} /><strong>Žádná jednotka neodpovídá kombinaci filtrů</strong><small>Zkuste upravit budovu, podlaží, plochu, cenu nebo obchodní stav.</small><button className="secondary-button compact" onClick={reset}>Vymazat filtry</button></div>}
+      <div className="table-footer"><span>Zobrazeno {filteredUnits.length} výsledků v projektu {project.name}</span><div><button disabled><ChevronRight className="rotate-180" size={16} /></button><button className="active">1</button><button><ChevronRight size={16} /></button></div></div>
     </section>
   );
 }
 
-function ProjectAccessories({ project, notify }: { project: ProjectRecord; notify: (message: string) => void }) {
-  const rows = [{ type: "Sklepy", total: 54, assigned: 46, free: 8 }, { type: "Parkovací stání", total: 72, assigned: 57, free: 15 }, { type: "Wallboxy", total: 31, assigned: 24, free: 7 }];
-  return <section className="card detail-tab-card"><div className="tab-card-header"><div><h2>Příslušenství · {project.name}</h2><p>Evidence samostatných objektů a jejich vazeb na jednotky.</p></div><button className="primary-button" onClick={() => notify("Formulář příslušenství je připraven")}><Plus size={16} /> Přidat příslušenství</button></div><div className="unit-table-wrap"><table className="data-table"><thead><tr><th>Typ</th><th>Celkem</th><th>Přiřazeno</th><th>Volné</th><th>Využití</th></tr></thead><tbody>{rows.map((row) => <tr key={row.type}><td><strong>{row.type}</strong></td><td>{row.total}</td><td>{row.assigned}</td><td><Badge tone="success">{row.free}</Badge></td><td><span className="payment-progress"><i style={{ width: `${row.assigned / row.total * 100}%` }} /></span></td></tr>)}</tbody></table></div></section>;
+function ProjectClients({ project, openClient, openUnit, notify }: { project: ProjectRecord; openClient: (name: string) => void; openUnit: (unit: UnitRecord) => void; notify: (message: string) => void }) {
+  const rows = clients.filter((client) => client.projectNames.includes(project.name));
+  return <ProjectModuleFrame project={project} title="Klienti projektu" description="Klienti a zájemci filtrovaní pouze pro tento projekt." action="Přidat klienta" onAction={() => notify("Formulář nového klienta je připraven")}><table className="data-table"><thead><tr><th>Klient</th><th>Typ</th><th>Jednotky v projektu</th><th>Stav vztahu</th><th>Smluvní stav</th><th>Telefon</th><th>E-mail</th><th /></tr></thead><tbody>{rows.map((client) => { const projectUnits = client.units.filter((code) => units.some((unit) => unit.id === code && unit.project === project.name)); return <tr key={client.id} onClick={() => openClient(client.name)}><td><span className="client-name-cell"><Avatar initials={client.initials} small /><strong>{client.name}</strong></span></td><td><Badge tone="neutral">{client.kind}</Badge></td><td>{projectUnits.map((code) => <button className="unit-link" key={code} onClick={(event) => { event.stopPropagation(); const unit = units.find((item) => item.id === code); if (unit) openUnit(unit); }}>{code}</button>)}</td><td><Badge>{client.state}</Badge></td><td>{client.contractStatus}</td><td>{client.phone}</td><td>{client.email}</td><td><ChevronRight size={17} /></td></tr>; })}</tbody></table></ProjectModuleFrame>;
 }
 
-function ProjectPrices({ project, notify }: { project: ProjectRecord; notify: (message: string) => void }) {
-  return <section className="card detail-tab-card"><div className="tab-card-header"><div><h2>Ceníky · {project.name}</h2><p>Platné, připravované a archivní cenové verze.</p></div><button className="primary-button" onClick={() => notify("Nová verze ceníku byla založena")}><Plus size={16} /> Nová verze</button></div><div className="document-list"><article><span className="document-icon"><Table2 size={21} /></span><span><strong>Ceník 2026-Q3</strong><small>Platný od 1. 7. 2026 · 68 jednotek</small></span><Badge tone="success">Aktuální</Badge><button className="secondary-button compact">Otevřít</button></article><article><span className="document-icon"><Table2 size={21} /></span><span><strong>Ceník 2026-Q2</strong><small>Archivováno 30. 6. 2026 · vytvořil Pavel Sedlák</small></span><Badge tone="neutral">Archiv</Badge><button className="secondary-button compact">Otevřít</button></article></div></section>;
+function ProjectContracts({ project, openUnit, notify }: { project: ProjectRecord; openUnit: (unit: UnitRecord) => void; notify: (message: string) => void }) {
+  const rows = contracts.filter((contract) => contract.project === project.name);
+  return <ProjectModuleFrame project={project} title="Smlouvy projektu" description="Rezervační, budoucí kupní a kupní smlouvy v projektu." action="Nová smlouva" onAction={() => notify("Formulář nové smlouvy je připraven")}><table className="data-table"><thead><tr><th>Jednotka</th><th>Klient</th><th>Typ smlouvy</th><th>Stav</th><th>Aktualizováno</th><th>Odpovědná osoba</th><th>Další krok</th><th /></tr></thead><tbody>{rows.map((contract) => <tr key={`${contract.unit}-${contract.type}`} onClick={() => { const unit = units.find((item) => item.id === contract.unit); if (unit) openUnit(unit); }}><td><strong>{contract.unit}</strong></td><td>{contract.client}</td><td><Badge tone="blue">{contract.type}</Badge></td><td><Badge>{contract.state}</Badge></td><td>{contract.updated}</td><td>{contract.owner}</td><td>{contract.action}</td><td><ChevronRight size={17} /></td></tr>)}</tbody></table></ProjectModuleFrame>;
+}
+
+function ProjectPayments({ project, openUnit }: { project: ProjectRecord; openUnit: (unit: UnitRecord) => void }) {
+  const rows = payments.filter((payment) => payment.project === project.name);
+  const total = rows.reduce((sum, payment) => sum + payment.amount, 0);
+  const paid = rows.reduce((sum, payment) => sum + payment.paid, 0);
+  return <div className="project-module-stack"><div className="metric-row payments-metrics"><div className="metric-card"><span className="metric-icon green"><Banknote size={20} /></span><span><small>Uhrazeno</small><strong>{formatMoney(paid)}</strong><em>evidované platby projektu</em></span></div><div className="metric-card"><span className="metric-icon blue"><CircleDollarSign size={20} /></span><span><small>Předepsáno</small><strong>{formatMoney(total)}</strong><em>v aktuálním přehledu</em></span></div><div className="metric-card danger-metric"><span className="metric-icon red"><AlertTriangle size={20} /></span><span><small>Po splatnosti</small><strong>{rows.filter((payment) => payment.state === "Po splatnosti").length}</strong><em>vyžaduje pozornost</em></span></div></div><ProjectModuleFrame project={project} title="Platby projektu" description="Splátkový kalendář a skutečné úhrady jednotek."><table className="data-table"><thead><tr><th>Jednotka</th><th>Klient</th><th>Splátka</th><th>Splatnost</th><th>Předpis</th><th>Uhrazeno</th><th>Stav</th><th /></tr></thead><tbody>{rows.map((payment) => <tr key={`${payment.unit}-${payment.installment}`} onClick={() => { const unit = units.find((item) => item.id === payment.unit); if (unit) openUnit(unit); }}><td><strong>{payment.unit}</strong></td><td>{payment.client}</td><td>{payment.installment}</td><td>{payment.due}</td><td><strong>{formatMoney(payment.amount)}</strong></td><td>{formatMoney(payment.paid)}</td><td><Badge>{payment.state}</Badge></td><td><ChevronRight size={17} /></td></tr>)}</tbody></table></ProjectModuleFrame></div>;
+}
+
+function ProjectClientChanges({ project, openUnit, notify }: { project: ProjectRecord; openUnit: (unit: UnitRecord) => void; notify: (message: string) => void }) {
+  const projectUnits = units.filter((unit) => unit.project === project.name && unit.client).slice(0, 4);
+  const states = ["Ke schválení", "Schváleno", "V realizaci", "Uzavřeno"];
+  return <ProjectModuleFrame project={project} title="Klientské změny" description="Požadavky klientů na standardy a provedení jednotek." action="Nový požadavek" onAction={() => notify("Formulář klientské změny je připraven")}><table className="data-table"><thead><tr><th>Jednotka</th><th>Klient</th><th>Požadavek</th><th>Termín rozhodnutí</th><th>Dopad do ceny</th><th>Stav</th><th /></tr></thead><tbody>{projectUnits.map((unit, index) => <tr key={unit.id} onClick={() => openUnit(unit)}><td><strong>{unit.id}</strong></td><td>{unit.client}</td><td>{["Změna podlahy v obytných místnostech", "Doplnění elektro vývodů", "Úprava dispozice koupelny", "Příprava pro venkovní žaluzie"][index]}</td><td>{24 + index}. 7. 2026</td><td>{index === 1 ? "18 500 Kč" : index === 3 ? "42 000 Kč" : "K nacenění"}</td><td><Badge>{states[index]}</Badge></td><td><ChevronRight size={17} /></td></tr>)}</tbody></table></ProjectModuleFrame>;
+}
+
+function ProjectHandovers({ project, openUnit, notify }: { project: ProjectRecord; openUnit: (unit: UnitRecord) => void; notify: (message: string) => void }) {
+  const rows = units.filter((unit) => unit.project === project.name && unit.handover !== "Neplánováno");
+  return <ProjectModuleFrame project={project} title="Předání projektu" description="Termíny a připravenost jednotek k předání." action="Naplánovat předání" onAction={() => notify("Kalendář předání je připraven")}><table className="data-table"><thead><tr><th>Jednotka</th><th>Klient</th><th>Budova</th><th>Stavební stav</th><th>Termín / stav předání</th><th>Připravenost</th><th /></tr></thead><tbody>{rows.map((unit, index) => <tr key={unit.id} onClick={() => openUnit(unit)}><td><strong>{unit.id}</strong></td><td>{unit.client || "—"}</td><td>{unit.building}</td><td><Badge tone="blue">{unit.construction}</Badge></td><td>{unit.handover}</td><td><span className="readiness"><span><strong>{index === 0 ? 72 : 88} %</strong></span><div><i style={{ width: `${index === 0 ? 72 : 88}%` }} /></div></span></td><td><ChevronRight size={17} /></td></tr>)}</tbody></table></ProjectModuleFrame>;
 }
 
 function ProjectDocuments({ project, notify }: { project: ProjectRecord; notify: (message: string) => void }) {
-  return <section className="card detail-tab-card"><div className="tab-card-header"><div><h2>Projektové dokumenty</h2><p>{project.name} · dokumenty společné pro celý projekt.</p></div><button className="primary-button" onClick={() => notify("Vyberte dokument k nahrání")}><Upload size={16} /> Nahrát dokument</button></div><div className="document-list">{["Standardy projektu.pdf", "Technický popis_rev04.pdf", "Situace projektu.pdf", "Prodejní půdorysy.zip"].map((name, index) => <article key={name}><span className="document-icon"><FileText size={21} /></span><span><strong>{name}</strong><small>{index < 2 ? "Technická dokumentace" : "Prodejní podklady"} · změněno {12 + index}. 7. 2026</small></span><Badge tone="neutral">v{index + 2}</Badge><button className="ghost-icon"><Eye size={17} /></button></article>)}</div></section>;
+  return <ProjectModuleFrame project={project} title="Dokumenty projektu" description="Projektové podklady, standardy, technická dokumentace a prodejní materiály." action="Nahrát dokument" onAction={() => notify("Vyberte dokument k nahrání")}><div className="document-list">{["Standardy projektu.pdf", "Technický popis_rev04.pdf", "Situace projektu.pdf", "Prodejní půdorysy.zip", "Rozhodnutí stavebního úřadu.pdf"].map((name, index) => <article key={name}><span className="document-icon"><FileText size={21} /></span><span><strong>{name}</strong><small>{index < 3 ? "Technická dokumentace" : "Prodejní podklady"} · {project.name} · změněno {12 + index}. 7. 2026</small></span><Badge tone="neutral">v{index + 2}</Badge><button className="ghost-icon" onClick={() => notify(`Otevírám ${name}`)}><Eye size={17} /></button></article>)}</div></ProjectModuleFrame>;
 }
 
-function ProjectActivity() {
-  return <section className="card detail-tab-card history-tab"><div className="tab-card-header"><div><h2>Aktivita projektu</h2><p>Změny jednotek, klientů, smluv, plateb a dokumentů.</p></div><button className="filter-button"><Filter size={16} /> Typ aktivity</button></div><div className="full-timeline">{unitTimeline.map((item) => <article key={item.date}><div className={`timeline-icon ${item.icon}`}><Activity size={17} /></div><div><time>{item.date}</time><strong>{item.title}</strong><p>{item.detail}</p></div></article>)}</div></section>;
+function ProjectModuleFrame({ project, title, description, action, onAction, children }: { project: ProjectRecord; title: string; description: string; action?: string; onAction?: () => void; children: React.ReactNode }) {
+  return <section className="card detail-tab-card project-module-card"><div className="project-scope-banner"><Building2 size={17} /><span><strong>{project.name}</strong><small>Pracujete uvnitř konkrétního projektu.</small></span></div><div className="tab-card-header"><div><h2>{title}</h2><p>{description}</p></div>{action && <button className="primary-button" onClick={onAction}><Plus size={16} /> {action}</button>}</div><div className="unit-table-wrap">{children}</div></section>;
 }
 
 function ClientsPage({ openUnit, selectedClientName, setSelectedClientName, notify }: { openUnit: (unit: UnitRecord) => void; selectedClientName: string | null; setSelectedClientName: (name: string | null) => void; notify: (message: string) => void }) {

@@ -8,12 +8,17 @@ const dataUrl = new URL("../app/crm-data.ts", import.meta.url);
 test("implements the project-to-unit navigation hierarchy", async () => {
   const app = await readFile(appUrl, "utf8");
 
-  assert.match(app, /Přehled projektů/);
+  assert.match(app, /Všechny projekty/);
   assert.match(app, /function ProjectDetail/);
   assert.match(app, /function ProjectUnitList/);
   assert.match(app, /function UnitPreview/);
   assert.match(app, /Otevřít celý detail/);
-  assert.match(app, /Přehled.*Jednotky.*Příslušenství.*Ceníky.*Dokumenty.*Aktivita/s);
+  assert.match(app, /Přehled.*Jednotky.*Klienti.*Smlouvy.*Platby.*Klientské změny.*Předání.*Dokumenty/s);
+  assert.match(app, /function ProjectClients/);
+  assert.match(app, /function ProjectContracts/);
+  assert.match(app, /function ProjectPayments/);
+  assert.match(app, /function ProjectClientChanges/);
+  assert.match(app, /function ProjectHandovers/);
 });
 
 test("keeps unit filters combinable and project clients in one table", async () => {
@@ -22,7 +27,7 @@ test("keeps unit filters combinable and project clients in one table", async () 
     readFile(dataUrl, "utf8"),
   ]);
 
-  for (const label of ["Budova / etapa", "Obchodní stav", "Dispozice", "Plocha m²", "Cena mil. Kč"]) {
+  for (const label of ["Budova / etapa", "Podlaží", "Obchodní stav", "Dispozice", "Plocha m²", "Cena mil. Kč"]) {
     assert.match(app, new RegExp(label.replace("²", "\\u00b2")));
   }
   assert.match(app, /data-table client-table/);
