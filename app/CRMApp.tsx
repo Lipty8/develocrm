@@ -653,21 +653,9 @@ function ProjectOverview({ project, onTab }: { project: ProjectRecord; onTab: (t
   ];
   const paid = projectPayments.reduce((sum, payment) => sum + payment.paid, 0);
   const expected = projectPayments.reduce((sum, payment) => sum + payment.amount, 0);
-  const distribution = [
-    { label: "Volné", value: project.available, className: "available" },
-    { label: "Předrezervované", value: project.preReserved, className: "pre-reserved" },
-    { label: "Rezervované", value: project.reserved, className: "reserved" },
-    { label: "Prodané", value: project.sold, className: "sold" },
-    { label: "Předané", value: project.handedOver, className: "handed-over" },
-  ];
   return (
     <div className="project-dashboard-grid">
       <div className="project-main-column">
-        <section className="card project-sales-card">
-          <div className="project-section-head"><div><h2>Obchodní stav projektu</h2><p>Aktuální rozložení všech {project.units} jednotek.</p></div><button className="text-button" onClick={() => onTab("units")}>Otevřít jednotky <ArrowRight size={15} /></button></div>
-          <div className="project-sales-bar">{distribution.map((item) => <i key={item.label} className={item.className} style={{ width: `${item.value / project.units * 100}%` }} />)}</div>
-          <div className="project-sales-legend">{distribution.map((item) => <span key={item.label}><i className={item.className} /><small>{item.label}</small><strong>{item.value}</strong></span>)}</div>
-        </section>
         <section className="card project-work-card">
           <div className="project-section-head"><div><h2>Úkoly a vyžaduje pozornost</h2><p>Nejdůležitější práce v kontextu projektu.</p></div><Badge tone="danger">{project.attention} položek</Badge></div>
           <div className="project-work-list">

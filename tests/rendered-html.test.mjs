@@ -25,6 +25,8 @@ test("implements the project-to-unit navigation hierarchy", async () => {
   assert.match(app, /PRODEJNÍ VÝKON/);
   assert.match(app, /Rozložení projektu/);
   assert.match(app, /project-sale-ring/);
+  assert.doesNotMatch(app, /Obchodní stav projektu/);
+  assert.doesNotMatch(app, /project-sales-card/);
   assert.match(app, /aria-label="Pohledy úkolů"/);
   assert.match(app, /client-view-title/);
   assert.match(app, /Filtry databáze/);
