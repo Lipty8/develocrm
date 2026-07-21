@@ -17,6 +17,19 @@ export type UnitRecord = {
   accessory: string;
 };
 
+export type InterestHistoryRecord = { date: string; project: string; unit: string; type: string; result: string };
+export type ClientRecord = {
+  id: string; name: string; type: string; kind: "FO" | "PO"; email: string; phone: string; contact: string;
+  units: string[]; projects: string; projectNames: string[]; state: string; contractStatus: string; initials: string;
+  interestHistory?: InterestHistoryRecord[];
+};
+export type UnitCommercialContext = {
+  buyers: Array<{ partyId: string; name: string; email: string; role: string; share: number | null }>;
+  interests: Array<{ date: string; partyId: string; name: string; type: string; result: string }>;
+  stage: string | null;
+  hold: { id: string; type: string; expiresAt: string } | null;
+};
+
 export const units: UnitRecord[] = [
   { id: "A203", project: "Rezidence Javorová", building: "Dům A", layout: "3+kk", area: 82.4, floor: "2. NP", orientation: "J / Z", price: 8990000, status: "SBK", construction: "Dokončovací práce", handover: "Připravenost 72 %", client: "Jana a Petr Novákovi", attention: "Doplnit číslo účtu klienta", accessory: "Sklep S18 · Parking P32 · Wallbox" },
   { id: "A101", project: "Rezidence Javorová", building: "Dům A", layout: "2+kk", area: 54.8, floor: "1. NP", orientation: "J", price: 6490000, status: "Volný", construction: "Dokončovací práce", handover: "Neplánováno", accessory: "Sklep S04" },
@@ -59,7 +72,7 @@ export const payments = [
   { unit: "C102", client: "Marek Veselý", project: "Parková čtvrť", installment: "Doplatek · 10 %", amount: 479000, due: "10. 7. 2026", paid: 479000, state: "Uhrazeno" },
 ];
 
-export const clients = [
+export const clients: ClientRecord[] = [
   { id: "c1", name: "Jana a Petr Novákovi", type: "2 fyzické osoby", kind: "FO", email: "jana.novakova@email.cz", phone: "+420 602 145 778", contact: "jana.novakova@email.cz · +420 602 145 778", units: ["A203"], projects: "Rezidence Javorová", projectNames: ["Rezidence Javorová"], state: "Aktivní klient", contractStatus: "Podepsaná KS", initials: "JN" },
   { id: "c2", name: "Alto Services s.r.o.", type: "Právnická osoba", kind: "PO", email: "office@altoservices.cz", phone: "+420 222 784 110", contact: "office@altoservices.cz · +420 222 784 110", units: ["B308", "E106"], projects: "Rezidence Javorová, Vily Stráň", projectNames: ["Rezidence Javorová", "Vily Stráň"], state: "Aktivní klient", contractStatus: "Podepsaná KS", initials: "AS" },
   { id: "c3", name: "Tomáš Janda", type: "Fyzická osoba", kind: "FO", email: "tomas.janda@email.cz", phone: "+420 723 441 029", contact: "tomas.janda@email.cz · +420 723 441 029", units: ["D404"], projects: "Parková čtvrť", projectNames: ["Parková čtvrť"], state: "Aktivní klient", contractStatus: "Podepsaná SBK", initials: "TJ" },
@@ -71,6 +84,22 @@ export const clients = [
   { id: "c9", name: "Eva Benešová", type: "Fyzická osoba", kind: "FO", email: "eva.benesova@email.cz", phone: "+420 725 819 302", contact: "eva.benesova@email.cz · +420 725 819 302", units: ["E106"], projects: "Vily Stráň", projectNames: ["Vily Stráň"], state: "Zájemce", contractStatus: "Předrezervace", initials: "EB" },
   { id: "c10", name: "Rodinné bydlení s.r.o.", type: "Právnická osoba", kind: "PO", email: "info@rodinnebydleni.cz", phone: "+420 224 618 901", contact: "info@rodinnebydleni.cz · +420 224 618 901", units: ["D404", "E106"], projects: "Parková čtvrť, Vily Stráň", projectNames: ["Parková čtvrť", "Vily Stráň"], state: "Zájemce", contractStatus: "Bez smlouvy", initials: "RB" },
 ];
+
+export const unitCommercialContexts: Record<string, UnitCommercialContext> = {
+  A203: {
+    buyers: [
+      { partyId: "c1-jana", name: "Jana Nováková", email: "jana.novakova@email.cz", role: "buyer", share: 0.5 },
+      { partyId: "c1-petr", name: "Petr Novák", email: "petr.novak@email.cz", role: "co_buyer", share: 0.5 },
+    ],
+    interests: [
+      { date: "12. 3. 2026", partyId: "c1-jana", name: "Jana a Petr Novákovi", type: "Předrezervace → RS", result: "Aktivní klienti" },
+      { date: "4. 2. 2026", partyId: "historic-lh", name: "Lucie Hájková", type: "Prohlídka + nabídka", result: "Zvolila jiný byt" },
+      { date: "22. 1. 2026", partyId: "c8", name: "NORD Invest a.s.", type: "Cenová poptávka", result: "Bez realizace" },
+    ],
+    stage: "sbk", hold: null,
+  },
+  B104: { buyers: [{ partyId:"c5",name:"Lucie Malá",email:"lucie.mala@email.cz",role:"buyer",share:1 }], interests: [], stage:"pre_reservation", hold:{ id:"preview-b104",type:"pre_reservation",expiresAt:"2026-07-22T16:00:00.000Z" } },
+};
 
 export const activity = [
   { time: "10:24", title: "Přidána připomínka ke smlouvě SBK", meta: "A203 · Iva Novotná", kind: "contract" },

@@ -56,11 +56,13 @@ import {
   projects,
   tasks as initialTasks,
   unitTimeline,
+  unitCommercialContexts,
   units,
   type UnitRecord,
 } from "./crm-data";
 import { identityRepository, prototypeSession, type IdentitySession } from "./repositories/identity-repository";
 import { catalogRepository } from "./repositories/catalog-repository";
+import { clientRepository } from "./repositories/client-repository";
 
 type Page = "dashboard" | "projects" | "clients" | "contracts" | "payments" | "handovers" | "tasks";
 type UnitTab = "overview" | "contracts" | "payments" | "changes" | "documents" | "handover" | "tasks" | "history";
@@ -172,6 +174,7 @@ function vocativeFirstName(displayName: string): string {
 export default function CRMApp() {
   const [identitySession, setIdentitySession] = useState<IdentitySession>(prototypeSession);
   const [catalogVersion, setCatalogVersion] = useState(0);
+  const [clientDataVersion, setClientDataVersion] = useState(0);
   const [page, setPage] = useState<Page>("dashboard");
   const [mobileNav, setMobileNav] = useState(false);
   const [unitDetail, setUnitDetail] = useState<UnitRecord | null>(null);
@@ -201,6 +204,21 @@ export default function CRMApp() {
     identityRepository.getSession(controller.signal).then(setIdentitySession).catch(() => undefined);
     return () => controller.abort();
   }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    clientRepository.getDirectory(controller.signal).then((snapshot) => {
+      clients.splice(0,clients.length,...snapshot.clients);
+      for (const key of Object.keys(unitCommercialContexts)) delete unitCommercialContexts[key];
+      Object.assign(unitCommercialContexts,snapshot.unitContexts);
+      for (const unit of units) {
+        const buyers=unitCommercialContexts[unit.id]?.buyers ?? [];
+        if (buyers.length) unit.client=buyers.map((buyer)=>buyer.name).join(" a ");
+      }
+      setClientDataVersion((version)=>version+1);
+    }).catch(()=>undefined);
+    return ()=>controller.abort();
+  },[catalogVersion]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -252,6 +270,7 @@ export default function CRMApp() {
 
   const searchResults = useMemo(() => {
     void catalogVersion;
+    void clientDataVersion;
     const query = search.trim().toLowerCase();
     if (query.length < 2) return [];
     const unitResults = units
@@ -263,7 +282,7 @@ export default function CRMApp() {
       .slice(0, 3)
       .map((client) => ({ type: "Klient", title: client.name, detail: client.projects, unit: undefined }));
     return [...unitResults, ...clientResults];
-  }, [search, catalogVersion]);
+  }, [search, catalogVersion, clientDataVersion]);
 
   const navigate = (nextPage: Page) => {
     setPage(nextPage);
@@ -835,11 +854,13 @@ function ClientsPage({ openUnit, selectedClientName, setSelectedClientName, noti
   const toggle = (id: string) => setSelected((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   const togglePage = () => setSelected((current) => { const next = new Set(current); pageRows.forEach((client) => allPageSelected ? next.delete(client.id) : next.add(client.id)); return next; });
   const selectAllResults = () => setSelected(new Set(filtered.map((client) => client.id)));
-  const copyEmails = async () => { const value = selectedRows.map((client) => client.email).join("; "); try { await navigator.clipboard.writeText(value); notify(`${selectedRows.length} e-mailů bylo zkopírováno pro BCC`); } catch { notify("E-mailové adresy jsou připravené ke kopírování"); } };
-  const downloadCsv = (onlyEmails = false) => {
-    const escape = (value: string) => `"${value.replaceAll('"', '""')}"`;
-    const csv = onlyEmails ? ["E-mail", ...selectedRows.map((client) => escape(client.email))].join("\n") : ["Jméno / název,E-mail,Telefon,Projekt,Jednotka,Stav", ...selectedRows.map((client) => [client.name, client.email, client.phone, client.projects, client.units.join("; "), client.state].map(escape).join(","))].join("\n");
-    const url = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" })); const link = document.createElement("a"); link.href = url; link.download = onlyEmails ? "develocrm-emaily.csv" : "develocrm-klienti.csv"; link.click(); URL.revokeObjectURL(url); notify("Export byl stažen");
+  const copyEmails = async () => { try { const result=await clientRepository.exportContacts(selectedRows.map((client)=>client.id),"bcc"); await navigator.clipboard.writeText(result.value); notify(`${result.count} e-mailů bylo zkopírováno pro BCC`); } catch { notify("Export není v tomto rozsahu povolen"); } };
+  const downloadCsv = async (onlyEmails = false) => {
+    try {
+      const result=await clientRepository.exportContacts(selectedRows.map((client)=>client.id),onlyEmails?"bcc":"csv");
+      const csv=onlyEmails?`\ufeffE-mail\n${result.value.split("; ").map((email)=>`"${email}"`).join("\n")}`:result.value;
+      const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" })); const link = document.createElement("a"); link.href = url; link.download = onlyEmails ? "develocrm-emaily.csv" : "develocrm-klienti.csv"; link.click(); URL.revokeObjectURL(url); notify("Export byl stažen");
+    } catch { notify("Export není v tomto rozsahu povolen"); }
   };
   if (selectedClient) return <ClientDetail client={selectedClient} onBack={() => setSelectedClientName(null)} openUnit={openUnit} />;
   return (
@@ -855,7 +876,8 @@ function ClientsPage({ openUnit, selectedClientName, setSelectedClientName, noti
 }
 
 function ClientDetail({ client, onBack, openUnit }: { client: (typeof clients)[number]; onBack: () => void; openUnit: (unit: UnitRecord) => void }) {
-  return <div className="client-detail"><div className="unit-breadcrumb"><button onClick={onBack}><ArrowLeft size={16} /> Klienti a zájemci</button><ChevronRight size={14} /><strong>{client.name}</strong></div><div className="client-detail-hero card"><Avatar initials={client.initials} /><div><span className="eyebrow">{client.type.toUpperCase()}</span><h1>{client.name} <Badge>{client.state}</Badge></h1><p><Mail size={14} /> {client.email} <span>·</span> <UserRound size={14} /> {client.phone}</p></div><button className="primary-button"><MessageSquare size={16} /> Přidat aktivitu</button></div><div className="client-detail-grid"><section className="card client-relations"><SectionTitle title="Projekty a jednotky" /><p className="section-description">Všechny vztahy klienta napříč společnou firemní databází.</p>{client.units.map((unitCode, index) => { const unit = units.find((item) => item.id === unitCode) || units[0]; return <button key={unitCode} onClick={() => openUnit(unit)}><span className="unit-symbol"><Home size={18} /></span><span><strong>{unit.id} · {unit.layout}</strong><small>{unit.project} · {unit.building}</small></span><Badge>{index === 0 ? client.state : "Zájemce"}</Badge><ChevronRight size={17} /></button>; })}</section><aside className="card client-contact-panel"><SectionTitle title="Kontaktní údaje" /><dl><div><dt>E-mail</dt><dd>{client.email}</dd></div><div><dt>Telefon</dt><dd>{client.phone}</dd></div><div><dt>Typ osoby</dt><dd>{client.kind}</dd></div><div><dt>Smluvní stav</dt><dd>{client.contractStatus}</dd></div></dl></aside><section className="card client-history"><SectionTitle title="Historie zájmu" /><div className="unit-table-wrap"><table className="data-table"><thead><tr><th>Datum</th><th>Projekt / jednotka</th><th>Typ zájmu</th><th>Výsledek</th></tr></thead><tbody><tr><td>12. 3. 2026</td><td><strong>{client.projectNames[0]} · {client.units[0]}</strong></td><td>Předrezervace</td><td><Badge tone="success">Pokračuje</Badge></td></tr><tr><td>4. 2. 2026</td><td><strong>Rezidence Javorová · B207</strong></td><td>Prohlídka</td><td><Badge tone="neutral">Bez realizace</Badge></td></tr></tbody></table></div></section></div></div>;
+  const history=client.interestHistory?.length?client.interestHistory:[{date:"—",project:client.projectNames[0]??"—",unit:client.units[0]??"—",type:"Bez evidované události",result:client.state}];
+  return <div className="client-detail"><div className="unit-breadcrumb"><button onClick={onBack}><ArrowLeft size={16} /> Klienti a zájemci</button><ChevronRight size={14} /><strong>{client.name}</strong></div><div className="client-detail-hero card"><Avatar initials={client.initials} /><div><span className="eyebrow">{client.type.toUpperCase()}</span><h1>{client.name} <Badge>{client.state}</Badge></h1><p><Mail size={14} /> {client.email} <span>·</span> <UserRound size={14} /> {client.phone}</p></div><button className="primary-button"><MessageSquare size={16} /> Přidat aktivitu</button></div><div className="client-detail-grid"><section className="card client-relations"><SectionTitle title="Projekty a jednotky" /><p className="section-description">Všechny vztahy klienta napříč společnou firemní databází.</p>{client.units.map((unitCode, index) => { const unit = units.find((item) => item.id === unitCode) || units[0]; return <button key={unitCode} onClick={() => openUnit(unit)}><span className="unit-symbol"><Home size={18} /></span><span><strong>{unit.id} · {unit.layout}</strong><small>{unit.project} · {unit.building}</small></span><Badge>{index === 0 ? client.state : "Zájemce"}</Badge><ChevronRight size={17} /></button>; })}</section><aside className="card client-contact-panel"><SectionTitle title="Kontaktní údaje" /><dl><div><dt>E-mail</dt><dd>{client.email}</dd></div><div><dt>Telefon</dt><dd>{client.phone}</dd></div><div><dt>Typ osoby</dt><dd>{client.kind}</dd></div><div><dt>Smluvní stav</dt><dd>{client.contractStatus}</dd></div></dl></aside><section className="card client-history"><SectionTitle title="Historie zájmu" /><div className="unit-table-wrap"><table className="data-table"><thead><tr><th>Datum</th><th>Projekt / jednotka</th><th>Typ zájmu</th><th>Výsledek</th></tr></thead><tbody>{history.map((row,index)=><tr key={`${row.unit}-${row.date}-${index}`}><td>{row.date}</td><td><strong>{row.project} · {row.unit}</strong></td><td>{row.type}</td><td><Badge tone={row.result.includes("Pokračuje")||row.result.includes("Aktivní")?"success":"neutral"}>{row.result}</Badge></td></tr>)}</tbody></table></div></section></div></div>;
 }
 
 function ContractsPage({ openUnit, notify }: { openUnit: (unit: UnitRecord) => void; notify: (message: string) => void }) {
@@ -1028,18 +1050,22 @@ function UnitDetail({ unit, tab, onTab, onBack, notify, openTask, openClient }: 
 function UnitOverview({ unit, notify, openClient }: { unit: UnitRecord; notify: (message: string) => void; openClient: (name: string) => void }) {
   const [floorplanOpen, setFloorplanOpen] = useState(false);
   const [priceHistoryOpen, setPriceHistoryOpen] = useState(false);
+  const commercial=unitCommercialContexts[unit.id];
+  const buyers=commercial?.buyers ?? [];
+  const interestRows=commercial?.interests ?? [];
+  const stageIndex=({interest:0,pre_reservation:1,reservation:2,rs:2,sbk:3,ks:4,handover:5} as Record<string,number>)[commercial?.stage ?? ""] ?? -1;
   return (
     <>
     <div className="unit-overview-grid">
       <div className="unit-main-column">
         <section className="card sales-process-card">
           <SectionTitle title="Prodejní proces" />
-          <div className="sales-progress">{["Zájem", "Předrezervace", "RS", "SBK", "KS", "Předání"].map((stage, index) => <div key={stage} className={index <= 3 ? "complete" : index === 4 ? "current" : ""}><span>{index <= 3 ? <Check size={14} /> : index + 1}</span><strong>{stage}</strong><small>{index === 3 ? "Ve vyjednávání" : index < 3 ? "Hotovo" : "Čeká"}</small></div>)}</div>
+          <div className="sales-progress">{["Zájem", "Předrezervace", "RS", "SBK", "KS", "Předání"].map((stage, index) => <div key={stage} className={index < stageIndex ? "complete" : index === stageIndex ? "current" : ""}><span>{index < stageIndex ? <Check size={14} /> : index + 1}</span><strong>{stage}</strong><small>{index === stageIndex ? (commercial?.hold ? `Platí do ${new Date(commercial.hold.expiresAt).toLocaleDateString("cs-CZ")}` : "Aktuální etapa") : index < stageIndex ? "Hotovo" : "Čeká"}</small></div>)}</div>
           <div className="next-action"><span className="next-action-icon"><Sparkles size={19} /></span><div><small>DOPORUČENÝ DALŠÍ KROK</small><strong>Doplňte číslo účtu a vygenerujte novou verzi SBK</strong><p>Kontrola našla 1 chybějící povinný údaj.</p></div><button className="primary-button" onClick={() => notify("Otevírám údaje klienta")}>Doplnit údaj <ArrowRight size={16} /></button></div>
         </section>
         <section className="card client-detail-card">
-          <SectionTitle title="Klient" action="Otevřít kartu klienta" onAction={() => unit.client ? openClient(unit.client) : notify("Jednotka zatím nemá přiřazeného klienta")} />
-          <div className="buyers"><div><Avatar initials="JN" /><span><strong>Jana Nováková</strong><small>Kupující · podíl 1/2</small><em><Mail size={14} /> jana.novakova@email.cz</em></span></div><div><Avatar initials="PN" /><span><strong>Petr Novák</strong><small>Kupující · podíl 1/2</small><em><Mail size={14} /> petr.novak@email.cz</em></span></div></div>
+          <SectionTitle title="Klient" action="Otevřít kartu klienta" onAction={() => buyers[0] ? openClient(buyers[0].name) : notify("Jednotka zatím nemá přiřazeného klienta")} />
+          <div className="buyers">{buyers.length?buyers.map((buyer)=><div key={buyer.partyId}><Avatar initials={initials(buyer.name)} /><span><strong>{buyer.name}</strong><small>{buyer.role==="co_buyer"?"Spolukupující":"Kupující"}{buyer.share?` · podíl ${Math.round(buyer.share*100)} %`:""}</small><em><Mail size={14} /> {buyer.email}</em></span></div>):<div><span><strong>Bez přiřazeného klienta</strong><small>Jednotka je aktuálně dostupná.</small></span></div>}</div>
           <div className="client-note"><MessageSquare size={16} /><span><small>INTERNÍ POZNÁMKA</small><p>Preferují komunikaci e-mailem. Financování z vlastních zdrojů.</p></span></div>
         </section>
         <section className="card accessories-card">
@@ -1054,7 +1080,7 @@ function UnitOverview({ unit, notify, openClient }: { unit: UnitRecord; notify: 
         <section className="card interest-history-card">
           <SectionTitle title="Historie zájmu" />
           <p className="section-description">Záznam zůstává uložený i po ukončení zájmu nebo opětovném uvolnění jednotky.</p>
-          <div className="unit-table-wrap"><table className="data-table"><thead><tr><th>Datum</th><th>Zájemce</th><th>Typ / stupeň zájmu</th><th>Výsledek</th></tr></thead><tbody><tr><td>12. 3. 2026</td><td><strong>Jana a Petr Novákovi</strong></td><td>Předrezervace → RS</td><td><Badge tone="success">Aktivní klienti</Badge></td></tr><tr><td>4. 2. 2026</td><td><strong>Lucie Hájková</strong></td><td>Prohlídka + nabídka</td><td><Badge tone="neutral">Zvolila jiný byt</Badge></td></tr><tr><td>22. 1. 2026</td><td><strong>NORD Invest a.s.</strong></td><td>Cenová poptávka</td><td><Badge tone="neutral">Bez realizace</Badge></td></tr><tr><td>15. 1. 2026</td><td><strong>Adam Doležal</strong></td><td>Webový zájem</td><td><Badge tone="neutral">Nekontaktní</Badge></td></tr></tbody></table></div>
+          <div className="unit-table-wrap"><table className="data-table"><thead><tr><th>Datum</th><th>Zájemce</th><th>Typ / stupeň zájmu</th><th>Výsledek</th></tr></thead><tbody>{interestRows.map((interest)=><tr key={`${interest.partyId}-${interest.date}`}><td>{interest.date}</td><td><strong>{interest.name}</strong></td><td>{interest.type}</td><td><Badge tone={interest.result.includes("Aktivní")?"success":"neutral"}>{interest.result}</Badge></td></tr>)}</tbody></table></div>
         </section>
         <section className="card recent-card">
           <SectionTitle title="Poslední aktivita" action="Celá historie" onAction={() => notify("Otevřete záložku Historie")} />

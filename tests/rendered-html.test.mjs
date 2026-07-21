@@ -6,6 +6,9 @@ const appUrl = new URL("../app/CRMApp.tsx", import.meta.url);
 const dataUrl = new URL("../app/crm-data.ts", import.meta.url);
 const catalogRepositoryUrl = new URL("../app/repositories/catalog-repository.ts", import.meta.url);
 const catalogRouteUrl = new URL("../app/api/catalog/route.ts", import.meta.url);
+const clientRepositoryUrl = new URL("../app/repositories/client-repository.ts", import.meta.url);
+const clientRouteUrl = new URL("../app/api/clients/route.ts", import.meta.url);
+const clientExportRouteUrl = new URL("../app/api/clients/export/route.ts", import.meta.url);
 
 test("implements the project-to-unit navigation hierarchy", async () => {
   const app = await readFile(appUrl, "utf8");
@@ -94,4 +97,17 @@ test("project and unit screens load through the switchable catalog repository", 
   assert.match(route, /preview-seed/);
   assert.match(route, /backend-api/);
   assert.match(route, /adaptBackendCatalog/);
+});
+
+test("client views, unit commercial context and exports use the Block C repository", async () => {
+  const [app,repository,route,exportRoute] = await Promise.all([
+    readFile(appUrl,"utf8"),readFile(clientRepositoryUrl,"utf8"),readFile(clientRouteUrl,"utf8"),readFile(clientExportRouteUrl,"utf8"),
+  ]);
+  assert.match(app,/clientRepository\.getDirectory/);
+  assert.match(app,/clientRepository\.exportContacts/);
+  assert.match(app,/unitCommercialContexts\[unit\.id\]/);
+  assert.match(repository,/interface ClientRepository/);
+  assert.match(route,/DEVELOCRM_API_URL/);
+  assert.match(route,/preview-seed/);
+  assert.match(exportRoute,/\/v1\/clients\/export/);
 });

@@ -5,14 +5,18 @@ import type { Database } from "./database.js";
 import { IamRepository } from "./iam/repository.js";
 import { InventoryRepository } from "./inventory/repository.js";
 import { CommercialStatusService } from "./inventory/commercial-status-service.js";
+import { SalesRepository } from "./sales/repository.js";
+import { HoldService } from "./sales/hold-service.js";
 
 export function buildApp(dependencies: { database: Database; verifier: EntraTokenVerifier }): FastifyInstance {
   const app = Fastify({ logger: true });
   const repository = new IamRepository(dependencies.database);
   const inventory = new InventoryRepository(dependencies.database);
   const commercialStatus = new CommercialStatusService(dependencies.database);
+  const sales = new SalesRepository(dependencies.database);
+  const holds = new HoldService(dependencies.database);
 
-  app.get("/health", async () => ({ status: "ok", block: "B" }));
+  app.get("/health", async () => ({ status: "ok", block: "C" }));
 
   app.get("/v1/session/workspaces", async (request, reply) => {
     try {
@@ -70,6 +74,66 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
     }
   });
 
+  app.get("/v1/clients", async (request, reply) => {
+    try {
+      const identity = await authenticate(request,dependencies.verifier);
+      const tenantId = headerValue(request.headers["x-tenant-id"]);
+      if (!tenantId) return reply.code(400).send({ error:"Chybí x-tenant-id" });
+      const user = await repository.resolveUser(identity);
+      const session = await repository.getSession(user,identity,tenantId);
+      if (!session) return reply.code(403).send({ error:"Workspace není uživateli přístupný" });
+      return sales.getDirectory({ tenantId,userId:user.id,membershipId:session.workspace.membershipId });
+    } catch { return reply.code(401).send({ error:"Neplatné přihlášení" }); }
+  });
+
+  app.post<{ Body:{ partyIds?:string[];format?:"json"|"bcc"|"csv"} }>("/v1/clients/export", async (request,reply) => {
+    try {
+      const identity = await authenticate(request,dependencies.verifier);
+      const tenantId = headerValue(request.headers["x-tenant-id"]);
+      if (!tenantId) return reply.code(400).send({ error:"Chybí x-tenant-id" });
+      const user = await repository.resolveUser(identity);
+      const session = await repository.getSession(user,identity,tenantId);
+      if (!session) return reply.code(403).send({ error:"Workspace není uživateli přístupný" });
+      const clients = await sales.exportContacts({ tenantId,userId:user.id,membershipId:session.workspace.membershipId,partyIds:request.body.partyIds });
+      if (request.body.format==="bcc") return { value:clients.map((item) => item.email).filter(Boolean).join("; "),count:clients.length };
+      if (request.body.format==="csv") {
+        const rows = [["Jméno / název","E-mail","Telefon","Projekt","Jednotka","Stav klienta"],...clients.map((item) => [item.name,item.email,item.phone,item.projects,item.units.join(", "),item.state])];
+        return { value:"\ufeff"+rows.map((row) => row.map(csvCell).join(";")).join("\n"),count:clients.length };
+      }
+      return { clients,count:clients.length };
+    } catch { return reply.code(403).send({ error:"Export není v tomto rozsahu povolen" }); }
+  });
+
+  app.post<{ Params:{ unitId:string }; Body:{ type:"pre_reservation"|"reservation";partyIds:string[];expiresAt:string;interestId?:string;idempotencyKey:string;reason:string } }>("/v1/units/:unitId/holds", async (request,reply) => {
+    try {
+      const identity=await authenticate(request,dependencies.verifier); const tenantId=headerValue(request.headers["x-tenant-id"]);
+      if (!tenantId) return reply.code(400).send({error:"Chybí x-tenant-id"}); const user=await repository.resolveUser(identity); const session=await repository.getSession(user,identity,tenantId);
+      if (!session || !await inventory.hasUnitPermission({tenantId,userId:user.id,membershipId:session.workspace.membershipId,unitId:request.params.unitId,permission:"holds.manage"})) return reply.code(403).send({error:"Chybí oprávnění holds.manage"});
+      return reply.code(201).send(await holds.create({tenantId,userId:user.id,unitId:request.params.unitId,membershipId:session.workspace.membershipId,...request.body}));
+    } catch(error) { return reply.code(409).send({error:error instanceof Error?error.message:"Rezervaci nelze vytvořit"}); }
+  });
+
+  app.post<{ Params:{ holdId:string }; Body:{ expiresAt:string;idempotencyKey:string;reason:string } }>("/v1/holds/:holdId/convert", async (request,reply) => {
+    try { const identity=await authenticate(request,dependencies.verifier); const tenantId=headerValue(request.headers["x-tenant-id"]); if(!tenantId)return reply.code(400).send({error:"Chybí x-tenant-id"}); const user=await repository.resolveUser(identity); const session=await repository.getSession(user,identity,tenantId);
+      if(!session||!await sales.hasHoldPermission({tenantId,userId:user.id,membershipId:session.workspace.membershipId,holdId:request.params.holdId,permission:"holds.manage"}))return reply.code(403).send({error:"Chybí oprávnění holds.manage"});
+      return reply.send(await holds.convert({tenantId,userId:user.id,holdId:request.params.holdId,membershipId:session.workspace.membershipId,...request.body}));
+    } catch(error){return reply.code(409).send({error:error instanceof Error?error.message:"Převod rezervace se nezdařil"});}
+  });
+
+  app.post<{ Params:{ holdId:string }; Body:{ reason:string } }>("/v1/holds/:holdId/cancel", async (request,reply) => {
+    try { const identity=await authenticate(request,dependencies.verifier); const tenantId=headerValue(request.headers["x-tenant-id"]); if(!tenantId)return reply.code(400).send({error:"Chybí x-tenant-id"}); const user=await repository.resolveUser(identity); const session=await repository.getSession(user,identity,tenantId);
+      if(!session||!await sales.hasHoldPermission({tenantId,userId:user.id,membershipId:session.workspace.membershipId,holdId:request.params.holdId,permission:"holds.manage"}))return reply.code(403).send({error:"Chybí oprávnění holds.manage"});
+      return reply.send(await holds.cancel({tenantId,userId:user.id,holdId:request.params.holdId,membershipId:session.workspace.membershipId,reason:request.body.reason}));
+    } catch(error){return reply.code(409).send({error:error instanceof Error?error.message:"Zrušení rezervace se nezdařilo"});}
+  });
+
+  app.post<{ Params:{ holdId:string } }>("/v1/holds/:holdId/expire", async (request,reply) => {
+    try { const identity=await authenticate(request,dependencies.verifier); const tenantId=headerValue(request.headers["x-tenant-id"]); if(!tenantId)return reply.code(400).send({error:"Chybí x-tenant-id"}); const user=await repository.resolveUser(identity); const session=await repository.getSession(user,identity,tenantId);
+      if(!session||!await sales.hasHoldPermission({tenantId,userId:user.id,membershipId:session.workspace.membershipId,holdId:request.params.holdId,permission:"holds.manage"}))return reply.code(403).send({error:"Chybí oprávnění holds.manage"});
+      return reply.send(await holds.expire({tenantId,userId:user.id,holdId:request.params.holdId,membershipId:session.workspace.membershipId}));
+    } catch(error){return reply.code(409).send({error:error instanceof Error?error.message:"Expirace rezervace se nezdařila"});}
+  });
+
   app.post<{ Params: { unitId: string }; Body: { reason?: string } }>("/v1/units/:unitId/block", async (request, reply) => {
     try {
       const identity = await authenticate(request, dependencies.verifier);
@@ -116,3 +180,5 @@ async function authenticate(request: FastifyRequest, verifier: EntraTokenVerifie
 function headerValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
+
+function csvCell(value:string):string { return `"${value.replaceAll('"','""')}"`; }

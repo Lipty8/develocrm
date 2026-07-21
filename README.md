@@ -20,6 +20,11 @@ Blok B navazuje migrací `backend/migrations/0002_block_b_inventory.sql` a
 opakovatelným preview seedem `backend/seeds/0001_preview_block_b.sql`. Migrace
 se spouštějí v číselném pořadí; seed je určen pouze pro testovací prostředí.
 
+Blok C navazuje migrací `backend/migrations/0003_block_c_sales.sql` a seedem
+`backend/seeds/0002_preview_block_c.sql`. Přidává canonical parties, historii
+zájmu, sales cases, více kupujících a transakční předrezervace/rezervace.
+Podrobnosti jsou v `docs/architecture/block-c.md`. Blok D zatím implementovaný není.
+
 A clean full-stack starter running on
 [vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
 Drizzle support.
