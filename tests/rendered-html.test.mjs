@@ -9,6 +9,8 @@ const catalogRouteUrl = new URL("../app/api/catalog/route.ts", import.meta.url);
 const clientRepositoryUrl = new URL("../app/repositories/client-repository.ts", import.meta.url);
 const clientRouteUrl = new URL("../app/api/clients/route.ts", import.meta.url);
 const clientExportRouteUrl = new URL("../app/api/clients/export/route.ts", import.meta.url);
+const commercialRepositoryUrl = new URL("../app/repositories/commercial-repository.ts", import.meta.url);
+const commercialRouteUrl = new URL("../app/api/commercial/route.ts", import.meta.url);
 
 test("implements the project-to-unit navigation hierarchy", async () => {
   const app = await readFile(appUrl, "utf8");
@@ -110,4 +112,16 @@ test("client views, unit commercial context and exports use the Block C reposito
   assert.match(route,/DEVELOCRM_API_URL/);
   assert.match(route,/preview-seed/);
   assert.match(exportRoute,/\/v1\/clients\/export/);
+});
+
+test("prices and contracts use the Block D repository without duplicating workflow data",async()=>{
+  const [app,repository,route]=await Promise.all([readFile(appUrl,"utf8"),readFile(commercialRepositoryUrl,"utf8"),readFile(commercialRouteUrl,"utf8")]);
+  assert.match(app,/commercialRepository\.getSnapshot/);
+  assert.match(app,/unitPriceHistories\[unit\.id\]/);
+  assert.match(app,/contracts\.filter\(contract=>contract\.unit===unit\.id\)/);
+  assert.match(app,/latest\.number/);
+  assert.match(repository,/interface CommercialRepository/);
+  assert.match(route,/DEVELOCRM_API_URL/);
+  assert.match(route,/preview-seed/);
+  assert.match(route,/\/v1\/commercial/);
 });

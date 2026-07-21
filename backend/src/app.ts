@@ -7,6 +7,8 @@ import { InventoryRepository } from "./inventory/repository.js";
 import { CommercialStatusService } from "./inventory/commercial-status-service.js";
 import { SalesRepository } from "./sales/repository.js";
 import { HoldService } from "./sales/hold-service.js";
+import { CommercialRepository } from "./commercial/repository.js";
+import { CommercialService } from "./commercial/service.js";
 
 export function buildApp(dependencies: { database: Database; verifier: EntraTokenVerifier }): FastifyInstance {
   const app = Fastify({ logger: true });
@@ -15,8 +17,10 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
   const commercialStatus = new CommercialStatusService(dependencies.database);
   const sales = new SalesRepository(dependencies.database);
   const holds = new HoldService(dependencies.database);
+  const commercial = new CommercialRepository(dependencies.database);
+  const commercialCommands = new CommercialService(dependencies.database);
 
-  app.get("/health", async () => ({ status: "ok", block: "C" }));
+  app.get("/health", async () => ({ status: "ok", block: "D" }));
 
   app.get("/v1/session/workspaces", async (request, reply) => {
     try {
@@ -84,6 +88,33 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
       if (!session) return reply.code(403).send({ error:"Workspace není uživateli přístupný" });
       return sales.getDirectory({ tenantId,userId:user.id,membershipId:session.workspace.membershipId });
     } catch { return reply.code(401).send({ error:"Neplatné přihlášení" }); }
+  });
+
+  app.get("/v1/commercial", async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return commercial.getSnapshot(context);}
+    catch{return reply.code(401).send({error:"Neplatné přihlášení"});}
+  });
+
+  app.post<{Params:{unitId:string};Body:{priceType:string;amount:number;currency?:string;validFrom:string;reason:string;approverMembershipId?:string}}>("/v1/units/:unitId/prices",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await commercialCommands.recordPrice({...context,unitId:request.params.unitId,...request.body,currency:request.body.currency??"CZK"}));}
+    catch(error){return reply.code(409).send({error:error instanceof Error?error.message:"Cenu nelze zaznamenat"});}
+  });
+
+  app.post<{Body:{salesCaseId:string;type:string;reference:string;title:string;parentContractId?:string}}>("/v1/contracts",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await commercialCommands.createContract({...context,...request.body}));}
+    catch(error){return reply.code(409).send({error:error instanceof Error?error.message:"Smlouvu nelze vytvořit"});}
+  });
+  app.post<{Params:{contractId:string};Body:{name:string;source?:string;basedOnVersionId?:string;generationPayload?:unknown}}>("/v1/contracts/:contractId/versions",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await commercialCommands.createVersion({...context,contractId:request.params.contractId,...request.body,source:request.body.source??"manual"}));}
+    catch(error){return reply.code(409).send({error:error instanceof Error?error.message:"Verzi nelze vytvořit"});}
+  });
+  app.post<{Params:{contractId:string};Body:{to:string;reason:string}}>("/v1/contracts/:contractId/status",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return await commercialCommands.transition({...context,contractId:request.params.contractId,...request.body});}
+    catch(error){return reply.code(409).send({error:error instanceof Error?error.message:"Stav smlouvy nelze změnit"});}
+  });
+  app.post<{Params:{contractPartyId:string};Body:{versionId:string;reason:string}}>("/v1/contract-parties/:contractPartyId/sign",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return await commercialCommands.sign({...context,contractPartyId:request.params.contractPartyId,...request.body});}
+    catch(error){return reply.code(409).send({error:error instanceof Error?error.message:"Podpis nelze zaznamenat"});}
   });
 
   app.post<{ Body:{ partyIds?:string[];format?:"json"|"bcc"|"csv"} }>("/v1/clients/export", async (request,reply) => {
@@ -182,3 +213,9 @@ function headerValue(value: string | string[] | undefined): string | undefined {
 }
 
 function csvCell(value:string):string { return `"${value.replaceAll('"','""')}"`; }
+
+async function sessionContext(request:FastifyRequest,verifier:EntraTokenVerifier,repository:IamRepository){
+  const identity=await authenticate(request,verifier);const tenantId=headerValue(request.headers["x-tenant-id"]);if(!tenantId)return null;
+  const user=await repository.resolveUser(identity);const session=await repository.getSession(user,identity,tenantId);if(!session)return null;
+  return {tenantId,userId:user.id,membershipId:session.workspace.membershipId};
+}

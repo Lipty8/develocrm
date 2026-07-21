@@ -23,7 +23,13 @@ se spouštějí v číselném pořadí; seed je určen pouze pro testovací pros
 Blok C navazuje migrací `backend/migrations/0003_block_c_sales.sql` a seedem
 `backend/seeds/0002_preview_block_c.sql`. Přidává canonical parties, historii
 zájmu, sales cases, více kupujících a transakční předrezervace/rezervace.
-Podrobnosti jsou v `docs/architecture/block-c.md`. Blok D zatím implementovaný není.
+Podrobnosti jsou v `docs/architecture/block-c.md`.
+
+Blok D navazuje migrací `backend/migrations/0004_block_d_pricing_contracts.sql`
+a opakovatelným seedem `backend/seeds/0003_preview_block_d.sql`. Přidává
+append-only ceny jednotek, odvozenou aktuální cenu, smlouvy, účastníky, logické
+verze a atomické provázání podpisu se sales stage a obchodním stavem jednotky.
+Podrobnosti jsou v `docs/architecture/block-d.md`.
 
 A clean full-stack starter running on
 [vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and

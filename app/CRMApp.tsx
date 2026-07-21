@@ -57,12 +57,14 @@ import {
   tasks as initialTasks,
   unitTimeline,
   unitCommercialContexts,
+  unitPriceHistories,
   units,
   type UnitRecord,
 } from "./crm-data";
 import { identityRepository, prototypeSession, type IdentitySession } from "./repositories/identity-repository";
 import { catalogRepository } from "./repositories/catalog-repository";
 import { clientRepository } from "./repositories/client-repository";
+import { commercialRepository } from "./repositories/commercial-repository";
 
 type Page = "dashboard" | "projects" | "clients" | "contracts" | "payments" | "handovers" | "tasks";
 type UnitTab = "overview" | "contracts" | "payments" | "changes" | "documents" | "handover" | "tasks" | "history";
@@ -175,6 +177,7 @@ export default function CRMApp() {
   const [identitySession, setIdentitySession] = useState<IdentitySession>(prototypeSession);
   const [catalogVersion, setCatalogVersion] = useState(0);
   const [clientDataVersion, setClientDataVersion] = useState(0);
+  const [, setCommercialDataVersion] = useState(0);
   const [page, setPage] = useState<Page>("dashboard");
   const [mobileNav, setMobileNav] = useState(false);
   const [unitDetail, setUnitDetail] = useState<UnitRecord | null>(null);
@@ -218,6 +221,18 @@ export default function CRMApp() {
       setClientDataVersion((version)=>version+1);
     }).catch(()=>undefined);
     return ()=>controller.abort();
+  },[catalogVersion]);
+
+  useEffect(()=>{
+    const controller=new AbortController();
+    commercialRepository.getSnapshot(controller.signal).then(snapshot=>{
+      contracts.splice(0,contracts.length,...snapshot.contracts);
+      for(const key of Object.keys(unitPriceHistories))delete unitPriceHistories[key];
+      Object.assign(unitPriceHistories,snapshot.priceHistories);
+      for(const unit of units)if(snapshot.currentPrices[unit.id]!=null)unit.price=snapshot.currentPrices[unit.id];
+      setCommercialDataVersion(version=>version+1);
+    }).catch(()=>undefined);
+    return()=>controller.abort();
   },[catalogVersion]);
 
   useEffect(() => {
@@ -885,13 +900,13 @@ function ContractsPage({ openUnit, notify }: { openUnit: (unit: UnitRecord) => v
   return (
     <div className="module-stack">
       <div className="metric-row">
-        <div className="metric-card"><span className="metric-icon blue"><FileText size={20} /></span><span><small>V přípravě</small><strong>8</strong><em>3 čekají na data</em></span></div>
-        <div className="metric-card"><span className="metric-icon sand"><Mail size={20} /></span><span><small>Odeslané</small><strong>12</strong><em>4 déle než 3 dny</em></span></div>
-        <div className="metric-card"><span className="metric-icon purple"><MessageSquare size={20} /></span><span><small>Ve vyjednávání</small><strong>6</strong><em>2 změny dnes</em></span></div>
-        <div className="metric-card"><span className="metric-icon green"><FileCheck2 size={20} /></span><span><small>Podepsané tento měsíc</small><strong>14</strong><em>+3 oproti červnu</em></span></div>
+        <div className="metric-card"><span className="metric-icon blue"><FileText size={20} /></span><span><small>V přípravě</small><strong>{contracts.filter(item=>item.state==="V přípravě").length}</strong><em>pracovní smlouvy</em></span></div>
+        <div className="metric-card"><span className="metric-icon sand"><Mail size={20} /></span><span><small>Odeslané</small><strong>{contracts.filter(item=>item.state==="Odeslána").length}</strong><em>čekají na reakci</em></span></div>
+        <div className="metric-card"><span className="metric-icon purple"><MessageSquare size={20} /></span><span><small>Ve vyjednávání</small><strong>{contracts.filter(item=>item.state==="Ve vyjednávání").length}</strong><em>aktivní připomínky</em></span></div>
+        <div className="metric-card"><span className="metric-icon green"><FileCheck2 size={20} /></span><span><small>Podepsané</small><strong>{contracts.filter(item=>item.state==="Podepsána").length}</strong><em>v evidenci CRM</em></span></div>
       </div>
       <section className="card module-card">
-        <div className="module-toolbar"><div className="inline-search"><Search size={17} /><input placeholder="Hledat smlouvu, klienta…" /></div><button className="filter-button"><Filter size={16} /> Stav</button><button className="filter-button"><Building2 size={16} /> Projekt</button><span className="result-count">40 smluv</span></div>
+        <div className="module-toolbar"><div className="inline-search"><Search size={17} /><input placeholder="Hledat smlouvu, klienta…" /></div><button className="filter-button"><Filter size={16} /> Stav</button><button className="filter-button"><Building2 size={16} /> Projekt</button><span className="result-count">{contracts.length} smluv</span></div>
         <div className="contract-list">
           {contracts.map((contract) => {
             const activeIndex = Math.max(0, stages.indexOf(contract.state));
@@ -905,7 +920,7 @@ function ContractsPage({ openUnit, notify }: { openUnit: (unit: UnitRecord) => v
             );
           })}
         </div>
-        <div className="table-footer"><span>Zobrazeno 5 z 40 smluv</span><button className="text-button" onClick={() => notify("Další smlouvy byly načteny")}>Načíst další <ChevronDown size={15} /></button></div>
+        <div className="table-footer"><span>Zobrazeno {contracts.length} z {contracts.length} smluv</span><button className="text-button" onClick={() => notify("Všechny smlouvy jsou načteny")}>Aktualizovat <ChevronDown size={15} /></button></div>
       </section>
     </div>
   );
@@ -1036,7 +1051,7 @@ function UnitDetail({ unit, tab, onTab, onBack, notify, openTask, openClient }: 
       <nav className="unit-tabs unit-detail-tabs" aria-label="Navigace jednotky">{tabs.map((item) => { const TabIcon = item.icon; return <button key={item.id} className={`${tab === item.id ? "active" : ""} ${item.id === "changes" ? "client-changes-tab" : ""}`.trim()} aria-current={tab === item.id ? "page" : undefined} onClick={() => onTab(item.id)}><TabIcon className="unit-tab-icon" size={17} />{item.label}{item.id === "changes" && <em className="unit-tab-new">NOVÉ</em>}{item.count && <span aria-label={`${item.count} položek`}>{item.count}</span>}</button>; })}</nav>
 
       {tab === "overview" && <UnitOverview unit={unit} notify={notify} openClient={openClient} />}
-      {tab === "contracts" && <UnitContracts notify={notify} />}
+      {tab === "contracts" && <UnitContracts unit={unit} notify={notify} />}
       {tab === "payments" && <UnitPayments />}
       {tab === "changes" && <UnitClientChanges unit={unit} notify={notify} />}
       {tab === "documents" && <UnitDocuments notify={notify} />}
@@ -1093,18 +1108,14 @@ function UnitOverview({ unit, notify, openClient }: { unit: UnitRecord; notify: 
       </aside>
     </div>
     {floorplanOpen && <div className="modal-layer"><button className="modal-scrim" onClick={() => setFloorplanOpen(false)} aria-label="Zavřít půdorys" /><div className="modal floorplan-modal"><div className="modal-head"><div><h2>Půdorys jednotky {unit.id}</h2><p>{unit.layout} · {unit.area.toLocaleString("cs-CZ")} m² · {unit.floor}</p></div><button className="icon-button" onClick={() => setFloorplanOpen(false)}><X size={19} /></button></div><div className="modal-floorplan"><div className="large-floorplan"><div className="room living"><span>OBÝVACÍ POKOJ + KK<small>32,1 m²</small></span></div><div className="room bed"><span>LOŽNICE<small>14,8 m²</small></span></div><div className="room bath"><span>KOUPELNA<small>5,4 m²</small></span></div><div className="room hall"><span>CHODBA<small>8,3 m²</small></span></div><div className="room bed2"><span>POKOJ<small>12,4 m²</small></span></div><div className="room wc"><span>WC</span></div><div className="balcony">LODŽIE · 8,2 m²</div></div></div></div></div>}
-    {priceHistoryOpen && <div className="modal-layer"><button className="modal-scrim" onClick={() => setPriceHistoryOpen(false)} aria-label="Zavřít historii cen" /><div className="modal price-history-modal"><div className="modal-head"><div><h2>Historie ceny · {unit.id}</h2><p>Každá změna je samostatný auditovatelný záznam.</p></div><button className="icon-button" onClick={() => setPriceHistoryOpen(false)}><X size={19} /></button></div><table className="data-table"><thead><tr><th>Platnost od</th><th>Cena</th><th>Změna</th><th>Důvod</th><th>Změnil</th></tr></thead><tbody><tr><td>1. 7. 2026</td><td><strong>{formatMoney(unit.price)}</strong></td><td><Badge tone="warning">+200 000 Kč</Badge></td><td>Aktualizace ceníku Q3</td><td>Pavel Sedlák</td></tr><tr><td>1. 4. 2026</td><td><strong>8 790 000 Kč</strong></td><td><Badge tone="neutral">+150 000 Kč</Badge></td><td>Klientská změna standardu</td><td>Iva Novotná</td></tr><tr><td>15. 1. 2026</td><td><strong>8 640 000 Kč</strong></td><td><Badge tone="neutral">Výchozí</Badge></td><td>První ceník</td><td>Pavel Sedlák</td></tr></tbody></table></div></div>}
+    {priceHistoryOpen && <div className="modal-layer"><button className="modal-scrim" onClick={() => setPriceHistoryOpen(false)} aria-label="Zavřít historii cen" /><div className="modal price-history-modal"><div className="modal-head"><div><h2>Historie ceny · {unit.id}</h2><p>Každá změna je samostatný auditovatelný záznam.</p></div><button className="icon-button" onClick={() => setPriceHistoryOpen(false)}><X size={19} /></button></div><table className="data-table"><thead><tr><th>Platnost od</th><th>Typ ceny</th><th>Cena / sleva</th><th>Důvod</th><th>Autor / schválil</th></tr></thead><tbody>{(unitPriceHistories[unit.id]??[]).map(row=><tr key={row.id}><td>{new Date(row.validFrom).toLocaleDateString("cs-CZ")}</td><td><Badge tone="neutral">{({list_price:"Ceníková",individual_discount:"Individuální sleva",sale_price:"Prodejní",contract_price:"Smluvní"} as Record<string,string>)[row.type]??row.type}</Badge></td><td><strong>{formatMoney(row.amount)}</strong></td><td>{row.reason}</td><td>{row.author}{row.approver?` · ${row.approver}`:""}</td></tr>)}</tbody></table></div></div>}
     </>
   );
 }
 
-function UnitContracts({ notify }: { notify: (message: string) => void }) {
-  const rows = [
-    { type: "SBK", name: "Smlouva o budoucí kupní smlouvě", state: "Ve vyjednávání", version: "v04", date: "dnes 9:42", action: "Zapracovat připomínky" },
-    { type: "RS", name: "Rezervační smlouva", state: "Podepsána", version: "v03", date: "18. 3. 2026", action: "Otevřít" },
-    { type: "Dodatek", name: "Dodatek č. 1 k RS", state: "Podepsána", version: "v02", date: "2. 4. 2026", action: "Otevřít" },
-  ];
-  return <section className="card detail-tab-card"><div className="tab-card-header"><div><h2>Smlouvy jednotky A203</h2><p>Všechny smlouvy a jejich souborové verze na jednom místě.</p></div><button className="primary-button" onClick={() => notify("Vyberte typ nové smlouvy")}><Plus size={17} /> Nová smlouva</button></div><div className="document-list">{rows.map((row) => <article key={row.name}><span className="document-icon"><FileText size={21} /></span><span><strong>{row.name}</strong><small>{row.type} · verze {row.version} · {row.date}</small></span><Badge>{row.state}</Badge><button className="secondary-button compact" onClick={() => notify(`${row.name}: ${row.action}`)}>{row.action} <ChevronRight size={15} /></button></article>)}</div><div className="sharepoint-banner"><FolderOpen size={21} /><span><strong>Soubory jsou bezpečně uloženy na SharePointu</strong><small>CRM eviduje vazby, verze a obchodní stav dokumentů.</small></span><button className="text-button" onClick={() => notify("Otevírám složku jednotky na SharePointu")}>Otevřít složku <ExternalLink size={14} /></button></div></section>;
+function UnitContracts({ unit,notify }: { unit:UnitRecord;notify: (message: string) => void }) {
+  const rows=contracts.filter(contract=>contract.unit===unit.id);
+  return <section className="card detail-tab-card"><div className="tab-card-header"><div><h2>Smlouvy jednotky {unit.id}</h2><p>Workflow a logické verze smluv používají jeden zdroj dat.</p></div><button className="primary-button" onClick={() => notify("Vyberte typ nové smlouvy")}><Plus size={17} /> Nová smlouva</button></div><div className="document-list">{rows.map(row=>{const latest=row.versions?.[0];return <article key={row.id??`${row.unit}-${row.type}`}><span className="document-icon"><FileText size={21} /></span><span><strong>{row.title??row.type}</strong><small>{row.reference?`${row.reference} · `:""}{latest?`verze v${String(latest.number).padStart(2,"0")} · ${latest.name}`:"Bez verze"}</small></span><Badge>{row.state}</Badge><button className="secondary-button compact" onClick={()=>notify(`${row.title??row.type}: ${row.action}`)}>{row.action} <ChevronRight size={15}/></button></article>})}{!rows.length&&<div className="empty-filter-state"><FileText size={22}/><strong>Jednotka zatím nemá smlouvu</strong><small>Nová smlouva bude navázána na existující obchodní proces.</small></div>}</div><div className="sharepoint-banner"><FolderOpen size={21}/><span><strong>Repository je připravené pro budoucí dokumenty</strong><small>DOCX ani SharePoint synchronizace v této etapě nejsou aktivní.</small></span></div></section>;
 }
 
 function UnitPayments() {

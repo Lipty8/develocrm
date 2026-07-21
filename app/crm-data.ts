@@ -29,6 +29,8 @@ export type UnitCommercialContext = {
   stage: string | null;
   hold: { id: string; type: string; expiresAt: string } | null;
 };
+export type PriceHistoryRecord={id:string;unit:string;type:string;amount:number;currency:string;validFrom:string;validTo:string|null;reason:string;author:string;approver:string|null};
+export type ContractRecord={id?:string;unit:string;client:string;project:string;type:string;state:string;updated:string;owner:string;action:string;title?:string;reference?:string;parties?:Array<{id:string;name:string;role:string;signatureStatus:string}>;versions?:Array<{id:string;number:number;name:string;status:string;basedOnVersionId:string|null;source:string;createdAt:string;signedAt:string|null}>};
 
 export const units: UnitRecord[] = [
   { id: "A203", project: "Rezidence Javorová", building: "Dům A", layout: "3+kk", area: 82.4, floor: "2. NP", orientation: "J / Z", price: 8990000, status: "SBK", construction: "Dokončovací práce", handover: "Připravenost 72 %", client: "Jana a Petr Novákovi", attention: "Doplnit číslo účtu klienta", accessory: "Sklep S18 · Parking P32 · Wallbox" },
@@ -57,13 +59,21 @@ export const tasks = [
   { id: 5, title: "Přiřadit dokument ze SharePointu", object: "D404 · dodatek č. 2", project: "Parková čtvrť", due: "24. 7.", priority: "Nízká", owner: "Iva", done: false },
 ];
 
-export const contracts = [
+export const contracts:ContractRecord[] = [
   { unit: "A203", client: "Jana a Petr Novákovi", project: "Rezidence Javorová", type: "SBK", state: "Ve vyjednávání", updated: "dnes 9:42", owner: "Iva", action: "Zapracovat připomínky" },
   { unit: "A305", client: "David Kříž", project: "Rezidence Javorová", type: "RS", state: "Odeslána", updated: "včera 15:18", owner: "Iva", action: "Urgovat podpis" },
   { unit: "B308", client: "Alto Services s.r.o.", project: "Rezidence Javorová", type: "KS", state: "V přípravě", updated: "včera 11:05", owner: "Iva", action: "Doplnit přílohy" },
   { unit: "D404", client: "Tomáš Janda", project: "Parková čtvrť", type: "Dodatek č. 2", state: "Ke kontrole", updated: "18. 7. 14:30", owner: "Pavel", action: "Právní kontrola" },
   { unit: "C102", client: "Marek Veselý", project: "Parková čtvrť", type: "KS", state: "Podepsána", updated: "14. 7. 10:22", owner: "Iva", action: "Bez akce" },
 ];
+
+export const unitPriceHistories:Record<string,PriceHistoryRecord[]>={
+  A203:[
+    {id:"preview-price-3",unit:"A203",type:"sale_price",amount:8990000,currency:"CZK",validFrom:"2026-07-01",validTo:null,reason:"Aktualizace ceníku Q3",author:"Pavel Sedlák",approver:null},
+    {id:"preview-price-2",unit:"A203",type:"sale_price",amount:8790000,currency:"CZK",validFrom:"2026-04-01",validTo:"2026-07-01",reason:"Aktualizace prodejní ceny Q2",author:"Pavel Sedlák",approver:null},
+    {id:"preview-price-1",unit:"A203",type:"list_price",amount:8640000,currency:"CZK",validFrom:"2026-01-15",validTo:null,reason:"První ceník",author:"Pavel Sedlák",approver:null},
+  ],
+};
 
 export const payments = [
   { unit: "D404", client: "Tomáš Janda", project: "Parková čtvrť", installment: "2. splátka · 20 %", amount: 2798000, due: "16. 7. 2026", paid: 1800000, state: "Po splatnosti" },
