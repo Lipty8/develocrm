@@ -22,6 +22,9 @@ test("implements the project-to-unit navigation hierarchy", async () => {
   assert.match(app, /aria-label="Navigace projektu"/);
   assert.match(app, /project-tab-icon/);
   assert.match(app, /aria-current=/);
+  assert.match(app, /PRODEJNÍ VÝKON/);
+  assert.match(app, /Rozložení projektu/);
+  assert.match(app, /project-sale-ring/);
 });
 
 test("keeps unit filters combinable and project clients in one table", async () => {

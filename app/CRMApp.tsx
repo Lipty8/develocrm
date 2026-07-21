@@ -580,6 +580,14 @@ function ProjectDetail({ project, tab, onTab, onBack, notify, openClient, ...uni
   const projectPayments = payments.filter((payment) => payment.project === project.name);
   const projectHandovers = units.filter((unit) => unit.project === project.name && unit.handover !== "Neplánováno");
   const salePercent = Math.round((project.sold + project.handedOver) / project.units * 100);
+  const soldAndHandedOver = project.sold + project.handedOver;
+  const unitDistribution = [
+    { label: "Volné", value: project.available, className: "available" },
+    { label: "Předrezervované", value: project.preReserved, className: "pre-reserved" },
+    { label: "Rezervované", value: project.reserved, className: "reserved" },
+    { label: "Prodané", value: project.sold, className: "sold" },
+    { label: "Předané", value: project.handedOver, className: "handed-over" },
+  ];
   const tabs: { id: ProjectTab; label: string; icon: typeof Home; count?: number }[] = [
     { id: "overview", label: "Přehled", icon: LayoutDashboard },
     { id: "units", label: "Jednotky", icon: Home, count: project.units },
@@ -599,15 +607,21 @@ function ProjectDetail({ project, tab, onTab, onBack, notify, openClient, ...uni
         <div className="project-detail-actions"><button className="secondary-button" onClick={() => notify("Ceník se připravuje ke stažení")}><Download size={16} /> Export ceníku</button><button className="primary-button" onClick={() => onTab("units")}><Home size={16} /> Otevřít jednotky</button></div>
       </div>
       <section className="card project-context-card" aria-label="Souhrn projektu">
-        <div className="project-context-meta"><span><small>AKTUÁLNÍ FÁZE</small><strong>{project.stage}</strong></span><span><small>VEDOUCÍ PROJEKTU</small><strong>{project.manager}</strong></span><span><small>PLÁNOVANÉ PŘEDÁNÍ</small><strong>{project.plannedHandover}</strong></span></div>
-        <div className="project-context-stats">
-          <span><small>Celkem</small><strong>{project.units}</strong></span>
-          <span className="available"><small>Volné</small><strong>{project.available}</strong></span>
-          <span className="pre-reserved"><small>Předrezervované</small><strong>{project.preReserved}</strong></span>
-          <span className="reserved"><small>Rezervované</small><strong>{project.reserved}</strong></span>
-          <span className="sold"><small>Prodané</small><strong>{project.sold}</strong></span>
-          <span className="handed-over"><small>Předané</small><strong>{project.handedOver}</strong></span>
-          <span className="sale-rate"><small>Prodejnost</small><strong>{salePercent} %</strong><i><b style={{ width: `${salePercent}%` }} /></i></span>
+        <div className="project-context-summary">
+          <div><span className="project-summary-icon phase"><HardHat size={19} /></span><span><small>AKTUÁLNÍ FÁZE</small><strong>{project.stage}</strong></span></div>
+          <div><span className="project-summary-icon manager"><UserRound size={19} /></span><span><small>VEDOUCÍ PROJEKTU</small><strong>{project.manager}</strong></span></div>
+          <div><span className="project-summary-icon handover"><CalendarDays size={19} /></span><span><small>PLÁNOVANÉ PŘEDÁNÍ</small><strong>{project.plannedHandover}</strong></span></div>
+        </div>
+        <div className="project-context-visual">
+          <div className="project-sale-rate-card">
+            <div className="project-sale-ring" style={{ background: `conic-gradient(var(--green) 0 ${salePercent}%, #e5ece8 ${salePercent}% 100%)` }}><span><strong>{salePercent} %</strong><small>prodejnost</small></span></div>
+            <div><small>PRODEJNÍ VÝKON</small><strong>{soldAndHandedOver} z {project.units} jednotek</strong><p>je prodaných nebo již předaných</p></div>
+          </div>
+          <div className="project-unit-distribution">
+            <div className="project-distribution-head"><div><small>STAV JEDNOTEK</small><strong>Rozložení projektu</strong></div><span>{project.units} jednotek celkem</span></div>
+            <div className="project-distribution-bar" role="img" aria-label={`Rozložení ${project.units} jednotek`}>{unitDistribution.map((item) => <i key={item.label} className={item.className} style={{ width: `${item.value / project.units * 100}%` }} title={`${item.label}: ${item.value}`} />)}</div>
+            <div className="project-distribution-legend">{unitDistribution.map((item) => <span key={item.label}><i className={item.className} /><span><small>{item.label}</small><strong>{item.value}</strong></span></span>)}</div>
+          </div>
         </div>
       </section>
       <nav className="unit-tabs project-tabs" aria-label="Navigace projektu">{tabs.map((item) => { const TabIcon = item.icon; return <button key={item.id} className={tab === item.id ? "active" : ""} aria-current={tab === item.id ? "page" : undefined} onClick={() => onTab(item.id)}><TabIcon className="project-tab-icon" size={17} />{item.label}{item.count !== undefined && <span aria-label={`${item.count} položek`}>{item.count}</span>}</button>; })}</nav>
