@@ -29,7 +29,7 @@ test("implements the project-to-unit navigation hierarchy", async () => {
   assert.doesNotMatch(app, /project-sales-card/);
   assert.match(app, /aria-label="Pohledy úkolů"/);
   assert.match(app, /client-view-title/);
-  assert.match(app, /Filtry databáze/);
+  assert.doesNotMatch(app, /Filtry databáze/);
 });
 
 test("keeps unit filters combinable and project clients in one table", async () => {
@@ -38,10 +38,16 @@ test("keeps unit filters combinable and project clients in one table", async () 
     readFile(dataUrl, "utf8"),
   ]);
 
-  for (const label of ["Budova / etapa", "Podlaží", "Obchodní stav", "Dispozice", "Plocha m²", "Cena mil. Kč"]) {
+  for (const label of ["Budova / etapa", "Podlaží", "Obchodní stav", "Dispozice", "Plocha m²", "Aktuální cena"]) {
     assert.match(app, new RegExp(label.replace("²", "\\u00b2")));
   }
-  assert.match(app, /data-table client-table/);
+  assert.match(app, /function TableColumnFilter/);
+  assert.match(app, /data-table unit-table filter-table/);
+  assert.match(app, /data-table client-table filter-table/);
+  assert.match(app, /data-table payment-table filter-table/);
+  assert.match(app, /column-filter-heading/);
+  assert.match(app, /Filtrovat jméno nebo název/);
+  assert.match(app, /Filtrovat platbu podle jednotky nebo klienta/);
   assert.match(app, /Vybrat všech .* výsledků aktuálního filtru/);
   assert.match(app, /Kopírovat e-maily pro BCC/);
   assert.match(app, /Excel \/ CSV/);
