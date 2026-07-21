@@ -40,6 +40,11 @@ test("keeps unit filters combinable and project clients in one table", async () 
 test("unit detail exposes persistent commercial context", async () => {
   const app = await readFile(appUrl, "utf8");
 
+  assert.match(app, /Přehled.*Smlouvy.*Platby.*Klientské změny.*Dokumenty.*Předání.*Úkoly.*Historie/s);
+  assert.match(app, /function UnitClientChanges/);
+  assert.match(app, /Individuální změna/);
+  assert.match(app, /Ceník standardních změn/);
+  assert.match(app, /Související dokumenty/);
   assert.match(app, /Historie zájmu/);
   assert.match(app, /Každá změna je samostatný auditovatelný záznam/);
   assert.match(app, /Prodejní proces/);

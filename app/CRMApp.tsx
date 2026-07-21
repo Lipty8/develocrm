@@ -61,7 +61,7 @@ import {
 } from "./crm-data";
 
 type Page = "dashboard" | "projects" | "clients" | "contracts" | "payments" | "handovers" | "tasks";
-type UnitTab = "overview" | "contracts" | "payments" | "documents" | "handover" | "tasks" | "history";
+type UnitTab = "overview" | "contracts" | "payments" | "changes" | "documents" | "handover" | "tasks" | "history";
 type ProjectTab = "overview" | "units" | "clients" | "contracts" | "payments" | "changes" | "handovers" | "documents";
 type ProjectRecord = (typeof projects)[number];
 
@@ -902,7 +902,7 @@ function UnitPreview({ unit, close, open, previous, next, position, total }: { u
 
 function UnitDetail({ unit, tab, onTab, onBack, notify, openTask, openClient }: { unit: UnitRecord; tab: UnitTab; onTab: (tab: UnitTab) => void; onBack: () => void; notify: (message: string) => void; openTask: () => void; openClient: (name: string) => void }) {
   const tabs: { id: UnitTab; label: string; count?: number }[] = [
-    { id: "overview", label: "Přehled" }, { id: "contracts", label: "Smlouvy", count: 4 }, { id: "payments", label: "Platby", count: 3 }, { id: "documents", label: "Dokumenty", count: 12 }, { id: "handover", label: "Předání" }, { id: "tasks", label: "Úkoly", count: 2 }, { id: "history", label: "Historie" },
+    { id: "overview", label: "Přehled" }, { id: "contracts", label: "Smlouvy", count: 4 }, { id: "payments", label: "Platby", count: 3 }, { id: "changes", label: "Klientské změny", count: 3 }, { id: "documents", label: "Dokumenty", count: 12 }, { id: "handover", label: "Předání" }, { id: "tasks", label: "Úkoly", count: 2 }, { id: "history", label: "Historie" },
   ];
   return (
     <div className="unit-detail">
@@ -922,6 +922,7 @@ function UnitDetail({ unit, tab, onTab, onBack, notify, openTask, openClient }: 
       {tab === "overview" && <UnitOverview unit={unit} notify={notify} openClient={openClient} />}
       {tab === "contracts" && <UnitContracts notify={notify} />}
       {tab === "payments" && <UnitPayments />}
+      {tab === "changes" && <UnitClientChanges unit={unit} notify={notify} />}
       {tab === "documents" && <UnitDocuments notify={notify} />}
       {tab === "handover" && <UnitHandover notify={notify} />}
       {tab === "tasks" && <UnitTasks openTask={openTask} />}
@@ -993,6 +994,37 @@ function UnitPayments() {
     { name: "3. splátka · 30 %", due: "31. 7. 2026", amount: 2697000, paid: 0, state: "Čeká na úhradu" },
   ];
   return <div className="detail-tab-stack"><div className="metric-row"><div className="metric-card wide"><span className="metric-icon green"><Banknote size={20} /></span><span><small>Uhrazeno</small><strong>2 497 500 Kč</strong><em>28 % kupní ceny</em></span></div><div className="metric-card wide"><span className="metric-icon sand"><Clock3 size={20} /></span><span><small>Nejbližší splátka</small><strong>2 697 000 Kč</strong><em>splatnost 31. 7. 2026</em></span></div><div className="metric-card wide"><span className="metric-icon blue"><CircleDollarSign size={20} /></span><span><small>Zbývá uhradit</small><strong>6 492 500 Kč</strong><em>72 % kupní ceny</em></span></div></div><section className="card detail-tab-card"><div className="tab-card-header"><div><h2>Splátkový kalendář</h2><p>Plánované a skutečné platby včetně částečných úhrad.</p></div><button className="secondary-button"><Plus size={16} /> Upravit kalendář</button></div><div className="unit-table-wrap"><table className="data-table"><thead><tr><th>Splátka</th><th>Splatnost</th><th>Předpis</th><th>Uhrazeno</th><th>Stav</th></tr></thead><tbody>{rows.map((row) => <tr key={row.name}><td><strong>{row.name}</strong></td><td>{row.due}</td><td><strong>{formatMoney(row.amount)}</strong></td><td>{formatMoney(row.paid)}</td><td><Badge>{row.state}</Badge></td></tr>)}</tbody></table></div></section></div>;
+}
+
+function UnitClientChanges({ unit, notify }: { unit: UnitRecord; notify: (message: string) => void }) {
+  const changes = [
+    { name: "Změna podlahy v obytných místnostech", category: "Povrchy", source: "Individuální změna", state: "Ke schválení", tone: "warning", price: null, deadline: "24. 7. 2026", requested: "11. 7. 2026", documents: ["Specifikace_podlahy.pdf", "Nabídka_dodavatele.xlsx"] },
+    { name: "Doplnění elektro vývodů", category: "Elektro", source: "Ceník standardních změn", state: "Schváleno", tone: "success", price: 18500, deadline: "29. 7. 2026", requested: "4. 7. 2026", documents: ["Objednávka_KZ-0142.pdf", "Výkres_elektro_rev02.pdf"] },
+    { name: "Příprava pro venkovní žaluzie", category: "Stínění", source: "Ceník standardních změn", state: "V realizaci", tone: "blue", price: 42000, deadline: "15. 8. 2026", requested: "28. 6. 2026", documents: ["Potvrzení_KZ-0138.pdf"] },
+  ];
+  const totalSurcharge = changes.reduce((sum, change) => sum + (change.price || 0), 0);
+  const documentCount = changes.reduce((sum, change) => sum + change.documents.length, 0);
+
+  return (
+    <div className="detail-tab-stack">
+      <section className="card unit-change-context">
+        <div className="change-context-copy">
+          <span className="change-context-icon"><Link2 size={19} /></span>
+          <span><strong>Provázané údaje bez duplikace</strong><small>Změny používají existující vazby na jednotku, klienta, platební předpisy a dokumenty.</small></span>
+        </div>
+        <div className="change-context-grid">
+          <span><small>JEDNOTKA</small><strong>{unit.id}</strong><em>{unit.project}</em></span>
+          <span><small>KLIENT</small><strong>{unit.client || "Bez přiřazeného klienta"}</strong><em>z karty klienta</em></span>
+          <span><small>DOPLATKY CELKEM</small><strong>{formatMoney(totalSurcharge)}</strong><em>navázáno na platby</em></span>
+          <span><small>DOKUMENTY</small><strong>{documentCount} souborů</strong><em>v dokumentech jednotky</em></span>
+        </div>
+      </section>
+      <section className="card detail-tab-card">
+        <div className="tab-card-header"><div><h2>Klientské změny jednotky {unit.id}</h2><p>Individuální požadavky i položky z ceníku standardních klientských změn.</p></div><button className="primary-button" onClick={() => notify(`Nová klientská změna pro ${unit.id}`)}><Plus size={17} /> Nová změna</button></div>
+        <div className="unit-table-wrap"><table className="data-table unit-changes-table"><thead><tr><th>Změna</th><th>Kategorie</th><th>Stav</th><th>Cena / doplatek</th><th>Termín</th><th>Datum požadavku</th><th>Související dokumenty</th><th /></tr></thead><tbody>{changes.map((change) => <tr key={change.name} className="clickable-row" onClick={() => notify(`Otevírám detail změny: ${change.name}`)}><td><strong>{change.name}</strong><small className="change-source">{change.source}</small></td><td>{change.category}</td><td><Badge tone={change.tone}>{change.state}</Badge></td><td><strong>{change.price ? formatMoney(change.price) : "K nacenění"}</strong></td><td>{change.deadline}</td><td>{change.requested}</td><td><span className="change-documents">{change.documents.map((document) => <button key={document} onClick={(event) => { event.stopPropagation(); notify(`Otevírám ${document}`); }}><FileText size={14} /> {document}</button>)}</span></td><td><ChevronRight size={17} /></td></tr>)}</tbody></table></div>
+      </section>
+    </div>
+  );
 }
 
 function UnitDocuments({ notify }: { notify: (message: string) => void }) {
