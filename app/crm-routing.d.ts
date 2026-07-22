@@ -1,0 +1,9 @@
+export type CrmRouteState={page:string;kind:string;params:URLSearchParams;projectId?:string;projectTab?:string;unitId?:string;unitTab?:string;clientId?:string;contractId?:string;taskScope?:string};
+export function pageRoute(page:string):string;
+export function projectRoute(projectId:string,tab?:string,search?:string):string;
+export function unitRoute(unitId:string,tab?:string):string;
+export function clientRoute(clientId:string):string;
+export function contractRoute(contractId:string):string;
+export function parseCrmRoute(pathname:string,search?:string|URLSearchParams):CrmRouteState;
+export function updateSearch(pathname:string,currentSearch:string|URLSearchParams,patch:Record<string,string|string[]|null|undefined>):string;
+export function listParam(params:URLSearchParams,key:string):string[];

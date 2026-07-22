@@ -84,11 +84,11 @@ export const tasks: TaskRecord[] = [
 ];
 
 export const contracts:ContractRecord[] = [
-  { unit: "A203", client: "Jana a Petr Novákovi", project: "Rezidence Javorová", type: "SBK", state: "Ve vyjednávání", updated: "dnes 9:42", owner: "Iva", action: "Zapracovat připomínky" },
-  { unit: "A305", client: "David Kříž", project: "Rezidence Javorová", type: "RS", state: "Odeslána", updated: "včera 15:18", owner: "Iva", action: "Urgovat podpis" },
-  { unit: "B308", client: "Alto Services s.r.o.", project: "Rezidence Javorová", type: "KS", state: "V přípravě", updated: "včera 11:05", owner: "Iva", action: "Doplnit přílohy" },
-  { unit: "D404", client: "Tomáš Janda", project: "Parková čtvrť", type: "Dodatek č. 2", state: "Ke kontrole", updated: "18. 7. 14:30", owner: "Pavel", action: "Právní kontrola" },
-  { unit: "C102", client: "Marek Veselý", project: "Parková čtvrť", type: "KS", state: "Podepsána", updated: "14. 7. 10:22", owner: "Iva", action: "Bez akce" },
+  { id:"preview-contract-a203-sbk",unit: "A203", client: "Jana a Petr Novákovi", project: "Rezidence Javorová", type: "SBK", state: "Ve vyjednávání", updated: "dnes 9:42", owner: "Iva", action: "Zapracovat připomínky" },
+  { id:"preview-contract-a305-rs",unit: "A305", client: "David Kříž", project: "Rezidence Javorová", type: "RS", state: "Odeslána", updated: "včera 15:18", owner: "Iva", action: "Urgovat podpis" },
+  { id:"preview-contract-b308-ks",unit: "B308", client: "Alto Services s.r.o.", project: "Rezidence Javorová", type: "KS", state: "V přípravě", updated: "včera 11:05", owner: "Iva", action: "Doplnit přílohy" },
+  { id:"preview-contract-d404-a2",unit: "D404", client: "Tomáš Janda", project: "Parková čtvrť", type: "Dodatek č. 2", state: "Ke kontrole", updated: "18. 7. 14:30", owner: "Pavel", action: "Právní kontrola" },
+  { id:"preview-contract-c102-ks",unit: "C102", client: "Marek Veselý", project: "Parková čtvrť", type: "KS", state: "Podepsána", updated: "14. 7. 10:22", owner: "Iva", action: "Bez akce" },
   ...dejviceContracts,
 ];
 

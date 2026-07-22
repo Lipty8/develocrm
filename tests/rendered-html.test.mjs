@@ -57,7 +57,8 @@ test("keeps unit filters combinable and project clients in one table", async () 
   assert.match(app, /aria-expanded=/);
   assert.match(app, /vybráno/);
   assert.match(app, /buildingFilter\.includes\(unit\.building\)/);
-  assert.match(app, /projectFilter\.some\(\(project\) => client\.projectNames\.includes\(project\)\)/);
+  assert.match(app, /projectFilter\.some/);
+  assert.match(app, /projectMatchesName/);
   assert.match(app, /installmentFilter\.includes\(payment\.installment\)/);
   assert.match(app, /data-table unit-table filter-table/);
   assert.match(app, /data-table client-table filter-table/);
