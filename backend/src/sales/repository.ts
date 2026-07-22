@@ -19,6 +19,13 @@ type Context = { tenantId: string; userId: string; membershipId: string };
 export class SalesRepository {
   constructor(private readonly database: Database) {}
 
+  async updateParty(input:{tenantId:string;userId:string;partyId:string;displayName:string;membershipId:string}) {
+    return this.database.withContext({tenantId:input.tenantId,userId:input.userId}, async client => (await client.query<{id:string}>("SELECT app.update_party_details($1,$2,$3,$4) id",[input.tenantId,input.partyId,input.displayName,input.membershipId])).rows[0]);
+  }
+  async upsertContact(input:{tenantId:string;userId:string;partyId:string;contactType:string;value:string;label?:string|null;isPrimary?:boolean;membershipId:string}) {
+    return this.database.withContext({tenantId:input.tenantId,userId:input.userId}, async client => (await client.query<{id:string}>("SELECT app.upsert_party_contact($1,$2,$3,$4,$5,$6,$7) id",[input.tenantId,input.partyId,input.contactType,input.value,input.label??null,input.isPrimary??false,input.membershipId])).rows[0]);
+  }
+
   async getDirectory(input: Context): Promise<{ clients: ClientDirectoryItem[]; unitContexts: Record<string, UnitCommercialContext> }> {
     return this.database.withContext({ tenantId: input.tenantId, userId: input.userId }, async (client) => {
       const partyRows = await client.query<{

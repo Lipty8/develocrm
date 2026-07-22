@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
 
-const migrations = ["0001_block_a_identity.sql","0002_block_b_inventory.sql","0003_block_c_sales.sql","0004_block_d_pricing_contracts.sql","0005_pilot_import_compatibility.sql"];
+const migrations = ["0001_block_a_identity.sql","0002_block_b_inventory.sql","0003_block_c_sales.sql","0004_block_d_pricing_contracts.sql","0005_pilot_import_compatibility.sql","0006_crud_operations.sql"];
 const seeds = ["0001_preview_block_b.sql","0002_preview_block_c.sql","0003_preview_block_d.sql","0004_pilot_rezidence_dejvice.sql"];
 const tenant = "d0000000-0000-4000-8000-000000000001";
 

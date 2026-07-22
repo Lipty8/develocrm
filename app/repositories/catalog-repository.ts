@@ -6,6 +6,10 @@ export type CatalogSnapshot = { projects: ProjectRecord[]; units: UnitRecord[]; 
 
 export interface CatalogRepository {
   getCatalog(signal?: AbortSignal): Promise<CatalogSnapshot>;
+  updateProject(input: {id:string;name:string;location?:string|null;lifecycleStatus:string;managerMembershipId?:string|null;plannedHandoverFrom?:string|null;plannedHandoverTo?:string|null}): Promise<void>;
+  updateUnit(input: {id:string;layout?:string|null;floorLabel?:string|null;floorNumber?:number|null;areaM2:number;usableAreaM2?:number|null;orientation?:string|null;balconyM2?:number|null;terraceM2?:number|null;gardenM2?:number|null}): Promise<void>;
+  assignAccessory(unitId:string, accessoryId:string): Promise<void>;
+  removeAccessory(assignmentId:string): Promise<void>;
 }
 
 export class ApiCatalogRepository implements CatalogRepository {
@@ -14,6 +18,12 @@ export class ApiCatalogRepository implements CatalogRepository {
     if (!response.ok) throw new Error("Katalog projektů se nepodařilo načíst");
     return response.json() as Promise<CatalogSnapshot>;
   }
+  async updateProject(input: CatalogRepository["updateProject"] extends (input: infer I)=>Promise<void> ? I : never){await requestJson(`/api/catalog/projects/${input.id}`,"PATCH",input);}
+  async updateUnit(input: CatalogRepository["updateUnit"] extends (input: infer I)=>Promise<void> ? I : never){await requestJson(`/api/catalog/units/${input.id}`,"PATCH",input);}
+  async assignAccessory(unitId:string,accessoryId:string){await requestJson(`/api/catalog/units/${unitId}/accessories`,"POST",{accessoryId});}
+  async removeAccessory(assignmentId:string){await requestJson(`/api/catalog/accessory-assignments/${assignmentId}`,"DELETE");}
 }
+
+async function requestJson(url:string,method:string,body?:unknown){const response=await fetch(url,{method,headers:body?{"content-type":"application/json"}:undefined,body:body?JSON.stringify(body):undefined});if(!response.ok)throw new Error("Změnu se nepodařilo uložit");}
 
 export const catalogRepository: CatalogRepository = new ApiCatalogRepository();

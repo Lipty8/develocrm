@@ -32,6 +32,23 @@ export async function GET(request: Request) {
   return Response.json(adaptBackendCatalog(catalog));
 }
 
+export async function PATCH(request: Request, context: { params: Promise<{ projectId?: string; unitId?: string }> }) {
+  return forwardMutation(request, context, "PATCH");
+}
+export async function POST(request: Request, context: { params: Promise<{ unitId?: string }> }) {
+  return forwardMutation(request, context, "POST");
+}
+export async function DELETE(request: Request, context: { params: Promise<{ assignmentId?: string }> }) {
+  return forwardMutation(request, context, "DELETE");
+}
+async function forwardMutation(request: Request, context: {params: Promise<Record<string,string|undefined>>}, method: string) {
+  const backendUrl=process.env.DEVELOCRM_API_URL?.replace(/\/$/,""); const tenantId=process.env.DEVELOCRM_TENANT_ID; const authorization=request.headers.get("authorization");
+  if(!backendUrl||!tenantId||!authorization) return Response.json({error:"Editace vyžaduje připojený backend"},{status:503});
+  const params=await context.params; const target=params.projectId?`/v1/projects/${params.projectId}`:params.unitId?(method==="POST"?`/v1/units/${params.unitId}/accessories`:`/v1/units/${params.unitId}`):`/v1/accessory-assignments/${params.assignmentId}`;
+  const response=await fetch(`${backendUrl}${target}`,{method,headers:{authorization,"x-tenant-id":tenantId,"content-type":"application/json"},body:method==="DELETE"?undefined:await request.text()});
+  return new Response(await response.text(),{status:response.status,headers:{"content-type":"application/json"}});
+}
+
 function adaptBackendCatalog(catalog: BackendCatalog): CatalogSnapshot {
   const projectStructures = new Map<string, Set<string>>();
   for (const unit of catalog.units) {

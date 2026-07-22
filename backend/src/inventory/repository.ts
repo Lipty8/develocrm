@@ -112,4 +112,17 @@ export class InventoryRepository {
       return result.rows[0]?.allowed ?? false;
     });
   }
+
+  async updateProject(input: {tenantId:string;userId:string;membershipId:string;projectId:string;name:string;location?:string|null;lifecycleStatus:string;managerMembershipId?:string|null;plannedHandoverFrom?:string|null;plannedHandoverTo?:string|null}) {
+    return this.database.withContext({tenantId:input.tenantId,userId:input.userId}, async client => (await client.query<{id:string}>("SELECT app.update_project_details($1,$2,$3,$4,$5,$6,$7,$8,$9) id", [input.tenantId,input.projectId,input.name,input.location??null,input.lifecycleStatus,input.managerMembershipId??null,input.plannedHandoverFrom??null,input.plannedHandoverTo??null,input.membershipId])).rows[0]);
+  }
+  async updateUnit(input: {tenantId:string;userId:string;membershipId:string;unitId:string;layout?:string|null;floorLabel?:string|null;floorNumber?:number|null;areaM2:number;usableAreaM2?:number|null;orientation?:string|null;balconyM2?:number|null;terraceM2?:number|null;gardenM2?:number|null}) {
+    return this.database.withContext({tenantId:input.tenantId,userId:input.userId}, async client => (await client.query<{id:string}>("SELECT app.update_unit_details($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) id", [input.tenantId,input.unitId,input.layout??null,input.floorLabel??null,input.floorNumber??null,input.areaM2,input.usableAreaM2??null,input.orientation??null,input.balconyM2??null,input.terraceM2??null,input.gardenM2??null,input.membershipId])).rows[0]);
+  }
+  async assignAccessory(input: {tenantId:string;userId:string;membershipId:string;unitId:string;accessoryId:string;validFrom?:string}) {
+    return this.database.withContext({tenantId:input.tenantId,userId:input.userId}, async client => (await client.query<{id:string}>("SELECT app.assign_accessory_to_unit($1,$2,$3,$4,$5) id", [input.tenantId,input.unitId,input.accessoryId,input.validFrom??null,input.membershipId])).rows[0]);
+  }
+  async removeAccessory(input: {tenantId:string;userId:string;membershipId:string;assignmentId:string;validTo?:string}) {
+    return this.database.withContext({tenantId:input.tenantId,userId:input.userId}, async client => (await client.query<{id:string}>("SELECT app.remove_accessory_from_unit($1,$2,$3,$4) id", [input.tenantId,input.assignmentId,input.validTo??null,input.membershipId])).rows[0]);
+  }
 }
