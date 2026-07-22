@@ -105,7 +105,9 @@ function Badge({ children, tone }: { children: React.ReactNode; tone?: string })
 }
 
 function TableColumnFilter({ label, active = false, className = "", children }: { label: string; active?: boolean; className?: string; children?: React.ReactNode }) {
-  return <th className={`column-filter ${active ? "active" : ""} ${className}`.trim()}><span className="column-filter-heading">{label}{children && <Filter size={12} />}</span>{children && <span className="column-filter-control">{children}</span>}</th>;
+  const [open,setOpen]=useState(false); const root=useRef<HTMLTableCellElement>(null);
+  useEffect(()=>{const close=(event:MouseEvent)=>{if(!root.current?.contains(event.target as Node))setOpen(false)};document.addEventListener("mousedown",close);return()=>document.removeEventListener("mousedown",close)},[]);
+  return <th ref={root} className={`column-filter ${active ? "active" : ""} ${open ? "open" : ""} ${className}`.trim()}>{children?<><button type="button" className="column-filter-heading" onClick={()=>setOpen(value=>!value)} aria-expanded={open} aria-label={`Filtrovat: ${label}`}><span>{label}</span><Filter size={13}/>{active&&<i />}</button>{open&&<span className="column-filter-control">{children}</span>}</>:<span className="column-filter-heading plain"><span>{label}</span></span>}</th>;
 }
 
 function MultiSelectFilter({ options, selected, onChange, allLabel, ariaLabel }: { options: string[]; selected: string[]; onChange: (value: string[]) => void; allLabel: string; ariaLabel: string }) {
@@ -396,8 +398,8 @@ export default function CRMApp() {
     <div className="crm-shell">
       <aside className={`sidebar ${mobileNav ? "sidebar-open" : ""}`}>
         <div className="brand">
-          <span className="brand-mark"><Building2 size={20} /></span>
-          <span>Develo<span>CRM</span></span>
+          <span className="brand-mark" aria-label="Místo pro logo IMMO Building"><Building2 size={20} /></span>
+          <span className="brand-copy"><strong>DeveloCRM</strong><small>IMMO Building</small></span>
           <button className="mobile-close" onClick={() => setMobileNav(false)} aria-label="Zavřít navigaci"><X size={20} /></button>
         </div>
 
@@ -648,7 +650,7 @@ function Projects({ openProject }: { openProject: (project: ProjectRecord) => vo
       </div>
       <div className="project-cards">
         {projects.map((project) => (
-          <article className="project-card card" key={project.name}>
+          <article className="project-card card" key={project.name} role="button" tabIndex={0} aria-label={`Otevřít projekt ${project.name}`} onClick={() => openProject(project)} onKeyDown={(event) => { if(event.key==="Enter"||event.key===" "){event.preventDefault();openProject(project);} }}>
             <div className={`project-cover ${project.color}`}><span>{project.code}</span><Badge tone="neutral">{project.stage}</Badge></div>
             <div className="project-card-body">
               <div><h3>{project.name}</h3><p><MapPin size={14} /> {project.location}</p></div>
@@ -660,7 +662,7 @@ function Projects({ openProject }: { openProject: (project: ProjectRecord) => vo
               </div>
               <div className="large-progress"><span><small>Prodejnost projektu</small><strong>{Math.round((project.sold + project.handedOver) / project.units * 100)} %</strong></span><div><i style={{ width: `${(project.sold + project.handedOver) / project.units * 100}%` }} /></div></div>
               <div className="project-card-meta"><span><small>VEDOUCÍ PROJEKTU</small><strong>{project.manager}</strong></span><span><small>PLÁNOVANÉ PŘEDÁNÍ</small><strong>{project.plannedHandover}</strong></span></div>
-              <button className="secondary-button full" onClick={() => openProject(project)}>Otevřít detail projektu <ArrowRight size={16} /></button>
+              <span className="project-card-open">Otevřít projekt <ArrowRight size={16} /></span>
             </div>
           </article>
         ))}
