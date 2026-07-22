@@ -11,6 +11,9 @@ const clientRouteUrl = new URL("../app/api/clients/route.ts", import.meta.url);
 const clientExportRouteUrl = new URL("../app/api/clients/export/route.ts", import.meta.url);
 const commercialRepositoryUrl = new URL("../app/repositories/commercial-repository.ts", import.meta.url);
 const commercialRouteUrl = new URL("../app/api/commercial/route.ts", import.meta.url);
+const mediaRepositoryUrl = new URL("../app/repositories/media-repository.ts", import.meta.url);
+const taskRepositoryUrl = new URL("../app/repositories/task-repository.ts", import.meta.url);
+const activityRepositoryUrl = new URL("../app/repositories/activity-repository.ts", import.meta.url);
 
 test("implements the project-to-unit navigation hierarchy", async () => {
   const app = await readFile(appUrl, "utf8");
@@ -125,3 +128,5 @@ test("prices and contracts use the Block D repository without duplicating workfl
   assert.match(route,/preview-seed/);
   assert.match(route,/\/v1\/commercial/);
 });
+
+test("completion workflows are visible, persistent and share canonical sources",async()=>{const [app,media,tasks,activities]=await Promise.all([readFile(appUrl,"utf8"),readFile(mediaRepositoryUrl,"utf8"),readFile(taskRepositoryUrl,"utf8"),readFile(activityRepositoryUrl,"utf8")]);assert.match(app,/Profil a pracovní prostor/);assert.match(app,/Uživatelé a role/);assert.match(app,/Titulní obrázek/);assert.match(app,/Nahrát půdorys|Změnit/);assert.match(app,/scope==="mine"/);assert.match(app,/ClientRelationColumn/);assert.doesNotMatch(app,/>Otevřít projekt <ArrowRight/);assert.doesNotMatch(app,/jednotek odpovídá filtrům/);assert.match(media,/\/api\/media/);assert.match(tasks,/scope=/);assert.match(activities,/develocrm\.preview\.audit/);assert.match(app,/timeline\.slice\(0,4\)/);assert.match(app,/timeline\.map/);});

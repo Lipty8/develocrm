@@ -28,6 +28,7 @@ import {
   HardHat,
   History,
   Home,
+  ImagePlus,
   KeyRound,
   LayoutDashboard,
   LayoutGrid,
@@ -40,11 +41,14 @@ import {
   MoreHorizontal,
   Plus,
   Search,
+  Settings,
+  ShieldCheck,
   SlidersHorizontal,
   Sparkles,
   Upload,
   UserRound,
   Users,
+  LogOut,
   X,
 } from "lucide-react";
 import {
@@ -55,7 +59,6 @@ import {
   payments,
   projects,
   tasks as initialTasks,
-  unitTimeline,
   unitCommercialContexts,
   unitPriceHistories,
   units,
@@ -64,12 +67,16 @@ import {
   type MembershipOption,
   type ProjectStructureOption,
   type ProjectRecord,
+  type TaskRecord,
 } from "./crm-data";
 import { identityRepository, prototypeSession, type IdentitySession } from "./repositories/identity-repository";
 import { catalogRepository } from "./repositories/catalog-repository";
 import { clientRepository } from "./repositories/client-repository";
 import { commercialRepository } from "./repositories/commercial-repository";
 import { salesCommandRepository } from "./repositories/sales-command-repository";
+import { mediaRepository } from "./repositories/media-repository";
+import { taskRepository } from "./repositories/task-repository";
+import { activityRepository, recordPreviewActivity, type TimelineRecord } from "./repositories/activity-repository";
 
 type Page = "dashboard" | "projects" | "clients" | "contracts" | "payments" | "handovers" | "tasks";
 type UnitTab = "overview" | "contracts" | "payments" | "changes" | "documents" | "handover" | "tasks" | "history";
@@ -208,6 +215,9 @@ export default function CRMApp() {
   const [search, setSearch] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const [taskRows, setTaskRows] = useState(initialTasks);
+  const [taskOpenCount,setTaskOpenCount]=useState(initialTasks.filter(item=>!item.done&&item.owner==="Iva").length);
+  const [taskScope,setTaskScope]=useState<"mine"|"all"|"completed">("mine");
+  const [taskLoading,setTaskLoading]=useState(false);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [projectEdit, setProjectEdit] = useState<ProjectRecord | null>(null);
@@ -220,6 +230,8 @@ export default function CRMApp() {
   const [accessoryUnit,setAccessoryUnit]=useState<UnitRecord|null>(null);
   const [salesAction,setSalesAction]=useState<{unit:UnitRecord;mode:"interest"|"pre_reservation"|"reservation"|"convert"|"cancel"}|null>(null);
   const [contractEdit,setContractEdit]=useState<(typeof contracts)[number]|null>(null);
+  const [profileOpen,setProfileOpen]=useState(false);
+  const [mediaEdit,setMediaEdit]=useState<{entityType:"project"|"unit";entityId:string;kind:"cover"|"floorplan";title:string;unitKey?:string}|null>(null);
   const can=(permission:string)=>identitySession.workspace.permissions.includes(permission);
 
   useEffect(() => {
@@ -269,27 +281,7 @@ export default function CRMApp() {
     return () => controller.abort();
   }, [catalogReloadKey]);
 
-  useEffect(() => {
-    let active = true;
-    fetch("/api/tasks")
-      .then((response) => response.ok ? response.json() : Promise.reject())
-      .then((payload: { tasks?: Array<{ id: string; title: string; objectId: string; priority: string; dueAt: string | null }> }) => {
-        if (!active || !payload.tasks?.length) return;
-        const saved = payload.tasks.map((task) => ({
-          id: Number(task.id),
-          title: task.title,
-          object: `${task.objectId} · Ručně vytvořený úkol`,
-          project: "Rezidence Javorová",
-          due: task.dueAt === "2026-07-22" ? "Zítra" : task.dueAt || "Bez termínu",
-          priority: task.priority === "high" ? "Vysoká" : task.priority === "low" ? "Nízká" : "Střední",
-          owner: "Iva",
-          done: false,
-        }));
-        setTaskRows((rows) => [...saved, ...rows.filter((row) => !saved.some((item) => item.title === row.title))]);
-      })
-      .catch(() => undefined);
-    return () => { active = false; };
-  }, []);
+  useEffect(()=>{const controller=new AbortController();taskRepository.list(taskScope,identitySession.user.displayName,controller.signal).then(saved=>{const visible=taskScope==="mine"&&!saved.length?initialTasks.filter(item=>!item.done&&item.owner==="Iva"):saved;setTaskRows(visible);if(taskScope==="mine")setTaskOpenCount(visible.filter(item=>!item.done).length);else void taskRepository.list("mine",identitySession.user.displayName,controller.signal).then(mine=>setTaskOpenCount(mine.filter(item=>!item.done).length));}).catch(()=>{const fallback=taskScope==="completed"?initialTasks.filter(item=>item.done):taskScope==="all"?initialTasks:initialTasks.filter(item=>!item.done&&item.owner==="Iva");setTaskRows(fallback);setTaskOpenCount(initialTasks.filter(item=>!item.done&&item.owner==="Iva").length);}).finally(()=>setTaskLoading(false));return()=>controller.abort();},[taskScope,identitySession.user.displayName]);
 
   const filteredUnits = useMemo(() => {
     void catalogVersion;
@@ -325,6 +317,7 @@ export default function CRMApp() {
 
   const navigate = (nextPage: Page) => {
     setPage(nextPage);
+    if (nextPage === "dashboard") setTaskScope("mine");
     setUnitDetail(null);
     setUnitPreview(null);
     setSelectedProject(null);
@@ -386,30 +379,17 @@ export default function CRMApp() {
   const refreshClients = () => setClientReloadKey((key) => key + 1);
   const refreshCommercial = () => setCommercialReloadKey((key) => key + 1);
 
-  const toggleTask = (id: number) => {
-    setTaskRows((rows) => rows.map((task) => (task.id === id ? { ...task, done: !task.done } : task)));
-    notify("Úkol byl aktualizován");
+  const toggleTask = (id: string|number) => {
+    const row=taskRows.find(task=>task.id===id);if(!row)return;const done=!row.done;
+    setTaskRows((rows) => rows.map((task) => (task.id === id ? { ...task, done } : task)));
+    if(row.owner==="Iva"||row.owner===identitySession.user.displayName)setTaskOpenCount(count=>Math.max(0,count+(done?-1:1)));
+    void taskRepository.complete(id,done).then(()=>notify(done?"Úkol byl dokončen":"Úkol byl znovu otevřen")).catch(error=>{setTaskRows(rows=>rows.map(task=>task.id===id?{...task,done:!done}:task));if(row.owner==="Iva"||row.owner===identitySession.user.displayName)setTaskOpenCount(count=>Math.max(0,count+(done?1:-1)));notify(error instanceof Error?error.message:"Úkol nelze aktualizovat");});
   };
 
-  const saveTask = (title: string) => {
-    const optimisticTask = {
-      id: Date.now(),
-      title,
-      object: "A203 · Ručně vytvořený úkol",
-      project: "Rezidence Javorová",
-      due: "Zítra",
-      priority: "Střední",
-      owner: "Iva",
-      done: false,
-    };
-    setTaskRows((rows) => [optimisticTask, ...rows]);
-    setNewTaskOpen(false);
-    notify(`Úkol „${title}“ byl vytvořen`);
-    void fetch("/api/tasks", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ title, objectType: "unit", objectId: "A203", priority: "medium", dueAt: "2026-07-22" }),
-    }).catch(() => undefined);
+  const saveTask = async (value:{title:string;description:string;objectType:string;objectId:string;assigneeId:string|null;priority:"low"|"medium"|"high";dueAt:string}) => {
+    const created=await taskRepository.create({title:value.title,description:value.description,objectType:value.objectType,objectId:value.objectId,assignedToUserId:value.assigneeId,priority:value.priority,dueAt:value.dueAt},identitySession.user.displayName);
+    setTaskRows((rows) => [created, ...rows]);if(created.owner==="Iva"||created.owner===identitySession.user.displayName)setTaskOpenCount(count=>count+1);setNewTaskOpen(false);notify(`Úkol „${value.title}“ byl vytvořen`);
+    if(value.objectType==="unit")recordPreviewActivity({unitKey:value.objectId,title:"Vytvořen úkol",detail:`${identitySession.user.displayName} · ${value.title}`,action:"task.created"});
   };
 
   return (
@@ -429,7 +409,7 @@ export default function CRMApp() {
               <button key={item.id} className={page === item.id && !unitDetail ? "active" : ""} onClick={() => navigate(item.id)}>
                 <Icon size={19} strokeWidth={1.8} />
                 <span>{item.label}</span>
-                {item.id === "tasks" && <span className="nav-count">5</span>}
+                {item.id === "tasks" && <span className="nav-count">{taskOpenCount}</span>}
               </button>
             );
           })}
@@ -446,7 +426,7 @@ export default function CRMApp() {
 
         <div className="sidebar-footer">
           <div className="sync-state"><CheckCircle2 size={15} /><span>SharePoint synchronizován</span></div>
-          <button className="user-profile">
+          <button className="user-profile" onClick={()=>setProfileOpen(true)} aria-label="Otevřít uživatelský profil">
             <Avatar initials={initials(identitySession.user.displayName)} />
             <span><strong>{identitySession.user.displayName}</strong><small>{roleLabel(identitySession.workspace.roles)}</small></span>
             <MoreHorizontal size={17} />
@@ -492,7 +472,7 @@ export default function CRMApp() {
 
         <main className="main-content">
           {unitDetail ? (
-            <UnitDetail unit={unitDetail} tab={unitTab} onTab={setUnitTab} onBack={() => setUnitDetail(null)} notify={notify} openTask={() => setNewTaskOpen(true)} openClient={openClient} onEdit={can("unit.manage")?()=>setUnitEdit(unitDetail):undefined} onEditPrice={can("price.manage")||can("prices.change")?()=>setPriceEdit(unitDetail):undefined} onManageAccessories={can("accessory.manage")?()=>setAccessoryUnit(unitDetail):undefined} onSalesAction={(can("holds.manage")||can("interests.manage"))?(mode)=>setSalesAction({unit:unitDetail,mode}):undefined} canCancelHold={can("holds.cancel")||can("holds.manage")} onContractWorkflow={can("contract.manage")?setContractEdit:undefined} />
+            <UnitDetail unit={unitDetail} tab={unitTab} onTab={setUnitTab} onBack={() => setUnitDetail(null)} notify={notify} openTask={() => setNewTaskOpen(true)} openClient={openClient} onEdit={can("unit.manage")?()=>setUnitEdit(unitDetail):undefined} onEditPrice={can("price.manage")||can("prices.change")?()=>setPriceEdit(unitDetail):undefined} onManageAccessories={can("accessory.manage")?()=>setAccessoryUnit(unitDetail):undefined} onEditFloorplan={(can("media.manage")||can("unit.manage"))?()=>setMediaEdit({entityType:"unit",entityId:unitDetail.backendId??unitDetail.id,unitKey:unitDetail.id,kind:"floorplan",title:`Půdorys · ${unitDetail.id}`}):undefined} onSalesAction={(can("holds.manage")||can("interests.manage"))?(mode)=>setSalesAction({unit:unitDetail,mode}):undefined} canCancelHold={can("holds.cancel")||can("holds.manage")} onContractWorkflow={can("contract.manage")?setContractEdit:undefined} />
           ) : selectedProject ? (
             <ProjectDetail
               project={selectedProject}
@@ -523,6 +503,7 @@ export default function CRMApp() {
               setPriceTo={setPriceTo}
               notify={notify}
               onEditProject={can("project.manage")?() => setProjectEdit(selectedProject):undefined}
+              onEditCover={(can("media.manage")||can("project.manage"))?()=>setMediaEdit({entityType:"project",entityId:selectedProject.backendId??selectedProject.code,kind:"cover",title:`Titulní obrázek · ${selectedProject.name}`}):undefined}
             />
           ) : (
             <>
@@ -535,7 +516,7 @@ export default function CRMApp() {
                 <div className="page-actions">
                   {page === "projects" && <button className="secondary-button" onClick={() => notify("Ceník se připravuje ke stažení")}><Download size={17} /> Export ceníku</button>}
                   {page === "contracts" && <button className="secondary-button" onClick={() => notify("Otevírám správu šablon")}><FileCheck2 size={17} /> Šablony</button>}
-                  <button className="primary-button" onClick={() => page === "tasks" ? setNewTaskOpen(true) : notify(page === "clients" ? "Formulář nového klienta je připraven" : "Nový záznam lze nyní založit")}>
+                  <button className="primary-button" onClick={() => page === "tasks" || page === "dashboard" ? setNewTaskOpen(true) : notify(page === "clients" ? "Formulář nového klienta je připraven" : "Nový záznam lze nyní založit")}>
                     <Plus size={18} /> {page === "tasks" ? "Nový úkol" : page === "clients" ? "Nový klient" : page === "contracts" ? "Nová smlouva" : page === "payments" ? "Přidat platbu" : page === "handovers" ? "Naplánovat předání" : page === "projects" ? "Nový projekt" : "Přidat úkol"}
                   </button>
                 </div>
@@ -547,7 +528,7 @@ export default function CRMApp() {
               {page === "contracts" && <ContractsPage openUnit={openUnit} notify={notify} onWorkflow={can("contract.manage")?setContractEdit:undefined} />}
               {page === "payments" && <PaymentsPage openUnit={openUnit} notify={notify} />}
               {page === "handovers" && <HandoversPage openUnit={openUnit} notify={notify} />}
-              {page === "tasks" && <TasksPage rows={taskRows} toggleTask={toggleTask} openUnit={openUnit} />}
+              {page === "tasks" && <TasksPage rows={taskRows} toggleTask={toggleTask} openUnit={openUnit} scope={taskScope} onScope={setTaskScope} loading={taskLoading} />}
             </>
           )}
         </main>
@@ -555,10 +536,12 @@ export default function CRMApp() {
 
       {unitPreview && <UnitPreview unit={unitPreview} close={() => setUnitPreview(null)} open={() => openUnit(unitPreview)} previous={() => browsePreview(-1)} next={() => browsePreview(1)} position={Math.max(1, filteredUnits.findIndex((item) => item.id === unitPreview.id) + 1)} total={filteredUnits.length} />}
       {unitPreview && <button className="panel-scrim" aria-label="Zavřít náhled" onClick={() => setUnitPreview(null)} />}
-      {newTaskOpen && <TaskModal close={() => setNewTaskOpen(false)} save={saveTask} />}
+      {newTaskOpen && <TaskModal close={() => setNewTaskOpen(false)} save={saveTask} memberships={catalogMemberships} defaultUnit={unitDetail?.id} />}
+      {profileOpen&&<ProfileModal session={identitySession} close={()=>setProfileOpen(false)} canAdmin={can("users.manage")||identitySession.workspace.roles.includes("admin")}/>}
+      {mediaEdit&&<MediaModal value={mediaEdit} close={()=>setMediaEdit(null)} save={async file=>{const media=await mediaRepository.upload(mediaEdit.entityType,mediaEdit.entityId,mediaEdit.kind,file);if(mediaEdit.entityType==="project"){setSelectedProject(current=>current?{...current,coverImageUrl:media.url}:current);}else{setUnitDetail(current=>current?{...current,floorplanAvailable:true,floorplanImageUrl:media.url}:current);recordPreviewActivity({unitKey:mediaEdit.unitKey??mediaEdit.entityId,title:"Změněn půdorys jednotky",detail:`${identitySession.user.displayName} · ${file.name}`,icon:"document",action:"unit.floorplan_changed"});}setMediaEdit(null);notify("Obrázek byl uložen");}}/>}
       {projectEdit && <EditProjectModal project={projectEdit} memberships={catalogMemberships} canChangeManager={can("projects.change_manager")} canChangeStatus={can("projects.change_status")} close={() => setProjectEdit(null)} save={async (value) => { const id=projectEdit.backendId??projectEdit.code;await catalogRepository.updateProject({id,name:value.name,location:value.location,lifecycleStatus:value.lifecycleStatus,managerMembershipId:value.managerMembershipId,plannedHandoverFrom:value.plannedCompletionFrom,plannedHandoverTo:value.plannedCompletionTo});if(value.stageCode!==labelToConstructionCode(projectEdit.stage))await catalogRepository.recordProjectConstructionStatus({projectId:id,statusCode:value.stageCode,effectiveAt:new Date().toISOString(),note:value.stageReason||"Aktualizace fáze projektu"}); setSelectedProject({...projectEdit,name:value.name,location:value.location,lifecycleStatus:value.lifecycleStatus,managerMembershipId:value.managerMembershipId,manager:catalogMemberships.find(item=>item.id===value.managerMembershipId)?.name??projectEdit.manager,stage:constructionCodeToLabel(value.stageCode),plannedCompletionFrom:value.plannedCompletionFrom,plannedCompletionTo:value.plannedCompletionTo,plannedHandover:quarterFromDate(value.plannedCompletionFrom)}); setProjectEdit(null); notify("Projekt byl uložen"); refreshCatalog(); }} />}
       {unitEdit && <EditUnitModal unit={unitEdit} structures={catalogStructures.filter(item=>item.project===unitEdit.project)} close={() => setUnitEdit(null)} save={async (value) => { await catalogRepository.updateUnit({id: unitEdit.backendId??unitEdit.id,...value}); setUnitDetail({...unitEdit,structureId:value.structureId,building:catalogStructures.find(item=>item.id===value.structureId)?.name??"Bez zařazení",layout:value.layout,area:value.areaM2,usableArea:value.usableAreaM2,floor:value.floorLabel,orientation:value.orientation,balcony:value.balconyM2,terrace:value.terraceM2,garden:value.gardenM2}); setUnitEdit(null); notify("Jednotka byla uložena"); refreshCatalog(); }} />}
-      {priceEdit && <EditPriceModal unit={priceEdit} close={() => setPriceEdit(null)} save={async (value) => { await commercialRepository.recordPrice({unitId:priceEdit.backendId??priceEdit.id,...value}); setUnitDetail({...priceEdit,price:value.priceType==="individual_discount"?priceEdit.price-value.amount:value.amount}); setPriceEdit(null); notify("Nový záznam ceny byl uložen"); refreshCommercial(); }} />}
+      {priceEdit && <EditPriceModal unit={priceEdit} close={() => setPriceEdit(null)} save={async (value) => { await commercialRepository.recordPrice({unitId:priceEdit.backendId??priceEdit.id,unitKey:priceEdit.id,...value}); setUnitDetail({...priceEdit,price:value.priceType==="individual_discount"?priceEdit.price-value.amount:value.amount}); setPriceEdit(null); notify("Nový záznam ceny byl uložen"); refreshCommercial(); }} />}
       {accessoryUnit&&<AccessoryModal unit={accessoryUnit} inventory={catalogAccessories.filter(item=>item.project===accessoryUnit.project)} close={()=>setAccessoryUnit(null)} assign={async accessory=>{await catalogRepository.assignAccessory(accessoryUnit.backendId??accessoryUnit.id,accessory.id);notify(`${accessory.type} ${accessory.code} bylo přiřazeno`);setAccessoryUnit(null);refreshCatalog();}} remove={async assignment=>{if(!window.confirm(`Opravdu uvolnit ${assignment.type} ${assignment.code}?`))return;await catalogRepository.removeAccessory(assignment.assignmentId??assignment.id);notify(`${assignment.type} ${assignment.code} bylo uvolněno`);setAccessoryUnit(null);refreshCatalog();}}/>}
       {salesAction&&<SalesActionModal action={salesAction} clientRows={clients} close={()=>setSalesAction(null)} save={async value=>{const unitId=salesAction.unit.backendId??salesAction.unit.id;const unitKey=salesAction.unit.id;const context=unitCommercialContexts[unitKey]??{buyers:[],interests:[],stage:null,hold:null};let nextStatus:string|undefined;if(salesAction.mode==="interest"){await salesCommandRepository.addInterest({unitId,unitKey,partyId:value.partyId,eventType:"inquiry",note:value.reason});const party=clients.find(item=>item.id===value.partyId);if(party&&!context.interests.some(item=>item.partyId===party.id))context.interests.unshift({date:new Date().toLocaleDateString("cs-CZ"),partyId:party.id,name:party.name,type:"Aktivní zájem",result:"Aktivní"});}else if(salesAction.mode==="convert"&&context.hold){await salesCommandRepository.convertHold({holdId:context.hold.id,unitKey,expiresAt:value.expiresAt,reason:value.reason});context.hold={...context.hold,type:"reservation",expiresAt:value.expiresAt};context.stage="reservation";nextStatus="Rezervace";}else if(salesAction.mode==="cancel"&&context.hold){await salesCommandRepository.cancelHold({holdId:context.hold.id,unitKey,reason:value.reason});context.hold=null;context.stage="interest";nextStatus="Volný";}else{await salesCommandRepository.createHold({unitId,unitKey,type:salesAction.mode as "pre_reservation"|"reservation",partyIds:[value.partyId],expiresAt:value.expiresAt,reason:value.reason});context.hold={id:`local-${Date.now()}`,type:salesAction.mode,expiresAt:value.expiresAt};context.stage=salesAction.mode;nextStatus=salesAction.mode==="reservation"?"Rezervace":"Předrezervace";}unitCommercialContexts[unitKey]=context;if(nextStatus)setUnitDetail(current=>current?.id===unitKey?{...current,status:nextStatus}:current);setSalesAction(null);notify("Obchodní operace byla dokončena");refreshClients();if(salesAction.mode!=="interest")refreshCatalog();}}/>}
       {contractEdit&&<ContractWorkflowModal contract={contractEdit} close={()=>setContractEdit(null)} save={async value=>{if(!contractEdit.id)throw new Error("Smlouva nemá backendový identifikátor");await commercialRepository.transitionContract({contractId:contractEdit.id,to:value.to,reason:value.reason});setContractEdit(null);notify("Stav smlouvy byl změněn");refreshCommercial();}}/>}
@@ -568,7 +551,7 @@ export default function CRMApp() {
   );
 }
 
-function Dashboard({ navigate, openUnit, taskRows, toggleTask }: { navigate: (page: Page) => void; openUnit: (unit: UnitRecord) => void; taskRows: typeof initialTasks; toggleTask: (id: number) => void }) {
+function Dashboard({ navigate, openUnit, taskRows, toggleTask }: { navigate: (page: Page) => void; openUnit: (unit: UnitRecord) => void; taskRows: TaskRecord[]; toggleTask: (id: string|number) => void }) {
   return (
     <div className="dashboard-grid">
       <section className="attention-card card span-8">
@@ -629,7 +612,7 @@ function Dashboard({ navigate, openUnit, taskRows, toggleTask }: { navigate: (pa
       <section className="card span-5 task-card">
         <SectionTitle title="Moje úkoly" action="Zobrazit vše" onAction={() => navigate("tasks")} />
         <div className="mini-task-list">
-          {taskRows.slice(0, 4).map((task) => (
+          {taskRows.filter(task=>!task.done).slice(0, 4).map((task) => (
             <div key={task.id} className={task.done ? "done" : ""}>
               <button onClick={() => toggleTask(task.id)} className="task-check" aria-label={`Dokončit úkol ${task.title}`}>{task.done && <Check size={14} />}</button>
               <span><strong>{task.title}</strong><small>{task.object}</small></span>
@@ -672,7 +655,7 @@ function Projects({ openProject }: { openProject: (project: ProjectRecord) => vo
       <div className="project-cards">
         {projects.map((project) => (
           <article className="project-card card" key={project.name} role="button" tabIndex={0} aria-label={`Otevřít projekt ${project.name}`} onClick={() => openProject(project)} onKeyDown={(event) => { if(event.key==="Enter"||event.key===" "){event.preventDefault();openProject(project);} }}>
-            <div className={`project-cover ${project.color}`}><span>{project.code}</span><Badge tone="neutral">{project.stage}</Badge></div>
+            <ProjectCover project={project}/>
             <div className="project-card-body">
               <div><h3>{project.name}</h3><p><MapPin size={14} /> {project.location}</p></div>
               <div className="project-unit-stats">
@@ -683,7 +666,6 @@ function Projects({ openProject }: { openProject: (project: ProjectRecord) => vo
               </div>
               <div className="large-progress"><span><small>Prodejnost projektu</small><strong>{Math.round((project.sold + project.handedOver) / project.units * 100)} %</strong></span><div><i style={{ width: `${(project.sold + project.handedOver) / project.units * 100}%` }} /></div></div>
               <div className="project-card-meta"><span><small>VEDOUCÍ PROJEKTU</small><strong>{project.manager}</strong></span><span><small>PLÁNOVANÉ DOKONČENÍ</small><strong>{project.plannedHandover}</strong></span></div>
-              <span className="project-card-open">Otevřít projekt <ArrowRight size={16} /></span>
             </div>
           </article>
         ))}
@@ -691,6 +673,8 @@ function Projects({ openProject }: { openProject: (project: ProjectRecord) => vo
     </div>
   );
 }
+
+function ProjectCover({project}:{project:ProjectRecord}){const [url,setUrl]=useState(project.coverImageUrl??null);useEffect(()=>{if(url)return;const controller=new AbortController();mediaRepository.get("project",project.backendId??project.code,controller.signal).then(media=>{if(media)setUrl(media.url);}).catch(()=>undefined);return()=>controller.abort();},[project.backendId,project.code,url]);return <div className={`project-cover ${project.color} ${url?"has-image":""}`} style={url?{backgroundImage:`linear-gradient(180deg,rgba(10,28,22,.05),rgba(10,28,22,.42)),url(${JSON.stringify(url).slice(1,-1)})`}:undefined}><span>{project.code}</span><Badge tone="neutral">{project.stage}</Badge></div>}
 
 type UnitListProps = {
   project: ProjectRecord;
@@ -717,7 +701,7 @@ type UnitListProps = {
   setPriceTo: (value: string) => void;
 };
 
-function ProjectDetail({ project, tab, onTab, onBack, notify, openClient, onEditProject, ...unitListProps }: UnitListProps & { tab: ProjectTab; onTab: (tab: ProjectTab) => void; onBack: () => void; notify: (message: string) => void; openClient: (name: string) => void; onEditProject?: () => void }) {
+function ProjectDetail({ project, tab, onTab, onBack, notify, openClient, onEditProject,onEditCover, ...unitListProps }: UnitListProps & { tab: ProjectTab; onTab: (tab: ProjectTab) => void; onBack: () => void; notify: (message: string) => void; openClient: (name: string) => void; onEditProject?: () => void;onEditCover?:()=>void }) {
   const projectClients = clients.filter((client) => client.projectNames.includes(project.name));
   const projectContracts = contracts.filter((contract) => contract.project === project.name);
   const projectPayments = payments.filter((payment) => payment.project === project.name);
@@ -747,7 +731,7 @@ function ProjectDetail({ project, tab, onTab, onBack, notify, openClient, onEdit
       <div className="project-detail-hero card">
         <div className={`project-detail-mark ${project.color}`}>{project.code}</div>
         <div><span className="eyebrow">AKTUÁLNÍ PROJEKT</span><h1>{project.name} <Badge tone="neutral">{project.stage}</Badge></h1><p><MapPin size={14} /> {project.location} · {project.buildings.join(" · ")}</p></div>
-        <div className="project-detail-actions">{onEditProject&&<button className="secondary-button" onClick={onEditProject}><MoreHorizontal size={16} /> Upravit projekt</button>}<button className="secondary-button" onClick={() => notify("Ceník se připravuje ke stažení")}><Download size={16} /> Export ceníku</button><button className="primary-button" onClick={() => onTab("units")}><Home size={16} /> Otevřít jednotky</button></div>
+        <div className="project-detail-actions">{onEditProject&&<button className="secondary-button" onClick={onEditProject}><MoreHorizontal size={16} /> Upravit projekt</button>}{onEditCover&&<button className="secondary-button" onClick={onEditCover}><ImagePlus size={16}/> Titulní obrázek</button>}<button className="secondary-button" onClick={() => notify("Ceník se připravuje ke stažení")}><Download size={16} /> Export ceníku</button><button className="primary-button" onClick={() => onTab("units")}><Home size={16} /> Otevřít jednotky</button></div>
       </div>
       <section className="card project-context-card" aria-label="Souhrn projektu">
         <div className="project-context-summary">
@@ -829,11 +813,10 @@ function ProjectUnitList(props: UnitListProps) {
   const reset = () => { setUnitQuery(""); setClientQuery(""); props.setBuildingFilter([]); props.setFloorFilter([]); props.setStatusFilter([]); props.setLayoutFilter([]); props.setAreaFrom(""); props.setAreaTo(""); props.setPriceFrom(""); props.setPriceTo(""); };
   return (
     <section className="card units-section">
-      <div className="project-scope-banner"><Building2 size={17} /><span><strong>{project.name}</strong><small>Zobrazeny jsou pouze jednotky tohoto projektu.</small></span></div>
-      <div className="units-result-bar"><span><strong>{visibleUnits.length}</strong> jednotek odpovídá filtrům {activeCount > 0 && <Badge tone="blue">{activeCount} aktivních</Badge>}</span><div className="unit-result-actions">{activeCount > 0 && <button className="text-button" onClick={reset}>Vymazat filtry</button>}<div className="view-toggle"><button className={unitView === "table" ? "active" : ""} onClick={() => setUnitView("table")} aria-label="Tabulkové zobrazení" title="Seznam"><List size={17} /></button><button className={unitView === "cards" ? "active" : ""} onClick={() => setUnitView("cards")} aria-label="Kartové zobrazení" title="Karty"><LayoutGrid size={17} /></button></div></div></div>
+      <div className="project-scope-banner"><Building2 size={17} /><span><strong>{project.name}</strong><small>Zobrazeny jsou pouze jednotky tohoto projektu.</small></span><span className="compact-result-count"><strong>{visibleUnits.length}</strong> jednotek {activeCount>0&&<Badge tone="blue">{activeCount} filtrů</Badge>}{activeCount>0&&<button className="text-button" onClick={reset}>Vymazat</button>}<span className="view-toggle"><button className={unitView === "table" ? "active" : ""} onClick={() => setUnitView("table")} aria-label="Tabulkové zobrazení" title="Seznam"><List size={17} /></button><button className={unitView === "cards" ? "active" : ""} onClick={() => setUnitView("cards")} aria-label="Kartové zobrazení" title="Karty"><LayoutGrid size={17} /></button></span></span></div>
       {unitView === "table" ? <div className="unit-table-wrap"><table className="data-table unit-table filter-table"><thead><tr><TableColumnFilter label="Jednotka" active={Boolean(unitQuery)}><input value={unitQuery} onChange={(event) => setUnitQuery(event.target.value)} placeholder="A203…" aria-label="Filtrovat jednotky" /></TableColumnFilter><TableColumnFilter label="Budova / etapa" active={buildingFilter.length > 0}><MultiSelectFilter options={buildings} selected={buildingFilter} onChange={props.setBuildingFilter} allLabel="Všechny budovy / etapy" ariaLabel="Filtrovat budovu nebo etapu" /></TableColumnFilter><TableColumnFilter label="Podlaží" active={floorFilter.length > 0}><MultiSelectFilter options={floors} selected={floorFilter} onChange={props.setFloorFilter} allLabel="Všechna podlaží" ariaLabel="Filtrovat podlaží" /></TableColumnFilter><TableColumnFilter label="Dispozice" active={layoutFilter.length > 0}><MultiSelectFilter options={["1+kk", "2+kk", "3+kk", "4+kk", "5+kk"]} selected={layoutFilter} onChange={props.setLayoutFilter} allLabel="Všechny dispozice" ariaLabel="Filtrovat dispozici" /></TableColumnFilter><TableColumnFilter label="Plocha m²" active={Boolean(areaFrom || areaTo)}><span className="column-range"><input inputMode="decimal" value={areaFrom} onChange={(event) => props.setAreaFrom(event.target.value)} placeholder="Od" aria-label="Plocha od" /><i>–</i><input inputMode="decimal" value={areaTo} onChange={(event) => props.setAreaTo(event.target.value)} placeholder="Do" aria-label="Plocha do" /></span></TableColumnFilter><TableColumnFilter label="Aktuální cena" active={Boolean(priceFrom || priceTo)}><span className="column-range"><input inputMode="decimal" value={priceFrom} onChange={(event) => props.setPriceFrom(event.target.value)} placeholder="Od mil." aria-label="Cena od" /><i>–</i><input inputMode="decimal" value={priceTo} onChange={(event) => props.setPriceTo(event.target.value)} placeholder="Do mil." aria-label="Cena do" /></span></TableColumnFilter><TableColumnFilter label="Obchodní stav" active={statusFilter.length > 0}><MultiSelectFilter options={["Volný", "Předrezervace", "RS", "SBK", "KS", "Předáno"]} selected={statusFilter} onChange={props.setStatusFilter} allLabel="Všechny stavy" ariaLabel="Filtrovat obchodní stav" /></TableColumnFilter><TableColumnFilter label="Klient" active={Boolean(clientQuery)}><input value={clientQuery} onChange={(event) => setClientQuery(event.target.value)} placeholder="Jméno…" aria-label="Filtrovat klienta" /></TableColumnFilter><th /></tr></thead><tbody>{visibleUnits.map((unit) => <tr key={unit.id} onClick={() => openUnit(unit)} tabIndex={0} onKeyDown={(event) => event.key === "Enter" && openUnit(unit)}><td><strong>{unit.id}</strong></td><td>{unit.building}</td><td>{unit.floor}</td><td>{unit.layout}</td><td>{unit.area.toLocaleString("cs-CZ")} m²</td><td><strong>{formatMoney(unit.price)}</strong></td><td><Badge>{unit.status}</Badge></td><td>{unit.client || <span className="muted">—</span>}</td><td><ChevronRight size={18} /></td></tr>)}</tbody></table></div> : <div className="unit-card-grid">{visibleUnits.map((unit) => <button className="unit-card" key={unit.id} onClick={() => previewUnit(unit)}><span className="unit-card-top"><strong>{unit.id}</strong><Badge>{unit.status}</Badge></span><span className="unit-card-plan"><span className="plan-room r1" /><span className="plan-room r2" /><span className="plan-room r3" /><Home size={22} /></span><span className="unit-card-info"><strong>{unit.layout} · {unit.area.toLocaleString("cs-CZ")} m²</strong><small>{unit.building} · {unit.floor}</small></span><span className="unit-card-price"><strong>{formatMoney(unit.price)}</strong><ChevronRight size={17} /></span></button>)}</div>}
       {!visibleUnits.length && <div className="empty-filter-state"><Search size={22} /><strong>Žádná jednotka neodpovídá kombinaci filtrů</strong><small>Zkuste upravit filtry přímo v hlavičce tabulky.</small><button className="secondary-button compact" onClick={reset}>Vymazat filtry</button></div>}
-      <div className="table-footer"><span>Zobrazeno {visibleUnits.length} výsledků v projektu {project.name}</span><div><button disabled><ChevronRight className="rotate-180" size={16} /></button><button className="active">1</button><button><ChevronRight size={16} /></button></div></div>
+      <div className="table-footer compact-pagination"><div><button disabled><ChevronRight className="rotate-180" size={16} /></button><button className="active">1</button><button><ChevronRight size={16} /></button></div></div>
     </section>
   );
 }
@@ -918,12 +901,14 @@ function ClientsPage({ openUnit, selectedClientName, setSelectedClientName, noti
       <div className="client-quick-views"><div className="client-view-title"><span><Building2 size={17} /></span><span><small>RYCHLÝ POHLED</small><strong>Klienti podle projektu</strong></span></div><div className="client-view-options" role="tablist" aria-label="Klienti podle projektu"><button role="tab" aria-selected={quickProject==="Všichni"} className={quickProject === "Všichni" ? "active" : ""} onClick={() => setQuickProject("Všichni")}>Všichni <span>{clients.length}</span></button>{projects.map((project) => <button role="tab" aria-selected={quickProject===project.name} key={project.name} className={quickProject === project.name ? "active" : ""} onClick={() => setQuickProject(project.name)}>{project.name}</button>)}</div></div>
       {selected.size > 0 && <div className="bulk-action-bar"><span><CheckCircle2 size={18} /><strong>Vybráno {selected.size} klientů</strong></span><div><button onClick={copyEmails}><Mail size={15} /> Kopírovat e-maily pro BCC</button><button onClick={() => downloadCsv(false)}><Download size={15} /> Excel / CSV</button><button onClick={() => downloadCsv(true)}><FileText size={15} /> Pouze e-maily</button><button className="ghost-icon" onClick={() => setSelected(new Set())} aria-label="Zrušit výběr"><X size={17} /></button></div></div>}
       {allPageSelected && filtered.length > pageRows.length && selected.size < filtered.length && <div className="select-all-results"><Check size={15} /> Vybráno všech {pageRows.length} klientů na této stránce. <button onClick={selectAllResults}>Vybrat všech {filtered.length} výsledků aktuálního filtru</button></div>}
-      <div className="unit-table-wrap"><table className="data-table client-table filter-table"><thead><tr><th className="checkbox-cell"><button className={`table-checkbox ${allPageSelected ? "checked" : ""}`} onClick={togglePage} aria-label="Vybrat klienty na stránce">{allPageSelected && <Check size={13} />}</button></th><TableColumnFilter label="Jméno / název" active={Boolean(query)}><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Hledat jméno…" aria-label="Filtrovat jméno nebo název" /></TableColumnFilter><TableColumnFilter label="Typ" active={typeFilter.length > 0}><MultiSelectFilter options={["FO", "PO"]} selected={typeFilter} onChange={setTypeFilter} allLabel="Všechny typy" ariaLabel="Filtrovat typ klienta" /></TableColumnFilter><TableColumnFilter label="Projekt" active={projectFilter.length > 0}><MultiSelectFilter options={projects.map((project) => project.name)} selected={projectFilter} onChange={setProjectFilter} allLabel="Všechny projekty" ariaLabel="Filtrovat projekt" /></TableColumnFilter><TableColumnFilter label="Jednotka / jednotky" active={Boolean(unitFilter)}><input value={unitFilter} onChange={(event) => setUnitFilter(event.target.value)} placeholder="A203…" aria-label="Filtrovat jednotku" /></TableColumnFilter><TableColumnFilter label="Stav vztahu" active={relationFilter.length > 0}><MultiSelectFilter options={["Zájemce", "Aktivní klient", "Předání", "Předáno"]} selected={relationFilter} onChange={setRelationFilter} allLabel="Všechny vztahy" ariaLabel="Filtrovat stav vztahu" /></TableColumnFilter><TableColumnFilter label="Smluvní stav" active={contractFilter.length > 0}><MultiSelectFilter options={["Podepsaná KS", "Podepsaná SBK", "RS k podpisu", "Předrezervace", "Bez smlouvy"]} selected={contractFilter} onChange={setContractFilter} allLabel="Všechny smluvní stavy" ariaLabel="Filtrovat smluvní stav" /></TableColumnFilter><TableColumnFilter label="Telefon" active={Boolean(phoneFilter)}><input value={phoneFilter} onChange={(event) => setPhoneFilter(event.target.value)} placeholder="Telefon…" aria-label="Filtrovat telefon" /></TableColumnFilter><TableColumnFilter label="E-mail" active={Boolean(emailFilter)}><input value={emailFilter} onChange={(event) => setEmailFilter(event.target.value)} placeholder="E-mail…" aria-label="Filtrovat e-mail" /></TableColumnFilter><th /></tr></thead><tbody>{pageRows.map((client) => <tr key={client.id} onClick={() => setSelectedClientName(client.name)}><td className="checkbox-cell"><button className={`table-checkbox ${selected.has(client.id) ? "checked" : ""}`} onClick={(event) => { event.stopPropagation(); toggle(client.id); }} aria-label={`Vybrat ${client.name}`}>{selected.has(client.id) && <Check size={13} />}</button></td><td><span className="client-name-cell"><Avatar initials={client.initials} small /><span><strong>{client.name}</strong></span></span></td><td><Badge tone="neutral">{client.kind}</Badge></td><td><span className="multi-value">{client.projectNames.map((project) => <small key={project}>{project}</small>)}</span></td><td>{client.units.map((unit) => <button className="unit-link" key={unit} onClick={(event) => { event.stopPropagation(); openUnit(units.find((item) => item.id === unit) || units[0]); }}>{unit}</button>)}</td><td><Badge>{client.state}</Badge></td><td>{client.contractStatus}</td><td>{client.phone}</td><td><a href={`mailto:${client.email}`} onClick={(event) => event.stopPropagation()}>{client.email}</a></td><td><ChevronRight size={17} /></td></tr>)}</tbody></table></div>
+      <div className="unit-table-wrap"><table className="data-table client-table filter-table"><thead><tr><th className="checkbox-cell"><button className={`table-checkbox ${allPageSelected ? "checked" : ""}`} onClick={togglePage} aria-label="Vybrat klienty na stránce">{allPageSelected && <Check size={13} />}</button></th><TableColumnFilter label="Jméno / název" active={Boolean(query)}><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Hledat jméno…" aria-label="Filtrovat jméno nebo název" /></TableColumnFilter><TableColumnFilter label="Typ" active={typeFilter.length > 0}><MultiSelectFilter options={["FO", "PO"]} selected={typeFilter} onChange={setTypeFilter} allLabel="Všechny typy" ariaLabel="Filtrovat typ klienta" /></TableColumnFilter><TableColumnFilter label="Projekt" active={projectFilter.length > 0}><MultiSelectFilter options={projects.map((project) => project.name)} selected={projectFilter} onChange={setProjectFilter} allLabel="Všechny projekty" ariaLabel="Filtrovat projekt" /></TableColumnFilter><TableColumnFilter label="Jednotka / jednotky" active={Boolean(unitFilter)}><input value={unitFilter} onChange={(event) => setUnitFilter(event.target.value)} placeholder="A203…" aria-label="Filtrovat jednotku" /></TableColumnFilter><TableColumnFilter label="Stav vztahu" active={relationFilter.length > 0}><MultiSelectFilter options={["Zájemce", "Aktivní klient", "Předání", "Předáno"]} selected={relationFilter} onChange={setRelationFilter} allLabel="Všechny vztahy" ariaLabel="Filtrovat stav vztahu" /></TableColumnFilter><TableColumnFilter label="Smluvní stav" active={contractFilter.length > 0}><MultiSelectFilter options={["Podepsaná KS", "Podepsaná SBK", "RS k podpisu", "Předrezervace", "Bez smlouvy"]} selected={contractFilter} onChange={setContractFilter} allLabel="Všechny smluvní stavy" ariaLabel="Filtrovat smluvní stav" /></TableColumnFilter><TableColumnFilter label="Telefon" active={Boolean(phoneFilter)}><input value={phoneFilter} onChange={(event) => setPhoneFilter(event.target.value)} placeholder="Telefon…" aria-label="Filtrovat telefon" /></TableColumnFilter><TableColumnFilter label="E-mail" active={Boolean(emailFilter)}><input value={emailFilter} onChange={(event) => setEmailFilter(event.target.value)} placeholder="E-mail…" aria-label="Filtrovat e-mail" /></TableColumnFilter><th /></tr></thead><tbody>{pageRows.map((client) => <tr key={client.id} onClick={() => setSelectedClientName(client.name)}><td className="checkbox-cell"><button className={`table-checkbox ${selected.has(client.id) ? "checked" : ""}`} onClick={(event) => { event.stopPropagation(); toggle(client.id); }} aria-label={`Vybrat ${client.name}`}>{selected.has(client.id) && <Check size={13} />}</button></td><td><span className="client-name-cell"><Avatar initials={client.initials} small /><span><strong>{client.name}</strong></span></span></td><td><Badge tone="neutral">{client.kind}</Badge></td><td><ClientRelationColumn client={client} mode="project" openUnit={openUnit}/></td><td><ClientRelationColumn client={client} mode="unit" openUnit={openUnit}/></td><td><Badge>{client.state}</Badge></td><td>{client.contractStatus}</td><td>{client.phone}</td><td><a href={`mailto:${client.email}`} onClick={(event) => event.stopPropagation()}>{client.email}</a></td><td><ChevronRight size={17} /></td></tr>)}</tbody></table></div>
       {!filtered.length && <div className="empty-filter-state"><Search size={22} /><strong>Žádný klient neodpovídá filtrům</strong><small>Změňte projekt, stav vztahu nebo hledaný výraz.</small></div>}
       <div className="table-footer"><span>Zobrazeno {pageRows.length} z {filtered.length} výsledků · jedna společná databáze napříč firmou</span><div><button disabled><ChevronRight className="rotate-180" size={16} /></button><button className="active">1</button><button><ChevronRight size={16} /></button></div></div>
     </section>
   );
 }
+
+function ClientRelationColumn({client,mode,openUnit}:{client:(typeof clients)[number];mode:"project"|"unit";openUnit:(unit:UnitRecord)=>void}){const relations=client.projectNames.map(project=>({project,codes:client.units.filter(code=>units.find(unit=>unit.id===code)?.project===project)})).filter(row=>row.codes.length||client.projectNames.includes(row.project));return <span className="client-relation-map">{relations.map(row=><span key={row.project}>{mode==="project"?<small>{row.project}</small>:row.codes.length?row.codes.map(code=><button className="unit-link" key={code} onClick={event=>{event.stopPropagation();const unit=units.find(item=>item.id===code);if(unit)openUnit(unit);}}>{code}</button>):<small>bez konkrétní jednotky</small>}</span>)}</span>}
 
 function ClientDetail({ client, onBack, openUnit, onEdit }: { client: (typeof clients)[number]; onBack: () => void; openUnit: (unit: UnitRecord) => void; onEdit?: () => void }) {
   const history=client.interestHistory?.length?client.interestHistory:[{date:"—",project:client.projectNames[0]??"—",unit:client.units[0]??"—",type:"Bez evidované události",result:client.state}];
@@ -1029,13 +1014,13 @@ function HandoversPage({ openUnit, notify }: { openUnit: (unit: UnitRecord) => v
   );
 }
 
-function TasksPage({ rows, toggleTask, openUnit }: { rows: typeof initialTasks; toggleTask: (id: number) => void; openUnit: (unit: UnitRecord) => void }) {
+function TasksPage({ rows, toggleTask, openUnit,scope,onScope,loading }: { rows: TaskRecord[]; toggleTask: (id: string|number) => void; openUnit: (unit: UnitRecord) => void;scope:"mine"|"all"|"completed";onScope:(scope:"mine"|"all"|"completed")=>void;loading:boolean }) {
   return (
     <section className="card module-card tasks-module">
-      <nav className="task-tabs" aria-label="Pohledy úkolů"><button className="active" aria-current="page"><UserRound className="task-tab-icon" size={17} /> Moje úkoly <span>5</span></button><button><List className="task-tab-icon" size={17} /> Všechny</button><button><CheckCircle2 className="task-tab-icon" size={17} /> Dokončené</button><div /><button className="filter-button task-filter-action"><Filter size={16} /> Filtry</button></nav>
+      <nav className="task-tabs" aria-label="Pohledy úkolů"><button className={scope==="mine"?"active":""} aria-current={scope==="mine"?"page":undefined} onClick={()=>onScope("mine")}><UserRound className="task-tab-icon" size={17} /> Moje úkoly {scope==="mine"&&<span>{rows.length}</span>}</button><button className={scope==="all"?"active":""} aria-current={scope==="all"?"page":undefined} onClick={()=>onScope("all")}><List className="task-tab-icon" size={17} /> Všechny {scope==="all"&&<span>{rows.length}</span>}</button><button className={scope==="completed"?"active":""} aria-current={scope==="completed"?"page":undefined} onClick={()=>onScope("completed")}><CheckCircle2 className="task-tab-icon" size={17} /> Dokončené {scope==="completed"&&<span>{rows.length}</span>}</button><div /><button className="filter-button task-filter-action"><Filter size={16} /> Filtry</button></nav>
       <div className="task-section-label"><span>Dnes</span><i /></div>
       <div className="large-task-list">
-        {rows.map((task) => <article key={task.id} className={task.done ? "done" : ""}>
+        {loading?<div className="empty-next"><Clock3 size={20}/><span><strong>Načítám úkoly…</strong><small>Aktualizuji zvolený pohled.</small></span></div>:rows.map((task) => <article key={task.id} className={task.done ? "done" : ""}>
           <button onClick={() => toggleTask(task.id)} className="task-check large" aria-label={`Dokončit úkol ${task.title}`}>{task.done && <Check size={15} />}</button>
           <span className={`priority-bar ${task.priority.toLowerCase().replace("á", "a").replace("ř", "r")}`} />
           <button className="task-main-copy" onClick={() => openUnit(units.find((unit) => unit.id === task.object.split(" · ")[0]) || units[0])}><strong>{task.title}</strong><small>{task.object} · {task.project}</small></button>
@@ -1066,7 +1051,8 @@ function UnitPreview({ unit, close, open, previous, next, position, total }: { u
   );
 }
 
-function UnitDetail({ unit, tab, onTab, onBack, notify, openTask, openClient, onEdit, onEditPrice,onManageAccessories,onSalesAction,canCancelHold,onContractWorkflow }: { unit: UnitRecord; tab: UnitTab; onTab: (tab: UnitTab) => void; onBack: () => void; notify: (message: string) => void; openTask: () => void; openClient: (name: string) => void; onEdit?: () => void; onEditPrice?: () => void;onManageAccessories?:()=>void;onSalesAction?:(mode:"interest"|"pre_reservation"|"reservation"|"convert"|"cancel")=>void;canCancelHold?:boolean;onContractWorkflow?:(contract:(typeof contracts)[number])=>void }) {
+function UnitDetail({ unit, tab, onTab, onBack, notify, openTask, openClient, onEdit, onEditPrice,onManageAccessories,onEditFloorplan,onSalesAction,canCancelHold,onContractWorkflow }: { unit: UnitRecord; tab: UnitTab; onTab: (tab: UnitTab) => void; onBack: () => void; notify: (message: string) => void; openTask: () => void; openClient: (name: string) => void; onEdit?: () => void; onEditPrice?: () => void;onManageAccessories?:()=>void;onEditFloorplan?:()=>void;onSalesAction?:(mode:"interest"|"pre_reservation"|"reservation"|"convert"|"cancel")=>void;canCancelHold?:boolean;onContractWorkflow?:(contract:(typeof contracts)[number])=>void }) {
+  const [timeline,setTimeline]=useState<TimelineRecord[]>([]);useEffect(()=>{const controller=new AbortController();activityRepository.unitTimeline(unit.backendId??unit.id,unit.id,controller.signal).then(setTimeline).catch(()=>setTimeline([]));return()=>controller.abort();},[unit.backendId,unit.id,tab]);
   const tabs: { id: UnitTab; label: string; icon: typeof Home; count?: number }[] = [
     { id: "overview", label: "Přehled", icon: LayoutDashboard }, { id: "contracts", label: "Smlouvy", icon: FileText, count: 4 }, { id: "payments", label: "Platby", icon: CircleDollarSign, count: 3 }, { id: "changes", label: "Klientské změny", icon: SlidersHorizontal, count: 3 }, { id: "documents", label: "Dokumenty", icon: FolderOpen, count: 12 }, { id: "handover", label: "Předání", icon: KeyRound }, { id: "tasks", label: "Úkoly", icon: ClipboardCheck, count: 2 }, { id: "history", label: "Historie", icon: History },
   ];
@@ -1085,20 +1071,21 @@ function UnitDetail({ unit, tab, onTab, onBack, notify, openTask, openClient, on
       </div>
       <nav className="unit-tabs unit-detail-tabs" aria-label="Navigace jednotky">{tabs.map((item) => { const TabIcon = item.icon; return <button key={item.id} className={`${tab === item.id ? "active" : ""} ${item.id === "changes" ? "client-changes-tab" : ""}`.trim()} aria-current={tab === item.id ? "page" : undefined} onClick={() => onTab(item.id)}><TabIcon className="unit-tab-icon" size={17} />{item.label}{item.id === "changes" && <em className="unit-tab-new">NOVÉ</em>}{item.count && <span aria-label={`${item.count} položek`}>{item.count}</span>}</button>; })}</nav>
 
-      {tab === "overview" && <UnitOverview unit={unit} notify={notify} openClient={openClient} onEditPrice={onEditPrice} onManageAccessories={onManageAccessories} onSalesAction={onSalesAction} canCancelHold={canCancelHold} />}
+      {tab === "overview" && <UnitOverview unit={unit} notify={notify} openClient={openClient} onEditPrice={onEditPrice} onManageAccessories={onManageAccessories} onEditFloorplan={onEditFloorplan} onSalesAction={onSalesAction} canCancelHold={canCancelHold} timeline={timeline} />}
       {tab === "contracts" && <UnitContracts unit={unit} notify={notify} onWorkflow={onContractWorkflow} />}
       {tab === "payments" && <UnitPayments unit={unit} />}
       {tab === "changes" && <UnitClientChanges unit={unit} notify={notify} />}
       {tab === "documents" && <UnitDocuments unit={unit} notify={notify} />}
       {tab === "handover" && <UnitHandover unit={unit} notify={notify} />}
       {tab === "tasks" && <UnitTasks unit={unit} openTask={openTask} />}
-      {tab === "history" && <UnitHistory unit={unit} />}
+      {tab === "history" && <UnitHistory unit={unit} timeline={timeline} />}
     </div>
   );
 }
 
-function UnitOverview({ unit, notify, openClient, onEditPrice,onManageAccessories,onSalesAction,canCancelHold }: { unit: UnitRecord; notify: (message: string) => void; openClient: (name: string) => void; onEditPrice?: () => void;onManageAccessories?:()=>void;onSalesAction?:(mode:"interest"|"pre_reservation"|"reservation"|"convert"|"cancel")=>void;canCancelHold?:boolean }) {
+function UnitOverview({ unit, notify, openClient, onEditPrice,onManageAccessories,onEditFloorplan,onSalesAction,canCancelHold,timeline }: { unit: UnitRecord; notify: (message: string) => void; openClient: (name: string) => void; onEditPrice?: () => void;onManageAccessories?:()=>void;onEditFloorplan?:()=>void;onSalesAction?:(mode:"interest"|"pre_reservation"|"reservation"|"convert"|"cancel")=>void;canCancelHold?:boolean;timeline:TimelineRecord[] }) {
   const [floorplanOpen, setFloorplanOpen] = useState(false);
+  const [floorplanUrl,setFloorplanUrl]=useState(unit.floorplanImageUrl??null);useEffect(()=>{if(floorplanUrl)return;const controller=new AbortController();mediaRepository.get("unit",unit.backendId??unit.id,controller.signal).then(media=>{if(media)setFloorplanUrl(media.url);}).catch(()=>undefined);return()=>controller.abort();},[unit.backendId,unit.id,floorplanUrl]);
   const [priceHistoryOpen, setPriceHistoryOpen] = useState(false);
   const commercial=unitCommercialContexts[unit.id];
   const buyers=commercial?.buyers ?? [];
@@ -1137,15 +1124,15 @@ function UnitOverview({ unit, notify, openClient, onEditPrice,onManageAccessorie
         </section>
         <section className="card recent-card">
           <SectionTitle title="Poslední aktivita" action="Celá historie" onAction={() => notify("Otevřete záložku Historie")} />
-          <div className="timeline-mini">{(isDejvice?[{date:"21. 7. 2026",title:"Importována pilotní data",detail:"Zdroj Rezidence_Dejvice_IMPORT_CLEAN.xlsx",icon:"history"}]:unitTimeline.slice(0,4)).map((item) => <div key={item.date}><span className={`timeline-icon ${item.icon}`}>{item.icon === "contract" ? <FileText size={16} /> : item.icon === "payment" ? <Banknote size={16} /> : item.icon === "build" ? <HardHat size={16} /> : <History size={16} />}</span><span><strong>{item.title}</strong><small>{item.detail}</small></span><time>{item.date}</time></div>)}</div>
+          <div className="timeline-mini">{timeline.slice(0,4).map((item) => <div key={item.id}><span className={`timeline-icon ${item.icon}`}>{item.icon === "contract" ? <FileText size={16} /> : item.icon === "payment" ? <Banknote size={16} /> : item.icon === "build" ? <HardHat size={16} /> : <History size={16} />}</span><span><strong>{item.title}</strong><small>{item.detail}</small></span><time>{item.date}</time></div>)}</div>
         </section>
       </div>
       <aside className="unit-side-column">
-        {unit.floorplanAvailable===false?<section className="card floorplan-card"><SectionTitle title="Půdorys"/><div className="empty-filter-state"><FileText size={22}/><strong>Půdorys není ve zdroji</strong><small>Pilotní Excel neobsahuje soubor ani odkaz na půdorys.</small></div></section>:<section className="card floorplan-card"><div className="section-title"><h2>Půdorys</h2><button className="ghost-icon" onClick={() => setFloorplanOpen(true)} aria-label="Otevřít velký půdorys"><ExternalLink size={17} /></button></div><button className="floorplan-preview-button" onClick={() => setFloorplanOpen(true)} aria-label="Zvětšit půdorys"><div className="large-floorplan"><div className="room living"><span>OBÝVACÍ POKOJ + KK<small>32,1 m²</small></span></div><div className="room bed"><span>LOŽNICE<small>14,8 m²</small></span></div><div className="room bath"><span>KOUPELNA<small>5,4 m²</small></span></div><div className="room hall"><span>CHODBA<small>8,3 m²</small></span></div><div className="room bed2"><span>POKOJ<small>12,4 m²</small></span></div><div className="room wc"><span>WC</span></div><div className="balcony">LODŽIE · 8,2 m²</div></div><span className="enlarge-hint"><Eye size={15} /> Otevřít větší náhled</span></button><button className="secondary-button full" onClick={() => notify(`Stahuji půdorys ${unit.id}`)}><Download size={16} /> Stáhnout půdorys</button></section>}
+        {unit.floorplanAvailable===false&&!floorplanUrl?<section className="card floorplan-card"><SectionTitle title="Půdorys" action={onEditFloorplan?"Nahrát půdorys":undefined} onAction={onEditFloorplan}/><div className="empty-filter-state"><FileText size={22}/><strong>Půdorys není ve zdroji</strong><small>Pilotní Excel neobsahuje soubor ani odkaz na půdorys.</small></div></section>:<section className="card floorplan-card"><div className="section-title"><h2>Půdorys</h2><span className="floorplan-actions">{onEditFloorplan&&<button className="text-button" onClick={onEditFloorplan}><ImagePlus size={15}/> Změnit</button>}<button className="ghost-icon" onClick={() => setFloorplanOpen(true)} aria-label="Otevřít velký půdorys"><ExternalLink size={17} /></button></span></div><button className="floorplan-preview-button" onClick={() => setFloorplanOpen(true)} aria-label="Zvětšit půdorys">{floorplanUrl?<img className="floorplan-image" src={floorplanUrl} alt={`Půdorys jednotky ${unit.id}`}/>:<div className="large-floorplan"><div className="room living"><span>OBÝVACÍ POKOJ + KK<small>32,1 m²</small></span></div><div className="room bed"><span>LOŽNICE<small>14,8 m²</small></span></div><div className="room bath"><span>KOUPELNA<small>5,4 m²</small></span></div><div className="room hall"><span>CHODBA<small>8,3 m²</small></span></div><div className="room bed2"><span>POKOJ<small>12,4 m²</small></span></div><div className="room wc"><span>WC</span></div><div className="balcony">LODŽIE · 8,2 m²</div></div>}<span className="enlarge-hint"><Eye size={15} /> Otevřít větší náhled</span></button><button className="secondary-button full" onClick={() => notify(`Stahuji půdorys ${unit.id}`)}><Download size={16} /> Stáhnout půdorys</button></section>}
         <section className="card parameters-card"><SectionTitle title="Základní parametry" /><dl><div><dt>Dispozice</dt><dd>{unit.layout}</dd></div><div><dt>Podlahová plocha</dt><dd>{unit.area.toLocaleString("cs-CZ")} m²</dd></div>{unit.usableArea&&<div><dt>Užitná plocha</dt><dd>{unit.usableArea.toLocaleString("cs-CZ")} m²</dd></div>}<div><dt>Podlaží</dt><dd>{unit.floor}</dd></div>{unit.balcony!=null&&<div><dt>Balkon</dt><dd>{unit.balcony.toLocaleString("cs-CZ")} m²</dd></div>}{unit.terrace!=null&&<div><dt>Terasa</dt><dd>{unit.terrace.toLocaleString("cs-CZ")} m²</dd></div>}{unit.garden!=null&&<div><dt>Zahrada</dt><dd>{unit.garden.toLocaleString("cs-CZ")} m²</dd></div>}{!isDejvice&&<><div><dt>Orientace</dt><dd>{unit.orientation}</dd></div><div><dt>Standard</dt><dd>Premium</dd></div><div><dt>Vlastnictví</dt><dd>Osobní</dd></div></>}</dl></section>
       </aside>
     </div>
-    {floorplanOpen && <div className="modal-layer"><button className="modal-scrim" onClick={() => setFloorplanOpen(false)} aria-label="Zavřít půdorys" /><div className="modal floorplan-modal"><div className="modal-head"><div><h2>Půdorys jednotky {unit.id}</h2><p>{unit.layout} · {unit.area.toLocaleString("cs-CZ")} m² · {unit.floor}</p></div><button className="icon-button" onClick={() => setFloorplanOpen(false)}><X size={19} /></button></div><div className="modal-floorplan"><div className="large-floorplan"><div className="room living"><span>OBÝVACÍ POKOJ + KK<small>32,1 m²</small></span></div><div className="room bed"><span>LOŽNICE<small>14,8 m²</small></span></div><div className="room bath"><span>KOUPELNA<small>5,4 m²</small></span></div><div className="room hall"><span>CHODBA<small>8,3 m²</small></span></div><div className="room bed2"><span>POKOJ<small>12,4 m²</small></span></div><div className="room wc"><span>WC</span></div><div className="balcony">LODŽIE · 8,2 m²</div></div></div></div></div>}
+    {floorplanOpen && <div className="modal-layer"><button className="modal-scrim" onClick={() => setFloorplanOpen(false)} aria-label="Zavřít půdorys" /><div className="modal floorplan-modal"><div className="modal-head"><div><h2>Půdorys jednotky {unit.id}</h2><p>{unit.layout} · {unit.area.toLocaleString("cs-CZ")} m² · {unit.floor}</p></div><button className="icon-button" onClick={() => setFloorplanOpen(false)}><X size={19} /></button></div><div className="modal-floorplan">{floorplanUrl&&<img className="floorplan-image" src={floorplanUrl} alt={`Půdorys jednotky ${unit.id}`}/>}<div className="large-floorplan"><div className="room living"><span>OBÝVACÍ POKOJ + KK<small>32,1 m²</small></span></div><div className="room bed"><span>LOŽNICE<small>14,8 m²</small></span></div><div className="room bath"><span>KOUPELNA<small>5,4 m²</small></span></div><div className="room hall"><span>CHODBA<small>8,3 m²</small></span></div><div className="room bed2"><span>POKOJ<small>12,4 m²</small></span></div><div className="room wc"><span>WC</span></div><div className="balcony">LODŽIE · 8,2 m²</div></div></div></div></div>}
     {priceHistoryOpen && <div className="modal-layer"><button className="modal-scrim" onClick={() => setPriceHistoryOpen(false)} aria-label="Zavřít historii cen" /><div className="modal price-history-modal"><div className="modal-head"><div><h2>Historie ceny · {unit.id}</h2><p>Každá změna je samostatný auditovatelný záznam.</p></div><button className="icon-button" onClick={() => setPriceHistoryOpen(false)}><X size={19} /></button></div><table className="data-table"><thead><tr><th>Platnost od</th><th>Typ ceny</th><th>Cena / sleva</th><th>Důvod</th><th>Autor / schválil</th></tr></thead><tbody>{(unitPriceHistories[unit.id]??[]).map(row=><tr key={row.id}><td>{new Date(row.validFrom).toLocaleDateString("cs-CZ")}</td><td><Badge tone="neutral">{({list_price:"Ceníková",individual_discount:"Individuální sleva",sale_price:"Prodejní",contract_price:"Smluvní"} as Record<string,string>)[row.type]??row.type}</Badge></td><td><strong>{formatMoney(row.amount)}</strong></td><td>{row.reason}</td><td>{row.author}{row.approver?` · ${row.approver}`:""}</td></tr>)}</tbody></table></div></div>}
     </>
   );
@@ -1220,9 +1207,8 @@ function UnitTasks({ unit,openTask }: { unit:UnitRecord;openTask: () => void }) 
   return <section className="card detail-tab-card"><div className="tab-card-header"><div><h2>Úkoly jednotky</h2><p>Ruční i automatické úkoly navázané na A203.</p></div><button className="primary-button" onClick={openTask}><Plus size={17} /> Nový úkol</button></div><div className="large-task-list"><article><button className="task-check large" /><span className="priority-bar vysoka" /><span className="task-main-copy"><strong>Doplnit číslo účtu klienta</strong><small>Automaticky vytvořeno · blokuje generování SBK</small></span><Badge tone="danger">Vysoká</Badge><span className="task-due urgent"><Clock3 size={15} />Dnes</span><Avatar initials="IN" small /></article><article><button className="task-check large" /><span className="priority-bar stredni" /><span className="task-main-copy"><strong>Zapracovat připomínky klienta</strong><small>Smlouva SBK · verze v04</small></span><Badge tone="warning">Střední</Badge><span className="task-due"><Clock3 size={15} />Zítra</span><Avatar initials="PS" small /></article></div></section>;
 }
 
-function UnitHistory({unit}:{unit:UnitRecord}) {
-  if(unit.project==="Rezidence Dejvice")return <section className="card detail-tab-card history-tab"><div className="tab-card-header"><div><h2>Kompletní historie jednotky</h2><p>Auditní stopa bez domyšlených událostí.</p></div></div><div className="full-timeline"><article><div className="timeline-icon history"><History size={17}/></div><div><time>21. 7. 2026</time><strong>Importována pilotní data</strong><p>Zdroj Rezidence_Dejvice_IMPORT_CLEAN.xlsx.</p></div></article></div></section>;
-  return <section className="card detail-tab-card history-tab"><div className="tab-card-header"><div><h2>Kompletní historie jednotky</h2><p>Auditní stopa obchodních, finančních a dokumentových změn.</p></div><button className="filter-button"><Filter size={16} /> Typ události</button></div><div className="full-timeline">{unitTimeline.map((item) => <article key={item.date}><div className={`timeline-icon ${item.icon}`}>{item.icon === "contract" ? <FileText size={17} /> : item.icon === "payment" ? <Banknote size={17} /> : item.icon === "build" ? <HardHat size={17} /> : <History size={17} />}</div><div><time>{item.date}</time><strong>{item.title}</strong><p>{item.detail}</p></div></article>)}</div></section>;
+function UnitHistory({unit,timeline}:{unit:UnitRecord;timeline:TimelineRecord[]}) {
+  return <section className="card detail-tab-card history-tab"><div className="tab-card-header"><div><h2>Kompletní historie jednotky</h2><p>Jednotná auditní stopa obchodních, cenových, dokumentových a datových změn.</p></div><Badge tone="neutral">{unit.id}</Badge></div><div className="full-timeline">{timeline.map((item) => <article key={item.id}><div className={`timeline-icon ${item.icon}`}>{item.icon === "contract" ? <FileText size={17} /> : item.icon === "payment" ? <Banknote size={17} /> : item.icon === "build" ? <HardHat size={17} /> : <History size={17} />}</div><div><time>{item.date}</time><strong>{item.title}</strong><p>{item.detail}</p></div></article>)}{!timeline.length&&<div className="empty-filter-state"><History size={22}/><strong>Zatím bez auditních událostí</strong><small>První uložená změna se zobrazí zde i v poslední aktivitě.</small></div>}</div></section>;
 }
 
 function PilotEmptyState({title,detail}:{title:string;detail:string}){
@@ -1260,7 +1246,11 @@ function constructionCodeToLabel(code:string){return constructionStatusOptions.f
 function quarterFromDate(value:string|null){if(!value)return"Neplánováno";const date=new Date(`${value}T00:00:00Z`);return `Q${Math.floor(date.getUTCMonth()/3)+1} ${date.getUTCFullYear()}`;}
 function numberValue(value:string){if(!value.trim())return undefined;const number=Number(value.replace(",","."));return Number.isFinite(number)?number:undefined;}
 
-function TaskModal({ close, save }: { close: () => void; save: (title: string) => void }) {
-  const [title, setTitle] = useState("");
-  return <div className="modal-layer"><button className="modal-scrim" onClick={close} aria-label="Zavřít dialog" /><div className="modal"><div className="modal-head"><div><h2>Nový úkol</h2><p>Úkol se zobrazí v kontextu jednotky i v globálním přehledu.</p></div><button className="icon-button" onClick={close}><X size={19} /></button></div><div className="modal-form"><label><span>Název úkolu</span><input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Co je potřeba udělat?" /></label><div className="form-row"><label><span>Vazba</span><select><option>Jednotka A203</option><option>Smlouva SBK</option><option>Klient Novákovi</option></select></label><label><span>Termín</span><input type="date" defaultValue="2026-07-22" /></label></div><div className="form-row"><label><span>Odpovědná osoba</span><select><option>Iva Novotná</option><option>Pavel Sedlák</option><option>Martin Jelínek</option></select></label><label><span>Priorita</span><select><option>Střední</option><option>Vysoká</option><option>Nízká</option></select></label></div><label><span>Poznámka</span><textarea placeholder="Volitelný kontext k úkolu" rows={3} /></label></div><div className="modal-foot"><button className="secondary-button" onClick={close}>Zrušit</button><button className="primary-button" disabled={!title.trim()} onClick={() => save(title.trim())}><Check size={17} /> Vytvořit úkol</button></div></div></div>;
+function TaskModal({ close, save,memberships,defaultUnit }: { close: () => void; save: (value:{title:string;description:string;objectType:string;objectId:string;assigneeId:string|null;priority:"low"|"medium"|"high";dueAt:string}) => Promise<void>;memberships:MembershipOption[];defaultUnit?:string }) {
+  const [title,setTitle]=useState("");const [description,setDescription]=useState("");const [objectType,setObjectType]=useState("unit");const [objectId,setObjectId]=useState(defaultUnit??"A203");const [assigneeId,setAssigneeId]=useState(memberships[0]?.id??"");const [priority,setPriority]=useState<"low"|"medium"|"high">("medium");const [dueAt,setDueAt]=useState("2026-07-23");
+  return <FormModal title="Nový úkol" close={close} saveLabel="Vytvořit úkol" onSave={async()=>{if(!title.trim())throw new Error("Doplňte název úkolu");await save({title:title.trim(),description:description.trim(),objectType,objectId,assigneeId:assigneeId||null,priority,dueAt});}}><label><span>Název úkolu</span><input autoFocus value={title} onChange={event=>setTitle(event.target.value)} placeholder="Co je potřeba udělat?"/></label><label><span>Popis</span><textarea rows={3} value={description} onChange={event=>setDescription(event.target.value)} placeholder="Kontext a očekávaný výsledek"/></label><div className="form-row"><label><span>Vazba na objekt</span><select value={objectType} onChange={event=>setObjectType(event.target.value)}><option value="unit">Jednotka</option><option value="project">Projekt</option><option value="party">Klient</option><option value="contract">Smlouva</option></select></label><label><span>Označení objektu</span><input value={objectId} onChange={event=>setObjectId(event.target.value)} placeholder="A203"/></label></div><div className="form-row"><label><span>Termín</span><input type="date" value={dueAt} onChange={event=>setDueAt(event.target.value)}/></label><label><span>Odpovědná osoba</span><select value={assigneeId} onChange={event=>setAssigneeId(event.target.value)}>{memberships.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}{!memberships.length&&<option value="">Aktuální uživatel</option>}</select></label><label><span>Priorita</span><select value={priority} onChange={event=>setPriority(event.target.value as "low"|"medium"|"high")}><option value="low">Nízká</option><option value="medium">Střední</option><option value="high">Vysoká</option></select></label></div></FormModal>;
 }
+
+function ProfileModal({session,close,canAdmin}:{session:IdentitySession;close:()=>void;canAdmin:boolean}){const scopes=session.workspace.projectScopes??[];const [workspaces,setWorkspaces]=useState<Array<{tenantId:string;tenantName:string;tenantSlug:string}>>([]);useEffect(()=>{const controller=new AbortController();identityRepository.listWorkspaces(controller.signal).then(setWorkspaces).catch(()=>undefined);return()=>controller.abort();},[]);return <div className="modal-layer"><button className="modal-scrim" onClick={close} aria-label="Zavřít profil"/><div className="modal profile-modal"><div className="modal-head"><div><h2>Profil a pracovní prostor</h2><p>Přihlášený uživatel a jeho efektivní oprávnění.</p></div><button className="icon-button" onClick={close}><X size={19}/></button></div><div className="profile-summary"><Avatar initials={initials(session.user.displayName)}/><span><strong>{session.user.displayName}</strong><small>{session.user.email}</small></span><Badge tone="success">Aktivní</Badge></div><div className="profile-workspace"><Building2 size={18}/><span><small>PRACOVNÍ PROSTOR</small><strong>{session.workspace.tenantName}</strong></span>{session.workspace.roles.map(role=><Badge key={role} tone="neutral">{roleLabel([role])}</Badge>)}</div>{workspaces.length>1&&<label className="workspace-switch"><span>Přepnout pracovní prostor</span><select defaultValue={session.workspace.tenantId} onChange={()=>window.location.reload()}>{workspaces.map(workspace=><option key={workspace.tenantId} value={workspace.tenantId}>{workspace.tenantName}</option>)}</select></label>}<section className="profile-section"><h3>Projektové rozsahy</h3>{scopes.length?scopes.map(scope=><div key={scope.projectId}><span><strong>{scope.projectName}</strong><small>{scope.roles.map(role=>roleLabel([role])).join(", ")}</small></span></div>):<p>Tenantová role umožňuje práci ve všech dostupných projektech.</p>}</section><div className="profile-actions"><button className="secondary-button" onClick={()=>window.location.reload()}><Settings size={16}/> Nastavení profilu</button>{canAdmin&&<button className="secondary-button" onClick={()=>alert("Správa uživatelů a rolí je připravena jako administrátorský vstup; plný modul není součástí této etapy.")}><ShieldCheck size={16}/> Uživatelé a role</button>}<a className="secondary-button danger-text" href="/signout-with-chatgpt?return_to=%2F"><LogOut size={16}/> Odhlásit se</a></div></div></div>}
+
+function MediaModal({value,close,save}:{value:{title:string;kind:"cover"|"floorplan"};close:()=>void;save:(file:File)=>Promise<void>}){const [file,setFile]=useState<File|null>(null);const [preview,setPreview]=useState<string|null>(null);return <FormModal title={value.title} close={close} saveLabel={value.kind==="cover"?"Uložit titulní obrázek":"Uložit půdorys"} onSave={async()=>{if(!file)throw new Error("Vyberte obrázek");await save(file);}}><label className="media-dropzone"><ImagePlus size={25}/><span><strong>Vyberte obrázek</strong><small>JPG, PNG nebo WebP · maximálně 12 MB</small></span><input type="file" accept="image/png,image/jpeg,image/webp" onChange={event=>{const selected=event.target.files?.[0]??null;setFile(selected);setPreview(selected?URL.createObjectURL(selected):null);}}/></label>{preview&&<img className={`media-preview ${value.kind}`} src={preview} alt="Náhled vybraného obrázku"/>}<p className="form-help"><FolderOpen size={14}/> Preview ukládá soubor do R2. Produkční repository je připravené na metadata a budoucí SharePoint external ID.</p></FormModal>}

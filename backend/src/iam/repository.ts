@@ -85,6 +85,14 @@ export class IamRepository {
       );
       const row = result.rows[0];
       if (!row) return null;
+      const scopes = await client.query<{ project_id:string;project_name:string;roles:string[] }>(
+        `SELECT assignment.project_id, project.name project_name, array_agg(DISTINCT role.code ORDER BY role.code) roles
+         FROM project_role_assignments assignment
+         JOIN projects project ON project.tenant_id=assignment.tenant_id AND project.id=assignment.project_id
+         JOIN roles role ON role.tenant_id=assignment.tenant_id AND role.id=assignment.role_id
+         WHERE assignment.tenant_id=$1 AND assignment.membership_id=$2
+         GROUP BY assignment.project_id,project.name ORDER BY project.name`,[tenantId,row.membership_id],
+      );
       return {
         user,
         workspace: {
@@ -94,6 +102,7 @@ export class IamRepository {
           membershipId: row.membership_id,
           roles: row.roles ?? [],
           permissions: row.permissions ?? [],
+          projectScopes: scopes.rows.map(scope=>({projectId:scope.project_id,projectName:scope.project_name,roles:scope.roles})),
         },
       };
     });

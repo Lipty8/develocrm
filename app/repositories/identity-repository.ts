@@ -5,6 +5,7 @@ export type IdentitySession = {
     tenantName: string;
     roles: string[];
     permissions: string[];
+    projectScopes?: Array<{ projectId: string; projectName: string; roles: string[] }>;
   };
   source: "production-api" | "prototype-fallback";
 };
@@ -16,12 +17,14 @@ const prototypeSession: IdentitySession = {
     tenantName: "Develo Group",
     roles: ["admin"],
     permissions: ["tenant.read","membership.read","role.read","project.read","project.manage","projects.change_manager","projects.change_status","unit.read","unit.manage","accessory.read","accessory.manage","clients.read","clients.manage","clients.export","interests.manage","sales_case.read","sales_case.manage","holds.manage","holds.cancel","price.read","price.manage","prices.change","prices.approve","contract.read","contract.manage","contract.approve","contract.sign"],
+    projectScopes: [],
   },
   source: "prototype-fallback",
 };
 
 export interface IdentityRepository {
   getSession(signal?: AbortSignal): Promise<IdentitySession>;
+  listWorkspaces(signal?: AbortSignal): Promise<Array<{tenantId:string;tenantName:string;tenantSlug:string}>>;
 }
 
 export class ApiIdentityRepository implements IdentityRepository {
@@ -30,6 +33,7 @@ export class ApiIdentityRepository implements IdentityRepository {
     if (!response.ok) throw new Error("Identitu se nepodařilo načíst");
     return response.json() as Promise<IdentitySession>;
   }
+  async listWorkspaces(signal?:AbortSignal){const response=await fetch("/api/identity/workspaces",{signal,cache:"no-store"});if(!response.ok)return[{tenantId:prototypeSession.workspace.tenantId,tenantName:prototypeSession.workspace.tenantName,tenantSlug:"develo-group"}];const payload=await response.json() as {workspaces:Array<{tenantId:string;tenantName:string;tenantSlug:string}>};return payload.workspaces;}
 }
 
 export const identityRepository: IdentityRepository = new ApiIdentityRepository();

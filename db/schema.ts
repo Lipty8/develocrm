@@ -257,6 +257,24 @@ export const tasks = sqliteTable("tasks", {
   index("tasks_object_idx").on(table.objectType, table.objectId),
 ]);
 
+// Preview adapter for durable media links. File bytes live in R2; production
+// stores the same metadata on the PostgreSQL project/unit aggregate.
+export const entityMedia = sqliteTable("entity_media", {
+  id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id),
+  entityType: text("entity_type").notNull(),
+  entityId: text("entity_id").notNull(),
+  kind: text("kind").notNull(),
+  objectKey: text("object_key").notNull(),
+  fileName: text("file_name").notNull(),
+  mimeType: text("mime_type").notNull(),
+  uploadedByUserId: text("uploaded_by_user_id").references(() => users.id),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex("entity_media_active_uq").on(table.tenantId, table.entityType, table.entityId, table.kind),
+  index("entity_media_entity_idx").on(table.entityType, table.entityId),
+]);
+
 export const timelineEvents = sqliteTable("timeline_events", {
   id: text("id").primaryKey(),
   tenantId: text("tenant_id").notNull().references(() => tenants.id),

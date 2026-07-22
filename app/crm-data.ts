@@ -26,13 +26,15 @@ export type UnitRecord = {
   terrace?: number | null;
   garden?: number | null;
   floorplanAvailable?: boolean;
+  floorplanImageUrl?: string | null;
   accessories?: AccessoryAssignmentRecord[];
 };
 export type AccessoryAssignmentRecord = { id:string; assignmentId?:string; code:string; type:string; category:string; areaM2:number|null; relation?:string|null };
 export type CatalogAccessoryRecord = AccessoryAssignmentRecord & { project:string; projectBackendId?:string; available:boolean };
 export type MembershipOption = { id:string; name:string };
 export type ProjectStructureOption = { id:string; projectId:string; project:string; name:string; kind:string };
-export type ProjectRecord = { backendId?:string; name:string; code:string; location:string; progress:number; units:number; available:number; preReserved:number; reserved:number; sold:number; handedOver:number; attention:number; color:"sage"|"sand"|"slate"; stage:string; lifecycleStatus?:string; revenue:string; buildings:string[]; manager:string; managerMembershipId?:string|null; plannedHandover:string; plannedCompletionFrom?:string|null; plannedCompletionTo?:string|null };
+export type ProjectRecord = { backendId?:string; name:string; code:string; location:string; progress:number; units:number; available:number; preReserved:number; reserved:number; sold:number; handedOver:number; attention:number; color:"sage"|"sand"|"slate"; stage:string; lifecycleStatus?:string; revenue:string; buildings:string[]; manager:string; managerMembershipId?:string|null; plannedHandover:string; plannedCompletionFrom?:string|null; plannedCompletionTo?:string|null; coverImageUrl?:string|null };
+export type TaskRecord = { id:string|number; title:string; description?:string; object:string; objectType?:string; objectId?:string; project:string; due:string; dueAt?:string|null; priority:string; owner:string; assigneeId?:string|null; done:boolean };
 
 export type InterestHistoryRecord = { date: string; project: string; unit: string; type: string; result: string };
 export type ClientRecord = {
@@ -72,7 +74,7 @@ export const projects:ProjectRecord[] = [
   dejviceProject,
 ];
 
-export const tasks = [
+export const tasks: TaskRecord[] = [
   { id: 1, title: "Doplnit číslo účtu klienta", object: "A203 · Jana a Petr Novákovi", project: "Rezidence Javorová", due: "Dnes", priority: "Vysoká", owner: "Iva", done: false },
   { id: 2, title: "Zkontrolovat revizi wallboxu", object: "C102 · Předání", project: "Parková čtvrť", due: "Dnes", priority: "Vysoká", owner: "Martin", done: false },
   { id: 3, title: "Připravit KS k připomínkám", object: "B308 · Alto Services s.r.o.", project: "Rezidence Javorová", due: "Zítra", priority: "Střední", owner: "Iva", done: false },

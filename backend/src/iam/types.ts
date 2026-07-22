@@ -11,6 +11,7 @@ export type WorkspaceMembership = {
   membershipId: string;
   roles: string[];
   permissions: string[];
+  projectScopes?: Array<{ projectId: string; projectName: string; roles: string[] }>;
 };
 
 export type Session = {

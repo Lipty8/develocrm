@@ -107,10 +107,11 @@ export class SalesRepository {
          ) buyers ON true
          LEFT JOIN LATERAL (
            SELECT jsonb_agg(jsonb_build_object('date',COALESCE(to_char(interest.first_interest_at,'DD. MM. YYYY'),'Datum neuvedeno'),'partyId',party.id,'name',party.display_name,
-             'type',CASE interest.status WHEN 'converted' THEN 'Převedeno do obchodního procesu' WHEN 'active' THEN 'Aktivní zájem' ELSE 'Ukončený zájem' END,
-             'result',COALESCE(latest.outcome,CASE interest.status WHEN 'converted' THEN 'Aktivní klient' WHEN 'active' THEN 'Aktivní' ELSE 'Bez realizace' END)) ORDER BY interest.first_interest_at DESC) items
+             'type',COALESCE(highest.label,CASE interest.status WHEN 'converted' THEN 'Obchodní proces' WHEN 'active' THEN 'Aktivní zájem' ELSE 'Ukončený zájem' END),
+             'result',COALESCE(latest.outcome,CASE interest.status WHEN 'converted' THEN 'Pokračuje v obchodním procesu' WHEN 'active' THEN 'Aktivní' ELSE 'Bez realizace' END)) ORDER BY interest.first_interest_at DESC) items
            FROM unit_interests interest JOIN parties party ON party.tenant_id=interest.tenant_id AND party.id=interest.party_id
            LEFT JOIN LATERAL (SELECT outcome FROM interest_events event WHERE event.tenant_id=interest.tenant_id AND event.unit_interest_id=interest.id ORDER BY occurred_at DESC LIMIT 1) latest ON true
+           LEFT JOIN LATERAL (SELECT CASE max(CASE event_type WHEN 'converted_to_sales_case' THEN 7 WHEN 'reservation_requested' THEN 6 WHEN 'pre_reservation_requested' THEN 5 WHEN 'offer' THEN 4 WHEN 'viewing' THEN 3 WHEN 'inquiry' THEN 2 ELSE 1 END) WHEN 7 THEN 'Převedeno do obchodního procesu' WHEN 6 THEN 'Rezervace' WHEN 5 THEN 'Předrezervace' WHEN 4 THEN 'Nabídka' WHEN 3 THEN 'Prohlídka' ELSE 'Zájem' END label FROM interest_events event WHERE event.tenant_id=interest.tenant_id AND event.unit_interest_id=interest.id) highest ON true
            WHERE interest.tenant_id=unit.tenant_id AND interest.unit_id=unit.id
          ) interests ON true
          LEFT JOIN LATERAL (SELECT jsonb_build_object('id',id,'type',hold_type,'expiresAt',expires_at) item FROM unit_holds

@@ -210,6 +210,7 @@ h1, h2, h3, p { margin: 0; }
 .unit-result-actions { display: flex; align-items: center; gap: 10px; }
 .units-result-bar > span { display: flex; align-items: center; gap: 8px; }
 .muted { color: var(--subtle); }.table-footer { min-height: 49px; display: flex; align-items: center; justify-content: space-between; padding: 9px 15px; border-top: 1px solid var(--line); color: var(--muted); font-size: 9.5px; }.table-footer > div { display: flex; align-items: center; gap: 3px; }.table-footer > div button { width: 27px; height: 27px; display: grid; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--muted); font-size: 9px; }.table-footer > div button.active { border-color: var(--green); background: var(--green); color: #fff; }.table-footer > div button:disabled { opacity: .35; }
+.table-footer.compact-pagination { justify-content: flex-end; }
 .rotate-180 { transform: rotate(180deg); }
 .unit-card-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 11px; padding: 14px; }.unit-card { overflow: hidden; padding: 0; border: 1px solid var(--line); border-radius: 9px; background: #fff; text-align: left; }.unit-card:hover { border-color: #b8cbc3; box-shadow: 0 8px 20px rgba(32,59,48,.08); transform: translateY(-1px); }.unit-card-top, .unit-card-info, .unit-card-price { display: flex; align-items: center; justify-content: space-between; padding: 11px 12px; }.unit-card-top > strong { color: var(--green); font-size: 13px; }.unit-card-plan { position: relative; height: 94px; display: grid; place-items: center; background: #f0f2f0; color: #9ca7a1; }.plan-room { position: absolute; border: 1px solid #bac3be; background: rgba(255,255,255,.55); }.plan-room.r1 { width: 70px; height: 52px; left: 25%; top: 20px; }.plan-room.r2 { width: 36px; height: 28px; left: calc(25% + 70px); top: 20px; }.plan-room.r3 { width: 36px; height: 24px; left: calc(25% + 70px); top: 48px; }.unit-card-plan svg { z-index: 2; opacity: .5; }.unit-card-info { display: block; border-bottom: 1px solid var(--line); }.unit-card-info strong, .unit-card-info small { display: block; }.unit-card-info strong { font-size: 11px; }.unit-card-info small { margin-top: 4px; color: var(--muted); font-size: 9px; }.unit-card-price strong { font-size: 11px; }
 
@@ -635,6 +636,29 @@ h1, h2, h3, p { margin: 0; }
 /* IMMO Building interaction layer */
 .project-card-body { display:flex;flex:1;flex-direction:column;padding:18px; }
 .project-card-open { display:flex;align-items:center;justify-content:space-between;margin-top:auto;padding-top:14px;border-top:1px solid var(--line);color:var(--brand-blue);font-size:13px;font-weight:700; }
+.project-cover.has-image { background-size: cover; background-position: center; }
+.project-cover.has-image > span { background: rgba(255,255,255,.92); color: var(--ink); box-shadow: 0 5px 18px rgba(10,31,23,.18); }
+.compact-result-count { margin-left:auto;display:flex;align-items:center;gap:9px;color:var(--muted);white-space:nowrap; }
+.compact-result-count > strong { color:var(--ink);font-size:14px; }
+.compact-result-count .view-toggle { margin-left:4px; }
+.floorplan-actions { display:flex;align-items:center;gap:8px; }
+.floorplan-actions .text-button { gap:5px; }
+.floorplan-image { display:block;width:100%;height:280px;object-fit:contain;background:#f6f8f7;border-radius:9px; }
+.modal-floorplan > .floorplan-image { height:100%;max-height:620px; }
+.modal-floorplan > .floorplan-image + .large-floorplan { display:none; }
+.profile-modal { max-width:600px; }
+.profile-summary { display:grid;grid-template-columns:48px 1fr auto;align-items:center;gap:13px;padding:18px 22px;border-bottom:1px solid var(--line); }
+.profile-summary strong,.profile-summary small { display:block; }.profile-summary small { margin-top:4px;color:var(--muted); }
+.profile-workspace { display:flex;align-items:center;gap:11px;margin:16px 22px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft); }
+.profile-workspace > span { flex:1; }.profile-workspace small,.profile-workspace strong { display:block; }.profile-workspace small { color:var(--subtle);font-size:10px; }.profile-workspace strong { margin-top:3px; }
+.profile-section { margin:0 22px 16px; }.profile-section h3 { margin:0 0 9px;font-size:13px; }.profile-section p { margin:0;color:var(--muted); }.profile-section > div { padding:9px 0;border-bottom:1px solid var(--line); }.profile-section small { display:block;margin-top:3px;color:var(--muted); }
+.profile-actions { display:flex;flex-wrap:wrap;gap:8px;padding:15px 22px;border-top:1px solid var(--line); }.profile-actions a { text-decoration:none; }
+.workspace-switch { display:block;margin:0 22px 16px; }.workspace-switch span { display:block;margin-bottom:6px;color:var(--muted);font-size:12px; }
+.workspace-switch select { width:100%; }
+.media-dropzone { position:relative;display:flex!important;align-items:center;gap:13px;padding:18px!important;border:1px dashed #aabbb3;border-radius:10px;background:var(--surface-soft);cursor:pointer; }.media-dropzone input { position:absolute;inset:0;opacity:0;cursor:pointer; }.media-dropzone strong,.media-dropzone small { display:block; }.media-dropzone small { margin-top:4px;color:var(--muted); }
+.media-preview { width:100%;max-height:340px;object-fit:contain;border:1px solid var(--line);border-radius:10px;background:#f5f7f6; }.media-preview.cover { aspect-ratio:16/7;object-fit:cover; }
+.client-table .multi-value small,.client-table .unit-link { min-height:25px;display:flex;align-items:center; }
+.client-relation-map,.client-relation-map > span { display:grid; }.client-relation-map > span { min-height:29px;align-items:center;border-bottom:1px solid #edf1ef; }.client-relation-map > span:last-child { border-bottom:0; }.client-relation-map > span > small { color:var(--muted); }.client-relation-map > span:has(.unit-link) { display:flex;flex-wrap:wrap;gap:5px; }
 .primary-button { background:var(--brand-blue);box-shadow:0 3px 9px rgba(20,105,200,.22);transition:background .15s ease,transform .15s ease,box-shadow .15s ease; }
 .primary-button:hover { background:var(--brand-blue-hover);box-shadow:0 7px 16px rgba(20,105,200,.23);transform:translateY(-1px); }
 .primary-button:active,.secondary-button:active { transform:translateY(1px); }

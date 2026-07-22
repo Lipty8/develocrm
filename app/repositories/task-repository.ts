@@ -1,0 +1,11 @@
+import type { TaskRecord } from "../crm-data";
+
+type ApiTask = { id:string;title:string;description:string|null;objectType:string;objectId:string;assignedToUserId:string|null;priority:string;dueAt:string|null;state:string };
+const priorityLabel:Record<string,string>={high:"Vysoká",medium:"Střední",low:"Nízká"};
+function map(row:ApiTask, owner:string):TaskRecord{return{id:row.id,title:row.title,description:row.description??undefined,object:`${row.objectId} · ${row.description||"Ručně vytvořený úkol"}`,objectType:row.objectType,objectId:row.objectId,project:"Rezidence Javorová",due:row.dueAt?new Date(`${row.dueAt}T00:00:00`).toLocaleDateString("cs-CZ"):"Bez termínu",dueAt:row.dueAt,priority:priorityLabel[row.priority]??row.priority,owner,assigneeId:row.assignedToUserId,done:row.state==="completed"};}
+
+export const taskRepository={
+  async list(scope:"mine"|"all"|"completed",owner:string,signal?:AbortSignal){const response=await fetch(`/api/tasks?scope=${scope}`,{signal,cache:"no-store"});if(!response.ok)throw new Error("Úkoly se nepodařilo načíst");const payload=await response.json() as {tasks:ApiTask[]};return payload.tasks.map(row=>map(row,owner));},
+  async create(input:{title:string;description:string;objectType:string;objectId:string;assignedToUserId?:string|null;priority:"low"|"medium"|"high";dueAt:string},owner:string){const response=await fetch("/api/tasks",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});const payload=await response.json() as {task?:ApiTask;error?:string};if(!response.ok||!payload.task)throw new Error(payload.error||"Úkol se nepodařilo vytvořit");return map(payload.task,owner);},
+  async complete(id:string|number,completed:boolean){const response=await fetch("/api/tasks",{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({id:String(id),completed})});if(!response.ok){const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error||"Úkol nelze aktualizovat");}},
+};

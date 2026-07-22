@@ -1,5 +1,6 @@
 import type { AccessoryAssignmentRecord, CatalogAccessoryRecord, MembershipOption, ProjectRecord, ProjectStructureOption, UnitRecord } from "../crm-data";
 import { projects as previewProjects, units as previewUnits } from "../crm-data";
+import { recordPreviewActivity } from "./activity-repository";
 
 export type CatalogSnapshot = { projects: ProjectRecord[]; units: UnitRecord[]; accessories:CatalogAccessoryRecord[]; memberships:MembershipOption[]; structures:ProjectStructureOption[]; source: "backend-api" | "preview-seed" };
 export type ProjectUpdate={id:string;name:string;location?:string|null;lifecycleStatus:string;managerMembershipId?:string|null;plannedHandoverFrom?:string|null;plannedHandoverTo?:string|null};
@@ -38,11 +39,11 @@ export class ApiCatalogRepository implements CatalogRepository {
   }
   async updateUnit(input:UnitUpdate){
     const preview=await requestJson(`/api/catalog/units/${input.id}`,"PATCH",input);
-    if(preview) storeEdit("units",input.id,{...input,area:input.areaM2,floor:input.floorLabel,orientation:input.orientation,usableArea:input.usableAreaM2,balcony:input.balconyM2,terrace:input.terraceM2,garden:input.gardenM2});
+    if(preview){storeEdit("units",input.id,{...input,area:input.areaM2,floor:input.floorLabel,orientation:input.orientation,usableArea:input.usableAreaM2,balcony:input.balconyM2,terrace:input.terraceM2,garden:input.gardenM2});recordPreviewActivity({unitKey:input.id,title:"Upraveny základní údaje jednotky",detail:"Iva Novotná · změna uložena",action:"unit.updated"});}
   }
   async assignAccessory(unitId:string,accessoryId:string){
     const preview=await requestJson(`/api/catalog/units/${unitId}/accessories`,"POST",{accessoryId});
-    if(preview) previewAccessoryMutation(unitId,accessoryId,"assign");
+    if(preview){previewAccessoryMutation(unitId,accessoryId,"assign");recordPreviewActivity({unitKey:unitId,title:"Přiřazeno příslušenství",detail:"Iva Novotná · aktivní přiřazení",action:"accessory.assigned"});}
   }
   async removeAccessory(assignmentId:string){
     const preview=await requestJson(`/api/catalog/accessory-assignments/${assignmentId}`,"DELETE");
