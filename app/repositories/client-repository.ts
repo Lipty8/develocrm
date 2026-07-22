@@ -29,5 +29,37 @@ export class ApiClientRepository implements ClientRepository {
 }
 async function mutate(url:string,method:string,body:unknown,allowPreview=false){const response=await fetch(url,{method,headers:{"content-type":"application/json"},body:JSON.stringify(body)});if(response.ok)return false;if(allowPreview&&response.status===503)return true;const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error||"Změnu klienta se nepodařilo uložit");}
 type PreviewSalesCommand={kind:"interest"|"hold"|"convert"|"cancel";id?:string;partyId?:string;partyIds?:string[];type?:"pre_reservation"|"reservation";expiresAt?:string;recordedAt?:string};
-function applyPreviewSalesCommands(snapshot:ClientSnapshot){const groups=JSON.parse(localStorage.getItem("develocrm.sales.commands")||"{}") as Record<string,PreviewSalesCommand[]>;for(const [unitKey,stored] of Object.entries(groups)){const context=snapshot.unitContexts[unitKey]??{buyers:[],interests:[],stage:null,hold:null};for(const command of [...stored].reverse()){if(command.kind==="interest"&&command.partyId){const party=snapshot.clients.find(item=>item.id===command.partyId);if(party&&!context.interests.some(item=>item.partyId===party.id))context.interests.unshift({date:new Date(command.recordedAt??Date.now()).toLocaleDateString("cs-CZ"),partyId:party.id,name:party.name,type:"Aktivní zájem",result:"Aktivní"});}if(command.kind==="hold"&&command.type){context.hold={id:command.id??`preview-hold-${unitKey}`,type:command.type,expiresAt:command.expiresAt??""};context.stage=command.type;context.buyers=(command.partyIds??[]).map(partyId=>snapshot.clients.find(item=>item.id===partyId)).filter((item):item is ClientRecord=>Boolean(item)).map(item=>({partyId:item.id,name:item.name,email:item.email,role:"buyer",share:null}));}if(command.kind==="convert"&&context.hold){context.hold={...context.hold,type:"reservation",expiresAt:command.expiresAt??context.hold.expiresAt};context.stage="reservation";}if(command.kind==="cancel"){context.hold=null;context.stage="interest";}}snapshot.unitContexts[unitKey]=context;}}
+function applyPreviewSalesCommands(snapshot:ClientSnapshot){
+  const groups=JSON.parse(localStorage.getItem("develocrm.sales.commands")||"{}") as Record<string,PreviewSalesCommand[]>;
+  for(const [unitKey,stored] of Object.entries(groups)){
+    const context=snapshot.unitContexts[unitKey]??{buyers:[],interests:[],stage:null,hold:null};
+    for(const command of [...stored].reverse()){
+      if(command.kind==="interest"&&command.partyId){
+        const party=snapshot.clients.find(item=>item.id===command.partyId);
+        if(party&&!context.interests.some(item=>item.partyId===party.id))context.interests.unshift({date:new Date(command.recordedAt??Date.now()).toLocaleDateString("cs-CZ"),partyId:party.id,name:party.name,type:"Zájem",result:"Aktivní"});
+      }
+      if(command.kind==="hold"&&command.type){
+        context.hold={id:command.id??`preview-hold-${unitKey}`,type:command.type,expiresAt:command.expiresAt??""};
+        context.stage=command.type;
+        context.buyers=(command.partyIds??[]).map(partyId=>snapshot.clients.find(item=>item.id===partyId)).filter((item):item is ClientRecord=>Boolean(item)).map(item=>({partyId:item.id,name:item.name,email:item.email,role:"buyer",share:null}));
+        for(const buyer of context.buyers){
+          const interest=context.interests.find(item=>item.partyId===buyer.partyId);
+          const type=command.type==="reservation"?"Rezervace":"Předrezervace";
+          if(interest){interest.type=type;interest.result=command.type==="reservation"?"Přešel do rezervace":"Přešel do předrezervace";}
+          else context.interests.unshift({date:new Date(command.recordedAt??Date.now()).toLocaleDateString("cs-CZ"),partyId:buyer.partyId,name:buyer.name,type,result:command.type==="reservation"?"Přešel do rezervace":"Přešel do předrezervace"});
+        }
+      }
+      if(command.kind==="convert"&&context.hold){
+        context.hold={...context.hold,type:"reservation",expiresAt:command.expiresAt??context.hold.expiresAt};
+        context.stage="reservation";
+        for(const buyer of context.buyers){const interest=context.interests.find(item=>item.partyId===buyer.partyId);if(interest){interest.type="Rezervace";interest.result="Přešel do rezervace";}}
+      }
+      if(command.kind==="cancel"){
+        for(const buyer of context.buyers){const interest=context.interests.find(item=>item.partyId===buyer.partyId);if(interest)interest.result="Zrušeno";}
+        context.hold=null;context.stage="interest";context.buyers=[];
+      }
+    }
+    snapshot.unitContexts[unitKey]=context;
+  }
+}
 export const clientRepository:ClientRepository=new ApiClientRepository();

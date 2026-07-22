@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { tasks, tenants, users } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
@@ -20,7 +20,10 @@ export async function GET(request: Request) {
     const rows = await db.select().from(tasks).where(predicate)
       .orderBy(desc(tasks.createdAt))
       .limit(50);
-    return Response.json({ tasks: rows });
+    const assigneeIds=[...new Set(rows.map(row=>row.assignedToUserId).filter((id):id is string=>Boolean(id)))];
+    const assignees=assigneeIds.length?await db.select({id:users.id,displayName:users.displayName}).from(users).where(and(eq(users.tenantId,DEMO_TENANT_ID),inArray(users.id,assigneeIds))):[];
+    const names=new Map(assignees.map(item=>[item.id,item.displayName]));
+    return Response.json({ tasks: rows.map(row=>({...row,assigneeName:row.assignedToUserId?names.get(row.assignedToUserId):undefined})) });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Úkoly se nepodařilo načíst";
     return Response.json({ error: message }, { status: 500 });
@@ -35,6 +38,7 @@ export async function POST(request: Request) {
       objectType?: string;
       objectId?: string;
       assignedToUserId?: string;
+      assigneeName?: string;
       priority?: string;
       dueAt?: string;
     };
@@ -45,6 +49,9 @@ export async function POST(request: Request) {
     const current = await actor();
     await db.insert(tenants).values({ id: DEMO_TENANT_ID, name: "Develo Group", slug: "develo-group" }).onConflictDoNothing();
     await db.insert(users).values({ id: current.id, tenantId: DEMO_TENANT_ID, email: current.email, displayName: current.displayName, role: "admin" }).onConflictDoNothing();
+    const assigneeId=payload.assignedToUserId?.trim()||current.id;
+    const assigneeName=payload.assignedToUserId?.trim()?payload.assigneeName?.trim()||"Uživatel CRM":current.displayName;
+    if(assigneeId!==current.id)await db.insert(users).values({id:assigneeId,tenantId:DEMO_TENANT_ID,email:`${assigneeId.replace(/[^a-z0-9]+/gi,"-").toLowerCase()}@preview.invalid`,displayName:assigneeName,role:"member"}).onConflictDoNothing();
 
     const id = String(Date.now());
     const [created] = await db.insert(tasks).values({
@@ -54,12 +61,12 @@ export async function POST(request: Request) {
       description: payload.description?.trim() || null,
       objectType: payload.objectType || "unit",
       objectId: payload.objectId || "A203",
-      assignedToUserId: current.id,
+      assignedToUserId: assigneeId,
       priority: payload.priority || "medium",
       dueAt: payload.dueAt || "2026-07-22",
       source: "manual",
     }).returning();
-    return Response.json({ task: created }, { status: 201 });
+    return Response.json({ task: {...created,assigneeName} }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Úkol se nepodařilo uložit";
     return Response.json({ error: message }, { status: 500 });
