@@ -53,8 +53,15 @@ export class ApiCatalogRepository implements CatalogRepository {
 
 function applyPreviewEdits(snapshot:CatalogSnapshot){
   const edits=JSON.parse(localStorage.getItem("develocrm.catalog.edits")||"{}");
+  const projectNames=new Map<string,string>();
+  for(const project of snapshot.projects){
+    const projectEdit={...(edits.projects?.[project.backendId??project.code]||{}),...(edits.projects?.[project.code]||{})};
+    if(typeof projectEdit.name==="string"&&projectEdit.name!==project.name)projectNames.set(project.name,projectEdit.name);
+  }
   snapshot.projects=snapshot.projects.map(p=>({...p,...(edits.projects?.[p.backendId??p.code]||{}),...(edits.projects?.[p.code]||{})}));
-  snapshot.units=snapshot.units.map(u=>({...u,...(edits.units?.[u.backendId??u.id]||{}),...(edits.units?.[u.id]||{})}));
+  snapshot.units=snapshot.units.map(u=>({...u,project:projectNames.get(u.project)??u.project,...(edits.units?.[u.backendId??u.id]||{}),...(edits.units?.[u.id]||{})}));
+  snapshot.structures=snapshot.structures.map(item=>({...item,project:projectNames.get(item.project)??item.project}));
+  snapshot.accessories=snapshot.accessories.map(item=>({...item,project:projectNames.get(item.project)??item.project}));
   const mutations=JSON.parse(localStorage.getItem("develocrm.accessory.assignments")||"[]") as Array<{unitId:string;accessoryId:string;action:string}>;
   for(const row of mutations){const accessory=snapshot.accessories.find(item=>item.id===row.accessoryId||item.assignmentId===row.accessoryId);if(!accessory)continue;if(row.action==="assign"){accessory.available=false;const unit=snapshot.units.find(item=>(item.backendId??item.id)===row.unitId||item.id===row.unitId);if(unit&&!unit.accessories?.some(item=>item.id===accessory.id))(unit.accessories??=[]).push({...accessory,assignmentId:`preview-${accessory.id}`} as AccessoryAssignmentRecord);}else{accessory.available=true;for(const unit of snapshot.units)unit.accessories=unit.accessories?.filter(item=>item.assignmentId!==row.accessoryId);}}
   for(const unit of snapshot.units)unit.accessory=unit.accessories?.map(item=>`${item.type} ${item.code}${item.areaM2?` · ${item.areaM2} m²`:""}`).join(" · ")||unit.accessory;
