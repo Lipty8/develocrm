@@ -79,6 +79,7 @@ import { salesCommandRepository } from "./repositories/sales-command-repository"
 import { mediaRepository } from "./repositories/media-repository";
 import { taskRepository } from "./repositories/task-repository";
 import { activityRepository, recordPreviewActivity, type TimelineRecord } from "./repositories/activity-repository";
+import { documentRepository, previewConnection, type DocumentConnectionState, type DocumentRecord } from "./repositories/document-repository";
 import { clientRoute, contractRoute, listParam, pageRoute, parseCrmRoute, projectRoute, unitRoute, updateSearch } from "./crm-routing.mjs";
 
 type Page = "dashboard" | "projects" | "clients" | "contracts" | "payments" | "handovers" | "tasks";
@@ -242,6 +243,7 @@ export default function CRMApp() {
   const [routedContractId,setRoutedContractId]=useState<string|null>(null);
   const [profileOpen,setProfileOpen]=useState(false);
   const [mediaEdit,setMediaEdit]=useState<{entityType:"project"|"unit";entityId:string;kind:"cover"|"floorplan";title:string;unitKey?:string}|null>(null);
+  const [documentConnection,setDocumentConnection]=useState<DocumentConnectionState>(previewConnection);
   const can=(permission:string)=>identitySession.workspace.permissions.includes(permission);
   const routeSearch=searchParams.toString();
   const routeState=useMemo(()=>parseCrmRoute(pathname,routeSearch),[pathname,routeSearch]);
@@ -288,6 +290,8 @@ export default function CRMApp() {
     identityRepository.getSession(controller.signal).then(setIdentitySession).catch(() => undefined);
     return () => controller.abort();
   }, []);
+
+  useEffect(()=>{const controller=new AbortController();documentRepository.connection(controller.signal).then(setDocumentConnection).catch(()=>setDocumentConnection(previewConnection));return()=>controller.abort();},[]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -453,7 +457,7 @@ export default function CRMApp() {
         </div>
 
         <div className="sidebar-footer">
-          <div className="sync-state"><CheckCircle2 size={15} /><span>SharePoint synchronizován</span></div>
+          <div className={`sync-state ${documentConnection.status==="connected"?"":"disconnected"}`}>{documentConnection.status==="connected"?<CheckCircle2 size={15}/>:<AlertTriangle size={15}/>}<span>{documentConnection.status==="connected"?"SharePoint připojen":"SharePoint nepřipojen"}</span></div>
           <button className="user-profile" onClick={()=>setProfileOpen(true)} aria-label="Otevřít uživatelský profil">
             <Avatar initials={initials(identitySession.user.displayName)} />
             <span><strong>{identitySession.user.displayName}</strong><small>{roleLabel(identitySession.workspace.roles)}</small></span>
@@ -762,7 +766,7 @@ function ProjectDetail({ project, tab, onTab, onBack, notify, openClient,openCon
     { id: "payments", label: "Platby", icon: CircleDollarSign, count: projectPayments.length },
     { id: "changes", label: "Klientské změny", icon: SlidersHorizontal, count: 4 },
     { id: "handovers", label: "Předání", icon: KeyRound, count: projectHandovers.length },
-    { id: "documents", label: "Dokumenty", icon: FolderOpen, count: 18 },
+    { id: "documents", label: "Dokumenty", icon: FolderOpen },
   ];
   return (
     <div className="project-detail">
@@ -887,7 +891,11 @@ function ProjectHandovers({ project, openUnit, notify }: { project: ProjectRecor
 }
 
 function ProjectDocuments({ project, notify }: { project: ProjectRecord; notify: (message: string) => void }) {
-  return <ProjectModuleFrame project={project} title="Dokumenty projektu" description="Projektové podklady, standardy, technická dokumentace a prodejní materiály." action="Nahrát dokument" onAction={() => notify("Vyberte dokument k nahrání")}><div className="document-list">{["Standardy projektu.pdf", "Technický popis_rev04.pdf", "Situace projektu.pdf", "Prodejní půdorysy.zip", "Rozhodnutí stavebního úřadu.pdf"].map((name, index) => <article key={name}><span className="document-icon"><FileText size={21} /></span><span><strong>{name}</strong><small>{index < 3 ? "Technická dokumentace" : "Prodejní podklady"} · {project.name} · změněno {12 + index}. 7. 2026</small></span><Badge tone="neutral">v{index + 2}</Badge><button className="ghost-icon" onClick={() => notify(`Otevírám ${name}`)}><Eye size={17} /></button></article>)}</div></ProjectModuleFrame>;
+  const [documents,setDocuments]=useState<DocumentRecord[]>([]);const [connection,setConnection]=useState<DocumentConnectionState>(previewConnection);const [loading,setLoading]=useState(true);
+  const [category,setCategory]=useState("");const [unitId,setUnitId]=useState("");const [partyId,setPartyId]=useState("");
+  const projectUnits=units.filter(unit=>unitBelongsToProject(unit,project));const projectClients=clients.filter(client=>client.projectNames.some(name=>projectMatchesName(project,name)));
+  useEffect(()=>{const controller=new AbortController();documentRepository.listProject(project.backendId??project.code,{category:category||undefined,unitId:unitId||undefined,partyId:partyId||undefined},controller.signal).then(result=>{setDocuments(result.documents);setConnection(result.connection);}).catch(()=>{setDocuments([]);setConnection(previewConnection);}).finally(()=>setLoading(false));return()=>controller.abort();},[project.backendId,project.code,category,unitId,partyId]);
+  return <ProjectModuleFrame project={project} title="Dokumenty projektu" description="Projektové dokumenty a dokumenty souvisejících jednotek, klientů a smluv."><DocumentConnectionBanner connection={connection}/><div className="module-toolbar document-toolbar"><div className="inline-search"><Search size={17}/><span>{loading?"Načítám dokumenty…":`${documents.length} dokumentů`}</span></div><label><span>Kategorie</span><select value={category} onChange={event=>{setLoading(true);setCategory(event.target.value);}}><option value="">Všechny kategorie</option>{documentCategoryOptions.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select></label><label><span>Jednotka</span><select value={unitId} onChange={event=>{setLoading(true);setUnitId(event.target.value);}}><option value="">Všechny jednotky</option>{projectUnits.map(unit=><option key={unit.id} value={unit.backendId??unit.id}>{unit.id}</option>)}</select></label><label><span>Klient</span><select value={partyId} onChange={event=>{setLoading(true);setPartyId(event.target.value);}}><option value="">Všichni klienti</option>{projectClients.map(client=><option key={client.id} value={client.id}>{client.name}</option>)}</select></label></div><DocumentList documents={documents} loading={loading} notify={notify}/></ProjectModuleFrame>;
 }
 
 function ProjectModuleFrame({ project, title, description, action, onAction, children }: { project: ProjectRecord; title: string; description: string; action?: string; onAction?: () => void; children: React.ReactNode }) {
@@ -1101,7 +1109,7 @@ function UnitPreview({ unit, close, open, previous, next, position, total }: { u
 function UnitDetail({ unit, tab, onTab, onBack,openProjects,openProject, notify, openTask, openClient,openContract, onEdit, onEditPrice,onManageAccessories,onEditFloorplan,onSalesAction,canCancelHold,onContractWorkflow,timelineVersion }: { unit: UnitRecord; tab: UnitTab; onTab: (tab: UnitTab) => void; onBack: () => void;openProjects:()=>void;openProject:()=>void; notify: (message: string) => void; openTask: () => void; openClient: (name: string) => void;openContract:(contract:(typeof contracts)[number])=>void; onEdit?: () => void; onEditPrice?: () => void;onManageAccessories?:()=>void;onEditFloorplan?:()=>void;onSalesAction?:(mode:"interest"|"pre_reservation"|"reservation"|"convert"|"cancel")=>void;canCancelHold?:boolean;onContractWorkflow?:(contract:(typeof contracts)[number])=>void;timelineVersion:number }) {
   const [timeline,setTimeline]=useState<TimelineRecord[]>([]);useEffect(()=>{const controller=new AbortController();activityRepository.unitTimeline(unit.backendId??unit.id,unit.id,controller.signal).then(setTimeline).catch(()=>setTimeline([]));return()=>controller.abort();},[unit.backendId,unit.id,tab,timelineVersion]);
   const tabs: { id: UnitTab; label: string; icon: typeof Home; count?: number }[] = [
-    { id: "overview", label: "Přehled", icon: LayoutDashboard }, { id: "contracts", label: "Smlouvy", icon: FileText, count: 4 }, { id: "payments", label: "Platby", icon: CircleDollarSign, count: 3 }, { id: "changes", label: "Klientské změny", icon: SlidersHorizontal, count: 3 }, { id: "documents", label: "Dokumenty", icon: FolderOpen, count: 12 }, { id: "handover", label: "Předání", icon: KeyRound }, { id: "tasks", label: "Úkoly", icon: ClipboardCheck, count: 2 }, { id: "history", label: "Historie", icon: History },
+    { id: "overview", label: "Přehled", icon: LayoutDashboard }, { id: "contracts", label: "Smlouvy", icon: FileText, count: 4 }, { id: "payments", label: "Platby", icon: CircleDollarSign, count: 3 }, { id: "changes", label: "Klientské změny", icon: SlidersHorizontal, count: 3 }, { id: "documents", label: "Dokumenty", icon: FolderOpen }, { id: "handover", label: "Předání", icon: KeyRound }, { id: "tasks", label: "Úkoly", icon: ClipboardCheck, count: 2 }, { id: "history", label: "Historie", icon: History },
   ];
   return (
     <div className="unit-detail">
@@ -1233,15 +1241,18 @@ function UnitClientChanges({ unit, notify }: { unit: UnitRecord; notify: (messag
 }
 
 function UnitDocuments({ unit,notify }: { unit:UnitRecord;notify: (message: string) => void }) {
-  if(isDejviceUnit(unit))return <PilotEmptyState title="Dokumenty" detail="Pilotní zdroj neobsahuje dokumenty ani SharePoint odkazy."/>;
-  const docs = [
-    { name: "SBK_A203_v04.docx", category: "Smlouva · SBK", author: "Pavel Sedlák", date: "dnes 9:42", version: "v04" },
-    { name: "Půdorys_A203_rev03.pdf", category: "Technická dokumentace", author: "SharePoint", date: "18. 7. 2026", version: "rev03" },
-    { name: "Klientské změny_A203.xlsx", category: "Klientské změny", author: "Martin Jelínek", date: "11. 7. 2026", version: "v06" },
-    { name: "RS_A203_podepsana.pdf", category: "Smlouva · RS", author: "Iva Novotná", date: "18. 3. 2026", version: "finální" },
-  ];
-  return <section className="card detail-tab-card"><div className="tab-card-header"><div><h2>Dokumenty</h2><p>Metadata a souborové verze synchronizované se SharePointem.</p></div><div><button className="secondary-button" onClick={() => notify("Otevírám SharePoint") }><ExternalLink size={16} /> SharePoint</button><button className="primary-button" onClick={() => notify("Vyberte soubor k nahrání") }><Upload size={16} /> Nahrát</button></div></div><div className="module-toolbar"><div className="inline-search"><Search size={17} /><input placeholder="Hledat dokument…" /></div><button className="filter-button"><Filter size={16} /> Typ dokumentu</button></div><div className="document-list">{docs.map((doc) => <article key={doc.name}><span className="document-icon"><FileText size={21} /></span><span><strong>{doc.name}</strong><small>{doc.category} · {doc.author} · {doc.date}</small></span><Badge tone="neutral">{doc.version}</Badge><button className="ghost-icon" onClick={() => notify(`Otevírám ${doc.name}`)}><Eye size={18} /></button><button className="ghost-icon"><MoreHorizontal size={18} /></button></article>)}</div><div className="unassigned-doc"><AlertTriangle size={19} /><span><strong>1 nezařazený dokument na SharePointu</strong><small>CRM našlo nový soubor ve složce jednotky bez vazby na obchodní objekt.</small></span><button className="secondary-button compact" onClick={() => notify("Dokument lze nyní přiřadit")}>Přiřadit dokument</button></div></section>;
+  const [documents,setDocuments]=useState<DocumentRecord[]>([]);const [connection,setConnection]=useState<DocumentConnectionState>(previewConnection);const [loading,setLoading]=useState(true);const [category,setCategory]=useState("");
+  useEffect(()=>{const controller=new AbortController();documentRepository.listUnit(unit.backendId??unit.id,{category:category||undefined},controller.signal).then(result=>{setDocuments(result.documents);setConnection(result.connection);}).catch(()=>{setDocuments([]);setConnection(previewConnection);}).finally(()=>setLoading(false));return()=>controller.abort();},[unit.backendId,unit.id,category]);
+  return <section className="card detail-tab-card"><div className="tab-card-header"><div><h2>Dokumenty jednotky {unit.id}</h2><p>Jeden přehled metadat, vazeb a fyzických verzí souborů.</p></div></div><DocumentConnectionBanner connection={connection}/><div className="module-toolbar document-toolbar"><div className="inline-search"><Search size={17}/><span>{loading?"Načítám dokumenty…":`${documents.length} dokumentů`}</span></div><label><span>Kategorie</span><select value={category} onChange={event=>{setLoading(true);setCategory(event.target.value);}}><option value="">Všechny kategorie</option>{documentCategoryOptions.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select></label></div><DocumentList documents={documents} loading={loading} notify={notify}/></section>;
 }
+
+const documentCategoryOptions=[
+  {value:"contract",label:"Smlouva"},{value:"floor_plan",label:"Půdorys"},{value:"project_documentation",label:"Projektová dokumentace"},
+  {value:"client_document",label:"Klientský dokument"},{value:"price_document",label:"Cenový dokument"},{value:"reservation",label:"Rezervace"},{value:"other",label:"Ostatní"},
+];
+function documentCategoryLabel(value:string){return documentCategoryOptions.find(option=>option.value===value)?.label??value;}
+function DocumentConnectionBanner({connection}:{connection:DocumentConnectionState}){if(connection.status==="connected")return <div className="sharepoint-banner"><CheckCircle2 size={19}/><span><strong>SharePoint je připojen</strong><small>{connection.lastSuccessfulSyncAt?`Poslední úspěšná synchronizace ${new Date(connection.lastSuccessfulSyncAt).toLocaleString("cs-CZ")}`:"Připojení je připravené k synchronizaci."}</small></span></div>;return <div className="unassigned-doc document-connection-note"><AlertTriangle size={19}/><span><strong>SharePoint zatím není připojen</strong><small>Preview bezpečně zobrazuje pouze CRM metadata a existující preview média. Žádný soubor se nevydává za nahraný na SharePoint.</small></span></div>;}
+function DocumentList({documents,loading,notify}:{documents:DocumentRecord[];loading:boolean;notify:(message:string)=>void}){if(loading)return <div className="empty-filter-state"><Clock3 size={21}/><strong>Načítám dokumenty</strong></div>;if(!documents.length)return <div className="empty-filter-state"><FolderOpen size={22}/><strong>Žádné dokumenty v tomto rozsahu</strong><small>Zdroj zatím neobsahuje odpovídající dokumentová metadata.</small></div>;return <div className="document-list document-metadata-list">{documents.map(document=>{const related=[...document.units,...document.parties,...document.contracts];return <article key={document.id}><span className="document-icon"><FileText size={21}/></span><span><strong>{document.name}</strong><small>{documentCategoryLabel(document.category)} · {related.length?related.join(" · "):document.projectName}</small></span><span className="document-meta"><small>Poslední změna</small><strong>{document.updatedAt?new Date(document.updatedAt).toLocaleDateString("cs-CZ"):"—"}</strong></span><span className="document-meta"><small>Autor</small><strong>{document.author??"—"}</strong></span><Badge tone="neutral">{document.version??"bez verze"}</Badge>{document.webUrl?<Link className="ghost-icon" href={document.webUrl} target="_blank" rel="noreferrer" aria-label={`Otevřít ${document.name}`}><ExternalLink size={18}/></Link>:<button className="ghost-icon" onClick={()=>notify("Dokument je v bezpečném preview pouze jako metadata; externí odkaz není k dispozici")} aria-label={`Informace o ${document.name}`}><Eye size={18}/></button>}</article>;})}</div>;}
 
 function UnitHandover({ unit,notify }: { unit:UnitRecord;notify: (message: string) => void }) {
   if(isDejviceUnit(unit))return <PilotEmptyState title="Předání" detail="Pilotní zdroj neobsahuje termín ani data předání."/>;

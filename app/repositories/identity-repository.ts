@@ -16,7 +16,7 @@ const prototypeSession: IdentitySession = {
     tenantId: "prototype-develo-group",
     tenantName: "Develo Group",
     roles: ["admin"],
-    permissions: ["tenant.read","membership.read","role.read","project.read","project.manage","projects.change_manager","projects.change_status","unit.read","unit.manage","accessory.read","accessory.manage","clients.read","clients.manage","clients.export","interests.manage","sales_case.read","sales_case.manage","holds.manage","holds.cancel","price.read","price.manage","prices.change","prices.approve","contract.read","contract.manage","contract.approve","contract.sign"],
+    permissions: ["tenant.read","membership.read","role.read","project.read","project.manage","projects.change_manager","projects.change_status","unit.read","unit.manage","accessory.read","accessory.manage","clients.read","clients.manage","clients.export","interests.manage","sales_case.read","sales_case.manage","holds.manage","holds.cancel","price.read","price.manage","prices.change","prices.approve","contract.read","contract.manage","contract.approve","contract.sign","documents.view","documents.upload","documents.edit_metadata","documents.archive","documents.manage","documents.view_sensitive"],
     projectScopes: [],
   },
   source: "prototype-fallback",
