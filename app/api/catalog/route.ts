@@ -25,7 +25,7 @@ export async function GET(request: Request) {
   const tenantId = process.env.DEVELOCRM_TENANT_ID;
   const authorization = request.headers.get("authorization");
   if (!backendUrl || !tenantId || !authorization) {
-    const units=previewUnits.map(unit=>({...unit,accessories:previewCatalogMeta.accessories.filter(item=>item.project===unit.project&&item.assignmentId?.includes(`-${unit.id}-`))}));
+    const units=previewUnits.map(unit=>({...unit,projectCode:previewProjects.find(project=>project.name===unit.project)?.code,accessories:previewCatalogMeta.accessories.filter(item=>item.project===unit.project&&item.assignmentId?.includes(`-${unit.id}-`))}));
     return Response.json({ projects: previewProjects, units, ...previewCatalogMeta, source: "preview-seed" } satisfies CatalogSnapshot);
   }
 
@@ -70,7 +70,7 @@ function adaptBackendCatalog(catalog: BackendCatalog): CatalogSnapshot {
     const handedOver = project.counts.handed_over ?? 0;
     const unitCount = Object.values(project.counts).reduce((sum, count) => sum + count, 0);
     return {
-      backendId:project.id,name: project.name, code: project.code, location: project.location ?? "",
+      backendId:project.id,name: project.name,sourceName:project.name, code: project.code, location: project.location ?? "",
       progress: Math.round(((sold + handedOver) / Math.max(unitCount, 1)) * 100), units: unitCount,
       available, preReserved, reserved, sold, handedOver, attention: 0,
       color: (["sage", "sand", "slate"] as const)[index % 3], stage: constructionLabel(project.constructionStatus),
@@ -83,7 +83,7 @@ function adaptBackendCatalog(catalog: BackendCatalog): CatalogSnapshot {
     // doplní pouze pro známé preview kódy, bez zápisu duplicit do produkční DB.
     const preview = previewUnits.find((candidate) => candidate.id === unit.code);
     return {
-      backendId:unit.id,projectBackendId:unit.projectId,structureId:unit.structureId,id: unit.code, project: unit.projectName, building: unit.structureName ?? "Bez zařazení",
+      backendId:unit.id,projectBackendId:unit.projectId,projectCode:catalog.projects.find(project=>project.id===unit.projectId)?.code,structureId:unit.structureId,id: unit.code, project: unit.projectName, building: unit.structureName ?? "Bez zařazení",
       layout: unit.layout ?? "—", area: unit.areaM2, floor: unit.floorLabel ?? "—",
       orientation: unit.orientation ?? "—", price: preview?.price ?? 0,
       usableArea: unit.usableAreaM2 ?? undefined, balcony: unit.balconyM2, terrace: unit.terraceM2, garden: unit.gardenM2,

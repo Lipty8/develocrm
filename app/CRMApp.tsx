@@ -288,7 +288,7 @@ export default function CRMApp() {
     void catalogVersion;
     const selectedProjectRecord=projects.find(project=>project.name===projectFilter);
     return units.filter((unit) => {
-      const matchesProject = projectFilter === "Všechny projekty" || unit.project === projectFilter || Boolean(selectedProjectRecord?.backendId&&unit.projectBackendId===selectedProjectRecord.backendId);
+      const matchesProject = projectFilter === "Všechny projekty" || (selectedProjectRecord ? unitBelongsToProject(unit,selectedProjectRecord) : unit.project === projectFilter);
       const matchesBuilding = buildingFilter.length === 0 || buildingFilter.includes(unit.building);
       const matchesFloor = floorFilter.length === 0 || floorFilter.includes(unit.floor);
       const matchesStatus = statusFilter.length === 0 || statusFilter.includes(unit.status);
@@ -346,7 +346,7 @@ export default function CRMApp() {
   };
 
   const openUnit = (unit: UnitRecord) => {
-    const project = projects.find((item) => item.name === unit.project) || projects[0];
+    const project = projects.find((item) => unitBelongsToProject(unit,item)) || projects[0];
     setSelectedProject(project);
     setProjectTab("units");
     setProjectFilter(unit.project);
@@ -704,10 +704,10 @@ type UnitListProps = {
 };
 
 function ProjectDetail({ project, tab, onTab, onBack, notify, openClient, onEditProject,onEditCover, ...unitListProps }: UnitListProps & { tab: ProjectTab; onTab: (tab: ProjectTab) => void; onBack: () => void; notify: (message: string) => void; openClient: (name: string) => void; onEditProject?: () => void;onEditCover?:()=>void }) {
-  const projectClients = clients.filter((client) => client.projectNames.includes(project.name));
-  const projectContracts = contracts.filter((contract) => contract.project === project.name);
-  const projectPayments = payments.filter((payment) => payment.project === project.name);
-  const projectHandovers = units.filter((unit) => unit.project === project.name && unit.handover !== "Neplánováno");
+  const projectClients = clients.filter((client) => client.projectNames.some(name=>projectMatchesName(project,name)));
+  const projectContracts = contracts.filter((contract) => projectMatchesName(project,contract.project));
+  const projectPayments = payments.filter((payment) => projectMatchesName(project,payment.project));
+  const projectHandovers = units.filter((unit) => unitBelongsToProject(unit,project) && unit.handover !== "Neplánováno");
   const salePercent = Math.round((project.sold + project.handedOver) / project.units * 100);
   const soldAndHandedOver = project.sold + project.handedOver;
   const unitDistribution = [
@@ -767,10 +767,10 @@ function ProjectDetail({ project, tab, onTab, onBack, notify, openClient, onEdit
 }
 
 function ProjectOverview({ project, onTab }: { project: ProjectRecord; onTab: (tab: ProjectTab) => void }) {
-  const projectTasks = initialTasks.filter((task) => task.project === project.name);
-  const projectPayments = payments.filter((payment) => payment.project === project.name);
-  const projectHandovers = units.filter((unit) => unit.project === project.name && unit.handover !== "Neplánováno");
-  const projectUnitIds = units.filter((unit) => unit.project === project.name).map((unit) => unit.id);
+  const projectTasks = initialTasks.filter((task) => projectMatchesName(project,task.project));
+  const projectPayments = payments.filter((payment) => projectMatchesName(project,payment.project));
+  const projectHandovers = units.filter((unit) => unitBelongsToProject(unit,project) && unit.handover !== "Neplánováno");
+  const projectUnitIds = units.filter((unit) => unitBelongsToProject(unit,project)).map((unit) => unit.id);
   const projectActivity = activity.filter((item) => projectUnitIds.some((unitId) => item.meta.includes(unitId)));
   const firstUnit = projectUnitIds[0] || "—";
   const nextPayment = projectPayments.find((payment) => payment.state !== "Uhrazeno");
@@ -789,7 +789,7 @@ function ProjectOverview({ project, onTab }: { project: ProjectRecord; onTab: (t
           <div className="project-section-head"><div><h2>Úkoly a vyžaduje pozornost</h2><p>Nejdůležitější práce v kontextu projektu.</p></div><Badge tone="danger">{project.attention} položek</Badge></div>
           <div className="project-work-list">
             {projectTasks.slice(0, 3).map((task) => { const title = task.title.toLowerCase(); return <button key={task.id} onClick={() => onTab(title.includes("platb") ? "payments" : title.includes("předání") ? "handovers" : "units")}><span className={`attention-type ${task.priority === "Vysoká" ? "danger" : "warning"}`}><AlertTriangle size={17} /></span><span><strong>{task.title}</strong><small>{task.object} · {task.owner}</small></span><Badge>{task.due}</Badge><ChevronRight size={16} /></button>; })}
-            <button onClick={() => onTab("contracts")}><span className="attention-type blue"><FileText size={17} /></span><span><strong>Dokončit rozpracované smlouvy</strong><small>{contracts.filter((contract) => contract.project === project.name && contract.state !== "Podepsána").length} smlouvy čekají na další krok</small></span><Badge tone="blue">Smlouvy</Badge><ChevronRight size={16} /></button>
+            <button onClick={() => onTab("contracts")}><span className="attention-type blue"><FileText size={17} /></span><span><strong>Dokončit rozpracované smlouvy</strong><small>{contracts.filter((contract) => projectMatchesName(project,contract.project) && contract.state !== "Podepsána").length} smlouvy čekají na další krok</small></span><Badge tone="blue">Smlouvy</Badge><ChevronRight size={16} /></button>
           </div>
         </section>
         <section className="card project-activity-card"><div className="project-section-head"><div><h2>Poslední aktivita</h2><p>Smlouvy, platby, dokumenty a změny jednotek.</p></div><Badge tone="neutral">{project.name}</Badge></div><div className="timeline-mini project-activity-list">{projectActivity.length ? projectActivity.slice(0, 5).map((item, index) => <div key={`${item.title}-${index}`}><span className={`timeline-icon ${item.kind}`}>{item.kind === "payment" ? <Banknote size={16} /> : item.kind === "handover" ? <KeyRound size={16} /> : <FileText size={16} />}</span><span><strong>{item.title}</strong><small>{item.meta}</small></span><time>{item.time}</time></div>) : <div><span className="timeline-icon"><Activity size={16} /></span><span><strong>Zatím bez nové aktivity</strong><small>Nové změny projektu se zobrazí zde.</small></span></div>}</div></section>
@@ -807,7 +807,7 @@ function ProjectUnitList(props: UnitListProps) {
   const { project, unitView, setUnitView, filteredUnits, previewUnit, openUnit, buildingFilter, floorFilter, statusFilter, layoutFilter, areaFrom, areaTo, priceFrom, priceTo } = props;
   const [unitQuery, setUnitQuery] = useState("");
   const [clientQuery, setClientQuery] = useState("");
-  const projectUnits = units.filter((unit) => unit.project === project.name);
+  const projectUnits = units.filter((unit) => unitBelongsToProject(unit,project));
   const buildings = Array.from(new Set(projectUnits.map((unit) => unit.building)));
   const floors = Array.from(new Set(projectUnits.map((unit) => unit.floor)));
   const visibleUnits = filteredUnits.filter((unit) => unit.id.toLowerCase().includes(unitQuery.toLowerCase()) && (unit.client || "").toLowerCase().includes(clientQuery.toLowerCase()));
@@ -824,30 +824,30 @@ function ProjectUnitList(props: UnitListProps) {
 }
 
 function ProjectClients({ project, openClient, openUnit, notify }: { project: ProjectRecord; openClient: (name: string) => void; openUnit: (unit: UnitRecord) => void; notify: (message: string) => void }) {
-  const rows = clients.filter((client) => client.projectNames.includes(project.name));
-  return <ProjectModuleFrame project={project} title="Klienti projektu" description="Klienti a zájemci filtrovaní pouze pro tento projekt." action="Přidat klienta" onAction={() => notify("Formulář nového klienta je připraven")}><table className="data-table"><thead><tr><th>Klient</th><th>Typ</th><th>Jednotky v projektu</th><th>Stav vztahu</th><th>Smluvní stav</th><th>Telefon</th><th>E-mail</th><th /></tr></thead><tbody>{rows.map((client) => { const projectUnits = client.units.filter((code) => units.some((unit) => unit.id === code && unit.project === project.name)); return <tr key={client.id} onClick={() => openClient(client.name)}><td><span className="client-name-cell"><Avatar initials={client.initials} small /><strong>{client.name}</strong></span></td><td><Badge tone="neutral">{client.kind}</Badge></td><td>{projectUnits.map((code) => <button className="unit-link" key={code} onClick={(event) => { event.stopPropagation(); const unit = units.find((item) => item.id === code); if (unit) openUnit(unit); }}>{code}</button>)}</td><td><Badge>{client.state}</Badge></td><td>{client.contractStatus}</td><td>{client.phone}</td><td>{client.email}</td><td><ChevronRight size={17} /></td></tr>; })}</tbody></table></ProjectModuleFrame>;
+  const rows = clients.filter((client) => client.projectNames.some(name=>projectMatchesName(project,name)));
+  return <ProjectModuleFrame project={project} title="Klienti projektu" description="Klienti a zájemci filtrovaní pouze pro tento projekt." action="Přidat klienta" onAction={() => notify("Formulář nového klienta je připraven")}><table className="data-table"><thead><tr><th>Klient</th><th>Typ</th><th>Jednotky v projektu</th><th>Stav vztahu</th><th>Smluvní stav</th><th>Telefon</th><th>E-mail</th><th /></tr></thead><tbody>{rows.map((client) => { const projectUnits = client.units.filter((code) => units.some((unit) => unit.id === code && unitBelongsToProject(unit,project))); return <tr key={client.id} onClick={() => openClient(client.name)}><td><span className="client-name-cell"><Avatar initials={client.initials} small /><strong>{client.name}</strong></span></td><td><Badge tone="neutral">{client.kind}</Badge></td><td>{projectUnits.map((code) => <button className="unit-link" key={code} onClick={(event) => { event.stopPropagation(); const unit = units.find((item) => item.id === code); if (unit) openUnit(unit); }}>{code}</button>)}</td><td><Badge>{client.state}</Badge></td><td>{client.contractStatus}</td><td>{client.phone}</td><td>{client.email}</td><td><ChevronRight size={17} /></td></tr>; })}</tbody></table></ProjectModuleFrame>;
 }
 
 function ProjectContracts({ project, openUnit, notify }: { project: ProjectRecord; openUnit: (unit: UnitRecord) => void; notify: (message: string) => void }) {
-  const rows = contracts.filter((contract) => contract.project === project.name);
+  const rows = contracts.filter((contract) => projectMatchesName(project,contract.project));
   return <ProjectModuleFrame project={project} title="Smlouvy projektu" description="Rezervační, budoucí kupní a kupní smlouvy v projektu." action="Nová smlouva" onAction={() => notify("Formulář nové smlouvy je připraven")}><table className="data-table"><thead><tr><th>Jednotka</th><th>Klient</th><th>Typ smlouvy</th><th>Stav</th><th>Aktualizováno</th><th>Odpovědná osoba</th><th>Další krok</th><th /></tr></thead><tbody>{rows.map((contract) => <tr key={`${contract.unit}-${contract.type}`} onClick={() => { const unit = units.find((item) => item.id === contract.unit); if (unit) openUnit(unit); }}><td><strong>{contract.unit}</strong></td><td>{contract.client}</td><td><Badge tone="blue">{contract.type}</Badge></td><td><Badge>{contract.state}</Badge></td><td>{contract.updated}</td><td>{contract.owner}</td><td>{contract.action}</td><td><ChevronRight size={17} /></td></tr>)}</tbody></table></ProjectModuleFrame>;
 }
 
 function ProjectPayments({ project, openUnit }: { project: ProjectRecord; openUnit: (unit: UnitRecord) => void }) {
-  const rows = payments.filter((payment) => payment.project === project.name);
+  const rows = payments.filter((payment) => projectMatchesName(project,payment.project));
   const total = rows.reduce((sum, payment) => sum + payment.amount, 0);
   const paid = rows.reduce((sum, payment) => sum + payment.paid, 0);
   return <div className="project-module-stack"><div className="metric-row payments-metrics"><div className="metric-card"><span className="metric-icon green"><Banknote size={20} /></span><span><small>Uhrazeno</small><strong>{formatMoney(paid)}</strong><em>evidované platby projektu</em></span></div><div className="metric-card"><span className="metric-icon blue"><CircleDollarSign size={20} /></span><span><small>Předepsáno</small><strong>{formatMoney(total)}</strong><em>v aktuálním přehledu</em></span></div><div className="metric-card danger-metric"><span className="metric-icon red"><AlertTriangle size={20} /></span><span><small>Po splatnosti</small><strong>{rows.filter((payment) => payment.state === "Po splatnosti").length}</strong><em>vyžaduje pozornost</em></span></div></div><ProjectModuleFrame project={project} title="Platby projektu" description="Splátkový kalendář a skutečné úhrady jednotek."><table className="data-table"><thead><tr><th>Jednotka</th><th>Klient</th><th>Splátka</th><th>Splatnost</th><th>Předpis</th><th>Uhrazeno</th><th>Stav</th><th /></tr></thead><tbody>{rows.map((payment) => <tr key={`${payment.unit}-${payment.installment}`} onClick={() => { const unit = units.find((item) => item.id === payment.unit); if (unit) openUnit(unit); }}><td><strong>{payment.unit}</strong></td><td>{payment.client}</td><td>{payment.installment}</td><td>{payment.due}</td><td><strong>{formatMoney(payment.amount)}</strong></td><td>{formatMoney(payment.paid)}</td><td><Badge>{payment.state}</Badge></td><td><ChevronRight size={17} /></td></tr>)}</tbody></table></ProjectModuleFrame></div>;
 }
 
 function ProjectClientChanges({ project, openUnit, notify }: { project: ProjectRecord; openUnit: (unit: UnitRecord) => void; notify: (message: string) => void }) {
-  const projectUnits = units.filter((unit) => unit.project === project.name && unit.client).slice(0, 4);
+  const projectUnits = units.filter((unit) => unitBelongsToProject(unit,project) && unit.client).slice(0, 4);
   const states = ["Ke schválení", "Schváleno", "V realizaci", "Uzavřeno"];
   return <ProjectModuleFrame project={project} title="Klientské změny" description="Požadavky klientů na standardy a provedení jednotek." action="Nový požadavek" onAction={() => notify("Formulář klientské změny je připraven")}><table className="data-table"><thead><tr><th>Jednotka</th><th>Klient</th><th>Požadavek</th><th>Termín rozhodnutí</th><th>Dopad do ceny</th><th>Stav</th><th /></tr></thead><tbody>{projectUnits.map((unit, index) => <tr key={unit.id} onClick={() => openUnit(unit)}><td><strong>{unit.id}</strong></td><td>{unit.client}</td><td>{["Změna podlahy v obytných místnostech", "Doplnění elektro vývodů", "Úprava dispozice koupelny", "Příprava pro venkovní žaluzie"][index]}</td><td>{24 + index}. 7. 2026</td><td>{index === 1 ? "18 500 Kč" : index === 3 ? "42 000 Kč" : "K nacenění"}</td><td><Badge>{states[index]}</Badge></td><td><ChevronRight size={17} /></td></tr>)}</tbody></table></ProjectModuleFrame>;
 }
 
 function ProjectHandovers({ project, openUnit, notify }: { project: ProjectRecord; openUnit: (unit: UnitRecord) => void; notify: (message: string) => void }) {
-  const rows = units.filter((unit) => unit.project === project.name && unit.handover !== "Neplánováno");
+  const rows = units.filter((unit) => unitBelongsToProject(unit,project) && unit.handover !== "Neplánováno");
   return <ProjectModuleFrame project={project} title="Předání projektu" description="Termíny a připravenost jednotek k předání." action="Naplánovat předání" onAction={() => notify("Kalendář předání je připraven")}><table className="data-table"><thead><tr><th>Jednotka</th><th>Klient</th><th>Budova</th><th>Stavební stav</th><th>Termín / stav předání</th><th>Připravenost</th><th /></tr></thead><tbody>{rows.map((unit, index) => <tr key={unit.id} onClick={() => openUnit(unit)}><td><strong>{unit.id}</strong></td><td>{unit.client || "—"}</td><td>{unit.building}</td><td><Badge tone="blue">{unit.construction}</Badge></td><td>{unit.handover}</td><td><span className="readiness"><span><strong>{index === 0 ? 72 : 88} %</strong></span><div><i style={{ width: `${index === 0 ? 72 : 88}%` }} /></div></span></td><td><ChevronRight size={17} /></td></tr>)}</tbody></table></ProjectModuleFrame>;
 }
 
@@ -1092,7 +1092,7 @@ function UnitOverview({ unit, notify, openClient, onEditPrice,onManageAccessorie
   const commercial=unitCommercialContexts[unit.id];
   const buyers=commercial?.buyers ?? [];
   const interestRows=commercial?.interests ?? [];
-  const isDejvice=unit.project==="Rezidence Dejvice";
+  const isDejvice=isDejviceUnit(unit);
   const accessoryItems=unit.accessories?.length?unit.accessories.map(item=>`${item.type} ${item.code}${item.areaM2?` (${item.areaM2} m²)`:""}`):unit.accessory.split(" · ").filter(Boolean);
   const stageIndex=({interest:0,pre_reservation:1,reservation:2,rs:2,sbk:3,ks:4,handover:5} as Record<string,number>)[commercial?.stage ?? ""] ?? -1;
   return (
@@ -1146,7 +1146,7 @@ function UnitContracts({ unit,notify,onWorkflow }: { unit:UnitRecord;notify: (me
 }
 
 function UnitPayments({unit}:{unit:UnitRecord}) {
-  if(unit.project==="Rezidence Dejvice")return <PilotEmptyState title="Platby" detail="Pilotní zdroj neobsahuje platební kalendář ani skutečné platby."/>;
+  if(isDejviceUnit(unit))return <PilotEmptyState title="Platby" detail="Pilotní zdroj neobsahuje platební kalendář ani skutečné platby."/>;
   const rows = [
     { name: "Rezervační poplatek", due: "20. 3. 2026", amount: 250000, paid: 250000, state: "Uhrazeno" },
     { name: "2. splátka · 25 %", due: "15. 7. 2026", amount: 2247500, paid: 2247500, state: "Uhrazeno" },
@@ -1156,7 +1156,7 @@ function UnitPayments({unit}:{unit:UnitRecord}) {
 }
 
 function UnitClientChanges({ unit, notify }: { unit: UnitRecord; notify: (message: string) => void }) {
-  if(unit.project==="Rezidence Dejvice")return <PilotEmptyState title="Klientské změny" detail="Pilotní zdroj neobsahuje klientské změny."/>;
+  if(isDejviceUnit(unit))return <PilotEmptyState title="Klientské změny" detail="Pilotní zdroj neobsahuje klientské změny."/>;
   const changes = [
     { name: "Změna podlahy v obytných místnostech", category: "Povrchy", source: "Individuální změna", state: "Ke schválení", tone: "warning", price: null, deadline: "24. 7. 2026", requested: "11. 7. 2026", documents: ["Specifikace_podlahy.pdf", "Nabídka_dodavatele.xlsx"] },
     { name: "Doplnění elektro vývodů", category: "Elektro", source: "Ceník standardních změn", state: "Schváleno", tone: "success", price: 18500, deadline: "29. 7. 2026", requested: "4. 7. 2026", documents: ["Objednávka_KZ-0142.pdf", "Výkres_elektro_rev02.pdf"] },
@@ -1188,7 +1188,7 @@ function UnitClientChanges({ unit, notify }: { unit: UnitRecord; notify: (messag
 }
 
 function UnitDocuments({ unit,notify }: { unit:UnitRecord;notify: (message: string) => void }) {
-  if(unit.project==="Rezidence Dejvice")return <PilotEmptyState title="Dokumenty" detail="Pilotní zdroj neobsahuje dokumenty ani SharePoint odkazy."/>;
+  if(isDejviceUnit(unit))return <PilotEmptyState title="Dokumenty" detail="Pilotní zdroj neobsahuje dokumenty ani SharePoint odkazy."/>;
   const docs = [
     { name: "SBK_A203_v04.docx", category: "Smlouva · SBK", author: "Pavel Sedlák", date: "dnes 9:42", version: "v04" },
     { name: "Půdorys_A203_rev03.pdf", category: "Technická dokumentace", author: "SharePoint", date: "18. 7. 2026", version: "rev03" },
@@ -1199,13 +1199,13 @@ function UnitDocuments({ unit,notify }: { unit:UnitRecord;notify: (message: stri
 }
 
 function UnitHandover({ unit,notify }: { unit:UnitRecord;notify: (message: string) => void }) {
-  if(unit.project==="Rezidence Dejvice")return <PilotEmptyState title="Předání" detail="Pilotní zdroj neobsahuje termín ani data předání."/>;
+  if(isDejviceUnit(unit))return <PilotEmptyState title="Předání" detail="Pilotní zdroj neobsahuje termín ani data předání."/>;
   const checklist = ["Dokumentace jednotky", "Revize a certifikáty", "Odečty měřidel", "Sada klíčů a čipů", "Kontrola klientských změn", "Fotodokumentace"];
   return <div className="handover-detail-grid"><section className="card detail-tab-card"><div className="tab-card-header"><div><h2>Příprava předání</h2><p>Plánovaný termín: 30. 9. 2026 · 10:00</p></div><Badge tone="warning">Připravenost 72 %</Badge></div><div className="handover-big-progress"><span><strong>72 %</strong><small>4 z 6 oblastí připraveno</small></span><div><i style={{ width: "72%" }} /></div></div><div className="handover-checklist">{checklist.map((item, index) => <button key={item} onClick={() => notify(`${item}: stav byl aktualizován`)}><span className={index < 4 ? "checked" : ""}>{index < 4 && <Check size={14} />}</span><strong>{item}</strong><Badge tone={index < 4 ? "success" : "warning"}>{index < 4 ? "Hotovo" : "Doplnit"}</Badge><ChevronRight size={17} /></button>)}</div></section><aside className="card handover-side"><h3>Rychlé akce</h3><button><CreditCard size={18} /><span><strong>Zapsat odečty</strong><small>Elektřina, voda, teplo</small></span><ChevronRight size={16} /></button><button><KeyRound size={18} /><span><strong>Klíče a čipy</strong><small>Evidence předaných kusů</small></span><ChevronRight size={16} /></button><button><AlertTriangle size={18} /><span><strong>Nedodělky</strong><small>0 otevřených položek</small></span><ChevronRight size={16} /></button><button onClick={() => notify("Protokol je připraven ke generování")}><FileText size={18} /><span><strong>Vygenerovat protokol</strong><small>Word šablona · DOCX</small></span><ChevronRight size={16} /></button></aside></div>;
 }
 
 function UnitTasks({ unit,openTask }: { unit:UnitRecord;openTask: () => void }) {
-  if(unit.project==="Rezidence Dejvice")return <PilotEmptyState title="Úkoly" detail="K jednotce zatím nejsou importovány žádné úkoly."/>;
+  if(isDejviceUnit(unit))return <PilotEmptyState title="Úkoly" detail="K jednotce zatím nejsou importovány žádné úkoly."/>;
   return <section className="card detail-tab-card"><div className="tab-card-header"><div><h2>Úkoly jednotky</h2><p>Ruční i automatické úkoly navázané na A203.</p></div><button className="primary-button" onClick={openTask}><Plus size={17} /> Nový úkol</button></div><div className="large-task-list"><article><button className="task-check large" /><span className="priority-bar vysoka" /><span className="task-main-copy"><strong>Doplnit číslo účtu klienta</strong><small>Automaticky vytvořeno · blokuje generování SBK</small></span><Badge tone="danger">Vysoká</Badge><span className="task-due urgent"><Clock3 size={15} />Dnes</span><Avatar initials="IN" small /></article><article><button className="task-check large" /><span className="priority-bar stredni" /><span className="task-main-copy"><strong>Zapracovat připomínky klienta</strong><small>Smlouva SBK · verze v04</small></span><Badge tone="warning">Střední</Badge><span className="task-due"><Clock3 size={15} />Zítra</span><Avatar initials="PS" small /></article></div></section>;
 }
 
@@ -1247,6 +1247,9 @@ function labelToConstructionCode(label:string){return constructionStatusOptions.
 function constructionCodeToLabel(code:string){return constructionStatusOptions.find(item=>item.code===code)?.label??code;}
 function quarterFromDate(value:string|null){if(!value)return"Neplánováno";const date=new Date(`${value}T00:00:00Z`);return `Q${Math.floor(date.getUTCMonth()/3)+1} ${date.getUTCFullYear()}`;}
 function numberValue(value:string){if(!value.trim())return undefined;const number=Number(value.replace(",","."));return Number.isFinite(number)?number:undefined;}
+function projectMatchesName(project:ProjectRecord,name:string){return name===project.name||name===project.sourceName;}
+function unitBelongsToProject(unit:UnitRecord,project:ProjectRecord){return Boolean((unit.projectBackendId&&project.backendId&&unit.projectBackendId===project.backendId)||(unit.projectCode&&unit.projectCode===project.code)||projectMatchesName(project,unit.project));}
+function isDejviceUnit(unit:UnitRecord){return unit.projectCode==="DEJ"||unit.project==="Rezidence Dejvice"||unit.project==="Rezidence Dejvice Test";}
 
 function TaskModal({ close, save,memberships,defaultUnit }: { close: () => void; save: (value:{title:string;description:string;objectType:string;objectId:string;assigneeId:string|null;priority:"low"|"medium"|"high";dueAt:string}) => Promise<void>;memberships:MembershipOption[];defaultUnit?:string }) {
   const [title,setTitle]=useState("");const [description,setDescription]=useState("");const [objectType,setObjectType]=useState("unit");const [objectId,setObjectId]=useState(defaultUnit??"A203");const [assigneeId,setAssigneeId]=useState(memberships[0]?.id??"");const [priority,setPriority]=useState<"low"|"medium"|"high">("medium");const [dueAt,setDueAt]=useState("2026-07-23");

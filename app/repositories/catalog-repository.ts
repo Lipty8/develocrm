@@ -58,7 +58,7 @@ function applyPreviewEdits(snapshot:CatalogSnapshot){
     const projectEdit={...(edits.projects?.[project.backendId??project.code]||{}),...(edits.projects?.[project.code]||{})};
     if(typeof projectEdit.name==="string"&&projectEdit.name!==project.name)projectNames.set(project.name,projectEdit.name);
   }
-  snapshot.projects=snapshot.projects.map(p=>({...p,...(edits.projects?.[p.backendId??p.code]||{}),...(edits.projects?.[p.code]||{})}));
+  snapshot.projects=snapshot.projects.map(p=>({...p,sourceName:p.sourceName??p.name,...(edits.projects?.[p.backendId??p.code]||{}),...(edits.projects?.[p.code]||{})}));
   snapshot.units=snapshot.units.map(u=>({...u,project:projectNames.get(u.project)??u.project,...(edits.units?.[u.backendId??u.id]||{}),...(edits.units?.[u.id]||{})}));
   snapshot.structures=snapshot.structures.map(item=>({...item,project:projectNames.get(item.project)??item.project}));
   snapshot.accessories=snapshot.accessories.map(item=>({...item,project:projectNames.get(item.project)??item.project}));
