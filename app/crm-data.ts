@@ -3,6 +3,9 @@ import { dejviceClients, dejviceContracts, dejvicePriceHistories, dejviceProject
 export type UnitStatus = "Volný" | "Předrezervace" | "RS" | "SBK" | "KS" | "Předáno" | "Blokováno";
 
 export type UnitRecord = {
+  backendId?: string;
+  projectBackendId?: string;
+  structureId?: string | null;
   id: string;
   project: string;
   building: string;
@@ -23,13 +26,21 @@ export type UnitRecord = {
   terrace?: number | null;
   garden?: number | null;
   floorplanAvailable?: boolean;
+  accessories?: AccessoryAssignmentRecord[];
 };
+export type AccessoryAssignmentRecord = { id:string; assignmentId?:string; code:string; type:string; category:string; areaM2:number|null; relation?:string|null };
+export type CatalogAccessoryRecord = AccessoryAssignmentRecord & { project:string; projectBackendId?:string; available:boolean };
+export type MembershipOption = { id:string; name:string };
+export type ProjectStructureOption = { id:string; projectId:string; project:string; name:string; kind:string };
+export type ProjectRecord = { backendId?:string; name:string; code:string; location:string; progress:number; units:number; available:number; preReserved:number; reserved:number; sold:number; handedOver:number; attention:number; color:"sage"|"sand"|"slate"; stage:string; lifecycleStatus?:string; revenue:string; buildings:string[]; manager:string; managerMembershipId?:string|null; plannedHandover:string; plannedCompletionFrom?:string|null; plannedCompletionTo?:string|null };
 
 export type InterestHistoryRecord = { date: string; project: string; unit: string; type: string; result: string };
 export type ClientRecord = {
   id: string; name: string; type: string; kind: "FO" | "PO"; email: string; phone: string; contact: string;
   units: string[]; projects: string; projectNames: string[]; state: string; contractStatus: string; initials: string;
   interestHistory?: InterestHistoryRecord[];
+  firstName?:string; lastName?:string; legalName?:string; registrationNumber?:string; vatNumber?:string; contactPerson?:string;
+  address?:{line1:string;line2?:string;city:string;postalCode?:string;countryCode:string;addressType:string}|null;
 };
 export type UnitCommercialContext = {
   buyers: Array<{ partyId: string; name: string; email: string; role: string; share: number | null }>;
@@ -38,7 +49,7 @@ export type UnitCommercialContext = {
   hold: { id: string; type: string; expiresAt: string } | null;
 };
 export type PriceHistoryRecord={id:string;unit:string;type:string;amount:number;amountNet?:number;currency:string;validFrom:string;validTo:string|null;reason:string;author:string;approver:string|null};
-export type ContractRecord={id?:string;unit:string;client:string;project:string;type:string;state:string;updated:string;owner:string;action:string;title?:string;reference?:string;parties?:Array<{id:string;name:string;role:string;signatureStatus:string}>;versions?:Array<{id:string;number:number;name:string;status:string;basedOnVersionId:string|null;source:string;createdAt:string;signedAt:string|null}>};
+export type ContractRecord={id?:string;unit:string;client:string;project:string;type:string;state:string;statusCode?:string;updated:string;owner:string;action:string;title?:string;reference?:string;parties?:Array<{id:string;name:string;role:string;signatureStatus:string}>;versions?:Array<{id:string;number:number;name:string;status:string;basedOnVersionId:string|null;source:string;createdAt:string;signedAt:string|null}>};
 
 export const units: UnitRecord[] = [
   { id: "A203", project: "Rezidence Javorová", building: "Dům A", layout: "3+kk", area: 82.4, floor: "2. NP", orientation: "J / Z", price: 8990000, status: "SBK", construction: "Dokončovací práce", handover: "Připravenost 72 %", client: "Jana a Petr Novákovi", attention: "Doplnit číslo účtu klienta", accessory: "Sklep S18 · Parking P32 · Wallbox" },
@@ -54,10 +65,10 @@ export const units: UnitRecord[] = [
   ...dejviceUnits as UnitRecord[],
 ];
 
-export const projects = [
-  { name: "Rezidence Javorová", code: "RJ", location: "Praha 5 · Jinonice", progress: 82, units: 68, available: 9, preReserved: 4, reserved: 8, sold: 39, handedOver: 8, attention: 6, color: "sage", stage: "Dokončovací práce", revenue: "482,6 mil. Kč", buildings: ["Dům A", "Dům B"], manager: "Martin Jelínek", plannedHandover: "Q4 2026" },
-  { name: "Parková čtvrť", code: "PČ", location: "Brno · Černá Pole", progress: 61, units: 94, available: 19, preReserved: 6, reserved: 12, sold: 42, handedOver: 15, attention: 9, color: "sand", stage: "Etapa I dokončena", revenue: "536,2 mil. Kč", buildings: ["Etapa I", "Etapa II"], manager: "Pavel Sedlák", plannedHandover: "Q2 2027" },
-  { name: "Vily Stráň", code: "VS", location: "Praha-východ · Průhonice", progress: 18, units: 12, available: 8, preReserved: 1, reserved: 1, sold: 2, handedOver: 0, attention: 2, color: "slate", stage: "Příprava", revenue: "65,7 mil. Kč", buildings: ["Vila E", "Vila F", "Vila G"], manager: "Klára Bendová", plannedHandover: "Q4 2027" },
+export const projects:ProjectRecord[] = [
+  { name: "Rezidence Javorová", code: "RJ", location: "Praha 5 · Jinonice", progress: 82, units: 68, available: 9, preReserved: 4, reserved: 8, sold: 39, handedOver: 8, attention: 6, color: "sage", stage: "Dokončovací práce", lifecycleStatus:"active", revenue: "482,6 mil. Kč", buildings: ["Dům A", "Dům B"], manager: "Martin Jelínek", managerMembershipId:"d3000000-0000-4000-8000-000000000002", plannedHandover: "Q4 2026", plannedCompletionFrom:"2026-10-01", plannedCompletionTo:"2026-12-31" },
+  { name: "Parková čtvrť", code: "PČ", location: "Brno · Černá Pole", progress: 61, units: 94, available: 19, preReserved: 6, reserved: 12, sold: 42, handedOver: 15, attention: 9, color: "sand", stage: "Dokončeno", lifecycleStatus:"active", revenue: "536,2 mil. Kč", buildings: ["Etapa I", "Etapa II"], manager: "Pavel Sedlák", managerMembershipId:"d3000000-0000-4000-8000-000000000003", plannedHandover: "Q2 2027", plannedCompletionFrom:"2027-04-01", plannedCompletionTo:"2027-06-30" },
+  { name: "Vily Stráň", code: "VS", location: "Praha-východ · Průhonice", progress: 18, units: 12, available: 8, preReserved: 1, reserved: 1, sold: 2, handedOver: 0, attention: 2, color: "slate", stage: "Příprava", lifecycleStatus:"preparation", revenue: "65,7 mil. Kč", buildings: ["Vila E", "Vila F", "Vila G"], manager: "Klára Bendová", managerMembershipId:"d3000000-0000-4000-8000-000000000004", plannedHandover: "Q4 2027", plannedCompletionFrom:"2027-10-01", plannedCompletionTo:"2027-12-31" },
   dejviceProject,
 ];
 

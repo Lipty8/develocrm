@@ -1,19 +1,23 @@
 import { projects as previewProjects, units as previewUnits, type UnitRecord, type UnitStatus } from "../../crm-data";
-import type { CatalogSnapshot, ProjectRecord } from "../../repositories/catalog-repository";
+import { previewCatalogMeta, type CatalogSnapshot } from "../../repositories/catalog-repository";
+import type { ProjectRecord } from "../../crm-data";
 
 type BackendCatalog = {
   projects: Array<{
     id: string; code: string; name: string; location: string | null; manager: string | null;
-    plannedHandoverFrom: string | null; plannedHandoverTo: string | null; constructionStatus: string | null;
+    lifecycleStatus:string; managerMembershipId:string|null; plannedHandoverFrom: string | null; plannedHandoverTo: string | null; constructionStatus: string | null;
     counts: Record<string, number>;
   }>;
   units: Array<{
-    id: string; code: string; projectName: string; structureName: string | null; layout: string | null;
+    id: string; code: string; projectId:string; structureId:string|null; projectName: string; structureName: string | null; layout: string | null;
     areaM2: number; usableAreaM2: number | null; floorLabel: string | null; orientation: string | null;
     balconyM2: number | null; terraceM2: number | null; gardenM2: number | null; commercialStatus: string;
     constructionStatus: string | null;
-    accessories: Array<{ code: string; type: string; category: string; areaM2: number | null }>;
+    accessories: Array<{ id:string; assignmentId:string; code: string; type: string; category: string; areaM2: number | null; relation?:string|null }>;
   }>;
+  accessories:Array<{id:string;code:string;type:string;category:string;areaM2:number|null;projectId:string;projectName:string;available:boolean;relation?:string|null}>;
+  memberships:Array<{id:string;name:string}>;
+  structures:Array<{id:string;projectId:string;projectName:string;name:string;kind:string}>;
 };
 
 export async function GET(request: Request) {
@@ -21,7 +25,8 @@ export async function GET(request: Request) {
   const tenantId = process.env.DEVELOCRM_TENANT_ID;
   const authorization = request.headers.get("authorization");
   if (!backendUrl || !tenantId || !authorization) {
-    return Response.json({ projects: previewProjects, units: previewUnits, source: "preview-seed" } satisfies CatalogSnapshot);
+    const units=previewUnits.map(unit=>({...unit,accessories:previewCatalogMeta.accessories.filter(item=>item.project===unit.project&&item.assignmentId?.includes(`-${unit.id}-`))}));
+    return Response.json({ projects: previewProjects, units, ...previewCatalogMeta, source: "preview-seed" } satisfies CatalogSnapshot);
   }
 
   const response = await fetch(`${backendUrl}/v1/catalog`, {
@@ -65,12 +70,12 @@ function adaptBackendCatalog(catalog: BackendCatalog): CatalogSnapshot {
     const handedOver = project.counts.handed_over ?? 0;
     const unitCount = Object.values(project.counts).reduce((sum, count) => sum + count, 0);
     return {
-      name: project.name, code: project.code, location: project.location ?? "",
+      backendId:project.id,name: project.name, code: project.code, location: project.location ?? "",
       progress: Math.round(((sold + handedOver) / Math.max(unitCount, 1)) * 100), units: unitCount,
       available, preReserved, reserved, sold, handedOver, attention: 0,
       color: (["sage", "sand", "slate"] as const)[index % 3], stage: constructionLabel(project.constructionStatus),
       revenue: "—", buildings: [...(projectStructures.get(project.name) ?? [])],
-      manager: project.manager ?? "—", plannedHandover: quarterLabel(project.plannedHandoverFrom),
+      lifecycleStatus:project.lifecycleStatus,manager: project.manager ?? "—",managerMembershipId:project.managerMembershipId, plannedHandover: quarterLabel(project.plannedHandoverFrom),plannedCompletionFrom:project.plannedHandoverFrom,plannedCompletionTo:project.plannedHandoverTo,
     };
   });
   const units = catalog.units.map((unit): UnitRecord => {
@@ -78,16 +83,16 @@ function adaptBackendCatalog(catalog: BackendCatalog): CatalogSnapshot {
     // doplní pouze pro známé preview kódy, bez zápisu duplicit do produkční DB.
     const preview = previewUnits.find((candidate) => candidate.id === unit.code);
     return {
-      id: unit.code, project: unit.projectName, building: unit.structureName ?? "Bez zařazení",
+      backendId:unit.id,projectBackendId:unit.projectId,structureId:unit.structureId,id: unit.code, project: unit.projectName, building: unit.structureName ?? "Bez zařazení",
       layout: unit.layout ?? "—", area: unit.areaM2, floor: unit.floorLabel ?? "—",
       orientation: unit.orientation ?? "—", price: preview?.price ?? 0,
       usableArea: unit.usableAreaM2 ?? undefined, balcony: unit.balconyM2, terrace: unit.terraceM2, garden: unit.gardenM2,
       status: commercialLabel(unit.commercialStatus), construction: constructionLabel(unit.constructionStatus),
       handover: preview?.handover ?? "Neplánováno", client: preview?.client, attention: preview?.attention,
-      accessory: unit.accessories.map((item) => `${item.type} ${item.code}${item.areaM2 ? ` · ${item.areaM2} m²` : ""}`).join(" · ") || "Bez příslušenství",
+      accessory: unit.accessories.map((item) => `${item.type} ${item.code}${item.areaM2 ? ` · ${item.areaM2} m²` : ""}`).join(" · ") || "Bez příslušenství",accessories:unit.accessories,
     };
   });
-  return { projects, units, source: "backend-api" };
+  return { projects, units, accessories:catalog.accessories.map(item=>({...item,project:item.projectName,projectBackendId:item.projectId})),memberships:catalog.memberships,structures:catalog.structures.map(item=>({id:item.id,projectId:item.projectId,project:item.projectName,name:item.name,kind:item.kind})),source: "backend-api" };
 }
 
 function commercialLabel(status: string): UnitStatus {

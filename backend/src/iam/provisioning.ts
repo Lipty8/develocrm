@@ -9,6 +9,12 @@ const defaultRoles = [
   { code: "sales", name: "Sales / Obchod" },
   { code: "back_office", name: "Back Office" },
 ] as const;
+const defaultPermissionCodes:Record<(typeof defaultRoles)[number]["code"],string[]>={
+  admin:[],
+  project_manager:["tenant.read","membership.read","role.read","project.read","project.manage","projects.change_manager","projects.change_status","structure.manage","construction_status.manage","unit.read","unit.manage","accessory.read","accessory.manage","clients.read","clients.manage","clients.export","interests.manage","sales_case.read","sales_case.manage","holds.manage","holds.cancel","price.read","price.manage","price.approve","prices.propose","prices.change","prices.approve","contract.read","contract.manage","contract.approve","contract.sign"],
+  sales:["tenant.read","membership.read","project.read","unit.read","accessory.read","clients.read","clients.manage","clients.export","interests.manage","sales_case.read","sales_case.manage","holds.manage","holds.cancel","price.read","prices.propose","contract.read","contract.manage","contract.sign"],
+  back_office:["tenant.read","membership.read","project.read","unit.read","accessory.read","clients.read","clients.manage","clients.export","sales_case.read","contract.read","contract.manage","contract.approve"],
+};
 
 export class TenantProvisioningService {
   constructor(private readonly database: Database) {}
@@ -42,11 +48,10 @@ export class TenantProvisioningService {
          SELECT $1, $2, id FROM permissions`,
         [tenantId, adminRoleId],
       );
-      await client.query(
+      for(const role of defaultRoles.filter(item=>item.code!=="admin"))await client.query(
         `INSERT INTO role_permissions (tenant_id, role_id, permission_id)
-         SELECT $1, r.id, p.id FROM roles r CROSS JOIN permissions p
-         WHERE r.tenant_id = $1 AND r.code <> 'admin' AND p.code IN ('tenant.read', 'membership.read', 'role.read')`,
-        [tenantId],
+         SELECT $1,r.id,p.id FROM roles r CROSS JOIN permissions p WHERE r.tenant_id=$1 AND r.code=$2 AND p.code=ANY($3::text[])`,
+        [tenantId,role.code,defaultPermissionCodes[role.code]],
       );
       await client.query(
         `INSERT INTO role_assignments (tenant_id, membership_id, role_id, assigned_by_user_id)

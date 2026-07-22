@@ -79,22 +79,34 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
   });
 
   app.patch<{Params:{projectId:string};Body:{name:string;location?:string|null;lifecycleStatus:string;managerMembershipId?:string|null;plannedHandoverFrom?:string|null;plannedHandoverTo?:string|null}}>("/v1/projects/:projectId",async(request,reply)=>{
-    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.send(await inventory.updateProject({...context,projectId:request.params.projectId,...request.body}));}catch(error){return reply.code(409).send({error:error instanceof Error?error.message:"Projekt nelze upravit"});}
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.send(await inventory.updateProject({...context,projectId:request.params.projectId,...request.body}));}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Projekt nelze upravit"});}
   });
-  app.patch<{Params:{unitId:string};Body:{layout?:string|null;floorLabel?:string|null;floorNumber?:number|null;areaM2:number;usableAreaM2?:number|null;orientation?:string|null;balconyM2?:number|null;terraceM2?:number|null;gardenM2?:number|null}}>("/v1/units/:unitId",async(request,reply)=>{
-    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.send(await inventory.updateUnit({...context,unitId:request.params.unitId,...request.body}));}catch(error){return reply.code(409).send({error:error instanceof Error?error.message:"Jednotku nelze upravit"});}
+  app.post<{Params:{projectId:string};Body:{statusCode:string;effectiveAt:string;note:string}}>("/v1/projects/:projectId/construction-status",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await inventory.recordProjectConstructionStatus({...context,projectId:request.params.projectId,...request.body}));}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Fázi projektu nelze změnit"});}
+  });
+  app.patch<{Params:{unitId:string};Body:{structureId?:string|null;layout?:string|null;floorLabel?:string|null;floorNumber?:number|null;areaM2:number;usableAreaM2?:number|null;orientation?:string|null;balconyM2?:number|null;terraceM2?:number|null;gardenM2?:number|null}}>("/v1/units/:unitId",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.send(await inventory.updateUnit({...context,unitId:request.params.unitId,...request.body}));}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Jednotku nelze upravit"});}
   });
   app.post<{Params:{unitId:string};Body:{accessoryId:string;validFrom?:string}}>("/v1/units/:unitId/accessories",async(request,reply)=>{
-    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await inventory.assignAccessory({...context,unitId:request.params.unitId,...request.body}));}catch(error){return reply.code(409).send({error:error instanceof Error?error.message:"Příslušenství nelze přiřadit"});}
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await inventory.assignAccessory({...context,unitId:request.params.unitId,...request.body}));}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Příslušenství nelze přiřadit"});}
   });
   app.delete<{Params:{assignmentId:string};Querystring:{validTo?:string}}>("/v1/accessory-assignments/:assignmentId",async(request,reply)=>{
-    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.send(await inventory.removeAccessory({...context,assignmentId:request.params.assignmentId,validTo:request.query.validTo}));}catch(error){return reply.code(409).send({error:error instanceof Error?error.message:"Příslušenství nelze odebrat"});}
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.send(await inventory.removeAccessory({...context,assignmentId:request.params.assignmentId,validTo:request.query.validTo}));}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Příslušenství nelze odebrat"});}
   });
   app.patch<{Params:{partyId:string};Body:{displayName:string}}>("/v1/parties/:partyId",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.send(await sales.updateParty({...context,partyId:request.params.partyId,...request.body}));}catch(error){return reply.code(409).send({error:error instanceof Error?error.message:"Klienta nelze upravit"});}
   });
   app.post<{Params:{partyId:string};Body:{contactType:string;value:string;label?:string|null;isPrimary?:boolean}}>("/v1/parties/:partyId/contacts",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await sales.upsertContact({...context,partyId:request.params.partyId,...request.body}));}catch(error){return reply.code(409).send({error:error instanceof Error?error.message:"Kontakt nelze uložit"});}
+  });
+  app.patch<{Params:{partyId:string};Body:{firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;vatNumber?:string;contactPerson?:string}}>("/v1/parties/:partyId/profile",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.send(await sales.updateProfile({...context,partyId:request.params.partyId,...request.body}));}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Profil klienta nelze uložit"});}
+  });
+  app.post<{Params:{partyId:string};Body:{addressType:string;line1:string;line2?:string;city:string;postalCode?:string;countryCode:string}}>("/v1/parties/:partyId/addresses",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await sales.upsertAddress({...context,partyId:request.params.partyId,...request.body}));}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Adresu klienta nelze uložit"});}
+  });
+  app.post<{Params:{unitId:string};Body:{partyId:string;eventType:string;note:string}}>("/v1/units/:unitId/interests",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await sales.addInterest({...context,unitId:request.params.unitId,...request.body}));}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Zájem nelze uložit"});}
   });
 
   app.get("/v1/clients", async (request, reply) => {
@@ -108,6 +120,9 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
       return sales.getDirectory({ tenantId,userId:user.id,membershipId:session.workspace.membershipId });
     } catch { return reply.code(401).send({ error:"Neplatné přihlášení" }); }
   });
+  app.post<{Body:{projectId:string;kind:"individual"|"organization";firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;email?:string;phone?:string}}>("/v1/parties",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await sales.createParty({...context,...request.body}));}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Klienta nelze vytvořit"});}
+  });
 
   app.get("/v1/commercial", async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return commercial.getSnapshot(context);}
@@ -116,7 +131,7 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
 
   app.post<{Params:{unitId:string};Body:{priceType:string;amount:number;currency?:string;validFrom:string;reason:string;approverMembershipId?:string}}>("/v1/units/:unitId/prices",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await commercialCommands.recordPrice({...context,unitId:request.params.unitId,...request.body,currency:request.body.currency??"CZK"}));}
-    catch(error){return reply.code(409).send({error:error instanceof Error?error.message:"Cenu nelze zaznamenat"});}
+    catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Cenu nelze zaznamenat"});}
   });
 
   app.post<{Body:{salesCaseId:string;type:string;reference:string;title:string;parentContractId?:string}}>("/v1/contracts",async(request,reply)=>{
@@ -172,7 +187,7 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
 
   app.post<{ Params:{ holdId:string }; Body:{ reason:string } }>("/v1/holds/:holdId/cancel", async (request,reply) => {
     try { const identity=await authenticate(request,dependencies.verifier); const tenantId=headerValue(request.headers["x-tenant-id"]); if(!tenantId)return reply.code(400).send({error:"Chybí x-tenant-id"}); const user=await repository.resolveUser(identity); const session=await repository.getSession(user,identity,tenantId);
-      if(!session||!await sales.hasHoldPermission({tenantId,userId:user.id,membershipId:session.workspace.membershipId,holdId:request.params.holdId,permission:"holds.manage"}))return reply.code(403).send({error:"Chybí oprávnění holds.manage"});
+      if(!session||!await sales.hasHoldPermission({tenantId,userId:user.id,membershipId:session.workspace.membershipId,holdId:request.params.holdId,permission:"holds.cancel"}))return reply.code(403).send({error:"Chybí oprávnění holds.cancel"});
       return reply.send(await holds.cancel({tenantId,userId:user.id,holdId:request.params.holdId,membershipId:session.workspace.membershipId,reason:request.body.reason}));
     } catch(error){return reply.code(409).send({error:error instanceof Error?error.message:"Zrušení rezervace se nezdařilo"});}
   });
@@ -230,6 +245,7 @@ async function authenticate(request: FastifyRequest, verifier: EntraTokenVerifie
 function headerValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
+function permissionError(error:unknown){return error instanceof Error&&/permission|required|oprávnění/i.test(error.message);}
 
 function csvCell(value:string):string { return `"${value.replaceAll('"','""')}"`; }
 

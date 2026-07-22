@@ -5,6 +5,8 @@ export type ClientDirectoryItem = {
   contact: string; units: string[]; projects: string; projectNames: string[]; state: string;
   contractStatus: string; initials: string;
   interestHistory: Array<{ date: string; project: string; unit: string; type: string; result: string }>;
+  firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;vatNumber?:string;contactPerson?:string;
+  address?:{line1:string;line2?:string;city:string;postalCode?:string;countryCode:string;addressType:string}|null;
 };
 
 export type UnitCommercialContext = {
@@ -25,15 +27,19 @@ export class SalesRepository {
   async upsertContact(input:{tenantId:string;userId:string;partyId:string;contactType:string;value:string;label?:string|null;isPrimary?:boolean;membershipId:string}) {
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId}, async client => (await client.query<{id:string}>("SELECT app.upsert_party_contact($1,$2,$3,$4,$5,$6,$7) id",[input.tenantId,input.partyId,input.contactType,input.value,input.label??null,input.isPrimary??false,input.membershipId])).rows[0]);
   }
+  async updateProfile(input:{tenantId:string;userId:string;partyId:string;membershipId:string;firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;vatNumber?:string;contactPerson?:string}){return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{id:string}>("SELECT app.update_party_profile($1,$2,$3,$4,$5,$6,$7,$8,$9) id",[input.tenantId,input.partyId,input.firstName??null,input.lastName??null,input.legalName??null,input.registrationNumber??null,input.vatNumber??null,input.contactPerson??null,input.membershipId])).rows[0]);}
+  async upsertAddress(input:{tenantId:string;userId:string;partyId:string;membershipId:string;addressType:string;line1:string;line2?:string;city:string;postalCode?:string;countryCode:string}){return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{id:string}>("SELECT app.upsert_party_primary_address($1,$2,$3,$4,$5,$6,$7,$8,$9) id",[input.tenantId,input.partyId,input.addressType,input.line1,input.line2??null,input.city,input.postalCode??null,input.countryCode,input.membershipId])).rows[0]);}
+  async addInterest(input:{tenantId:string;userId:string;unitId:string;partyId:string;eventType:string;note:string;membershipId:string}){return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{id:string}>("SELECT app.add_unit_interest($1,$2,$3,$4,$5,$6) id",[input.tenantId,input.unitId,input.partyId,input.eventType,input.note,input.membershipId])).rows[0]);}
+  async createParty(input:{tenantId:string;userId:string;projectId:string;kind:string;firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;email?:string;phone?:string;membershipId:string}){return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{id:string}>("SELECT app.create_party_for_project($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) id",[input.tenantId,input.projectId,input.kind,input.firstName??null,input.lastName??null,input.legalName??null,input.registrationNumber??null,input.email??null,input.phone??null,input.membershipId])).rows[0]);}
 
   async getDirectory(input: Context): Promise<{ clients: ClientDirectoryItem[]; unitContexts: Record<string, UnitCommercialContext> }> {
     return this.database.withContext({ tenantId: input.tenantId, userId: input.userId }, async (client) => {
       const partyRows = await client.query<{
-        id: string; display_name: string; party_type: string; email: string | null; phone: string | null;
+        id: string; display_name: string; party_type: string; email: string | null; phone: string | null;first_name:string|null;last_name:string|null;legal_name:string|null;registration_number:string|null;vat_number:string|null;contact_person:string|null;address:ClientDirectoryItem["address"];
         projects: Array<{ id: string; name: string }>; units: string[]; state: string; stage: string | null;
         interest_history: ClientDirectoryItem["interestHistory"];
       }>(
-        `SELECT party.id,party.display_name,party.party_type,email.value AS email,phone.value AS phone,
+        `SELECT party.id,party.display_name,party.party_type,email.value AS email,phone.value AS phone,individual.first_name,individual.last_name,organization.legal_name,organization.registration_number,organization.vat_number,organization.contact_person,address.item address,
           COALESCE(projects.items,'[]'::jsonb) projects,COALESCE(unit_rows.items,'[]'::jsonb) units,
           CASE WHEN stage.current_stage='handover' THEN 'Předáno'
                WHEN stage.current_stage IS NOT NULL AND stage.current_stage<>'interest' THEN 'Aktivní klient'
@@ -41,6 +47,9 @@ export class SalesRepository {
           stage.current_stage,
           COALESCE(history.items,'[]'::jsonb) interest_history
          FROM parties party
+         LEFT JOIN party_individual_details individual ON individual.tenant_id=party.tenant_id AND individual.party_id=party.id
+         LEFT JOIN party_organization_details organization ON organization.tenant_id=party.tenant_id AND organization.party_id=party.id
+         LEFT JOIN LATERAL (SELECT jsonb_build_object('line1',line1,'line2',line2,'city',city,'postalCode',postal_code,'countryCode',country_code,'addressType',address_type) item FROM party_addresses WHERE tenant_id=party.tenant_id AND party_id=party.id AND is_primary AND valid_to IS NULL ORDER BY created_at DESC LIMIT 1) address ON true
          LEFT JOIN LATERAL (SELECT value FROM party_contacts WHERE tenant_id=party.tenant_id AND party_id=party.id
            AND contact_type='email' AND archived_at IS NULL ORDER BY is_primary DESC,created_at LIMIT 1) email ON true
          LEFT JOIN LATERAL (SELECT value FROM party_contacts WHERE tenant_id=party.tenant_id AND party_id=party.id
@@ -117,7 +126,7 @@ export class SalesRepository {
           return { id: row.id,name: row.display_name,type: row.party_type === "individual" ? "Fyzická osoba" : "Právnická osoba",
             kind: row.party_type === "individual" ? "FO" : "PO",email,phone,contact: [email,phone].filter(Boolean).join(" · "),
             units: row.units,projects: projectNames.join(", "),projectNames,state: row.state,
-            contractStatus: stageLabel(row.stage),initials: initials(row.display_name),interestHistory: row.interest_history };
+            contractStatus: stageLabel(row.stage),initials: initials(row.display_name),interestHistory: row.interest_history,firstName:row.first_name??undefined,lastName:row.last_name??undefined,legalName:row.legal_name??undefined,registrationNumber:row.registration_number??undefined,vatNumber:row.vat_number??undefined,contactPerson:row.contact_person??undefined,address:row.address };
         }),
         unitContexts: Object.fromEntries(contextRows.rows.map((row) => [row.unit_code,{ buyers: row.buyers,interests: row.interests,stage: row.stage,hold: row.hold }])),
       };

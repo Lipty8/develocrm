@@ -1,7 +1,7 @@
 import type { Database } from "../database.js";
 
 export type PriceItem={id:string;unit:string;type:string;amount:number;amountNet?:number;currency:string;validFrom:string;validTo:string|null;reason:string;author:string;approver:string|null};
-export type ContractItem={id:string;unit:string;project:string;client:string;type:string;state:string;updated:string;owner:string;action:string;title:string;reference:string;parties:Array<{id:string;name:string;role:string;signatureStatus:string}>;versions:Array<{id:string;number:number;name:string;status:string;basedOnVersionId:string|null;source:string;createdAt:string;signedAt:string|null}>};
+export type ContractItem={id:string;unit:string;project:string;client:string;type:string;state:string;statusCode:string;updated:string;owner:string;action:string;title:string;reference:string;parties:Array<{id:string;name:string;role:string;signatureStatus:string}>;versions:Array<{id:string;number:number;name:string;status:string;basedOnVersionId:string|null;source:string;createdAt:string;signedAt:string|null}>};
 export type CommercialSnapshot={currentPrices:Record<string,number>;priceHistories:Record<string,PriceItem[]>;contracts:ContractItem[];contractSummary:Record<string,number>};
 type Context={tenantId:string;userId:string;membershipId:string};
 
@@ -42,7 +42,7 @@ export class CommercialRepository {
         const amount=unitId?(await client.query<{amount:number}>("SELECT app.current_unit_price($1,$2)::float8 amount",[input.tenantId,unitId])).rows[0]?.amount:0;
         return [unit,amount??0];
       })));
-      const mapped=contracts.rows.map(row=>({id:row.id,unit:row.unit,project:row.project,client:row.parties.filter(p=>p.role==='buyer'||p.role==='co_buyer').map(p=>p.name).join(' a '),type:typeLabel(row.type),state:statusLabel(row.status),updated:new Date(row.updated_at).toLocaleDateString('cs-CZ'),owner:row.owner.split(' ')[0]??row.owner,action:actionLabel(row.status),title:row.title,reference:row.reference,parties:row.parties,versions:row.versions}));
+      const mapped=contracts.rows.map(row=>({id:row.id,unit:row.unit,project:row.project,client:row.parties.filter(p=>p.role==='buyer'||p.role==='co_buyer').map(p=>p.name).join(' a '),type:typeLabel(row.type),state:statusLabel(row.status),statusCode:row.status,updated:new Date(row.updated_at).toLocaleDateString('cs-CZ'),owner:row.owner.split(' ')[0]??row.owner,action:actionLabel(row.status),title:row.title,reference:row.reference,parties:row.parties,versions:row.versions}));
       const contractSummary=contracts.rows.reduce<Record<string,number>>((sum,row)=>(sum[row.status]=(sum[row.status]??0)+1,sum),{});
       return {currentPrices,priceHistories,contracts:mapped,contractSummary};
     });
