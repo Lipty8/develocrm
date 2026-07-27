@@ -258,6 +258,18 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return{documents:await documentRepository.listUnit({...context,unitId:request.params.unitId,...request.query}),connection:await documentRepository.connectionStatus(context)};}
     catch(error){return reply.code(403).send({error:error instanceof Error?error.message:"Dokumenty jednotky nelze načíst"});}
   });
+  app.get<{Querystring:{query?:string;typeCode?:string;status?:string;projectId?:string;partyId?:string;unitId?:string;contractId?:string}}>("/v1/documents",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return{documents:await documentRepository.listAll({...context,...request.query}),connection:await documentRepository.connectionStatus(context)};}
+    catch(error){return reply.code(403).send({error:error instanceof Error?error.message:"Dokumenty nelze načíst"});}
+  });
+  app.get<{Params:{partyId:string}}>("/v1/parties/:partyId/documents",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return{documents:await documentRepository.listParty({...context,partyId:request.params.partyId}),connection:await documentRepository.connectionStatus(context)};}
+    catch(error){return reply.code(403).send({error:error instanceof Error?error.message:"Dokumenty klienta nelze načíst"});}
+  });
+  app.get<{Params:{contractId:string}}>("/v1/contracts/:contractId/documents",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return{documents:await documentRepository.listContract({...context,contractId:request.params.contractId}),connection:await documentRepository.connectionStatus(context)};}
+    catch(error){return reply.code(403).send({error:error instanceof Error?error.message:"Dokumenty smlouvy nelze načíst"});}
+  });
   app.get<{Params:{documentId:string}}>("/v1/documents/:documentId",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});const document=await documentRepository.getById({...context,documentId:request.params.documentId});return document?{document}:reply.code(404).send({error:"Dokument nebyl nalezen"});}
     catch(error){return reply.code(403).send({error:error instanceof Error?error.message:"Dokument nelze načíst"});}
@@ -266,16 +278,16 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return{connection:await documentRepository.connectionStatus(context)};}
     catch(error){return reply.code(403).send({error:error instanceof Error?error.message:"Stav připojení nelze načíst"});}
   });
-  app.post<{Body:{projectId:string;name:string;category:string;mimeType:string;fileSize?:number;storageProvider:"sharepoint"|"external";externalDriveId?:string;externalItemId?:string;webUrl?:string;etag?:string;sensitivity?:"normal"|"sensitive";operation?:"upload"|"import"|"sync"}}>("/v1/documents",async(request,reply)=>{
-    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await documentRepository.createMetadata({...context,...request.body}));}
+  app.post<{Body:{projectId:string;typeCode:string;name:string;mimeType?:string;status?:string;note?:string;storageProvider?:"external"}}>("/v1/documents",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await documentRepository.createRecord({...context,...request.body}));}
     catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Metadata dokumentu nelze vytvořit"});}
   });
-  app.patch<{Params:{documentId:string};Body:{name:string;category:string;webUrl?:string;etag?:string;fileSize?:number}}>("/v1/documents/:documentId",async(request,reply)=>{
-    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return documentRepository.updateMetadata({...context,documentId:request.params.documentId,...request.body});}
+  app.patch<{Params:{documentId:string};Body:{name:string;typeCode:string;status:string;note?:string}}>("/v1/documents/:documentId",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return documentRepository.updateRecord({...context,documentId:request.params.documentId,...request.body});}
     catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Metadata dokumentu nelze upravit"});}
   });
-  app.post<{Params:{documentId:string};Body:{versionIdentifier:string;externalVersionId?:string;versionLabel:string;etag?:string;fileSize?:number;contentHash?:string}}>("/v1/documents/:documentId/versions",async(request,reply)=>{
-    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await documentRepository.createVersion({...context,documentId:request.params.documentId,...request.body}));}
+  app.post<{Params:{documentId:string};Body:{versionIdentifier:string;versionLabel:string;status:string;note?:string;fileSize?:number;contentHash?:string}}>("/v1/documents/:documentId/versions",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await documentRepository.createVersionV2({...context,documentId:request.params.documentId,...request.body}));}
     catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Verzi dokumentu nelze vytvořit"});}
   });
   app.post<{Params:{documentId:string};Body:{reason:string}}>("/v1/documents/:documentId/archive",async(request,reply)=>{
@@ -297,6 +309,10 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
   app.post<{Params:{documentId:string};Body:{contractId:string;contractVersionId?:string;documentVersionId?:string}}>("/v1/documents/:documentId/contract-links",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await documentRepository.linkContract({...context,documentId:request.params.documentId,...request.body}));}
     catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Vazbu smlouvy nelze vytvořit"});}
+  });
+  app.post<{Params:{documentId:string};Body:{salesCaseId:string}}>("/v1/documents/:documentId/sales-case-links",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await documentRepository.linkSalesCase({...context,documentId:request.params.documentId,salesCaseId:request.body.salesCaseId}));}
+    catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Vazbu obchodního případu nelze vytvořit"});}
   });
 
   return app;

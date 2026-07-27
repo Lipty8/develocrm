@@ -6,6 +6,7 @@ const pagePaths = {
   projects: "/projects",
   clients: "/clients",
   contracts: "/contracts",
+  documents: "/documents",
   payments: "/payments",
   handovers: "/handovers",
   tasks: "/tasks",
@@ -37,6 +38,10 @@ export function contractRoute(contractId) {
   return `/contracts/${encodeURIComponent(contractId)}`;
 }
 
+export function documentRoute(documentId) {
+  return `/documents/${encodeURIComponent(documentId)}`;
+}
+
 export function parseCrmRoute(pathname, search = "") {
   const parts = pathname.split("/").filter(Boolean).map(decode);
   const params = new URLSearchParams(typeof search === "string" ? search.replace(/^\?/, "") : search);
@@ -48,6 +53,8 @@ export function parseCrmRoute(pathname, search = "") {
   if (parts[0] === "clients") return { page: "clients", kind: "page", params };
   if (parts[0] === "contracts" && parts[1]) return { page: "contracts", kind: "contract", contractId: parts[1], params };
   if (parts[0] === "contracts") return { page: "contracts", kind: "page", params };
+  if (parts[0] === "documents" && parts[1]) return { page: "documents", kind: "document", documentId: parts[1], params };
+  if (parts[0] === "documents") return { page: "documents", kind: "page", params };
   if (parts[0] === "tasks") return { page: "tasks", kind: "page", taskScope: ["mine", "all", "completed"].includes(params.get("scope")) ? params.get("scope") : "mine", params };
   if (parts[0] === "payments") return { page: "payments", kind: "page", params };
   if (parts[0] === "handovers") return { page: "handovers", kind: "page", params };

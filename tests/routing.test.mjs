@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { clientRoute, contractRoute, pageRoute, parseCrmRoute, projectRoute, unitRoute, updateSearch } from "../app/crm-routing.mjs";
+import { clientRoute, contractRoute, documentRoute, pageRoute, parseCrmRoute, projectRoute, unitRoute, updateSearch } from "../app/crm-routing.mjs";
 
 const appUrl=new URL("../app/CRMApp.tsx",import.meta.url);
 const catchAllUrl=new URL("../app/[...crmPath]/page.tsx",import.meta.url);
@@ -13,6 +13,7 @@ test("stable deep links use IDs and restore project and unit tabs",()=>{
   assert.equal(unitRoute("101","history"),"/units/101?tab=history");
   assert.equal(clientRoute("party-101"),"/clients/party-101");
   assert.equal(contractRoute("contract-101"),"/contracts/contract-101");
+  assert.equal(documentRoute("document-101"),"/documents/document-101");
   assert.deepEqual({...parseCrmRoute("/projects/DEJ/units"),params:undefined},{page:"projects",kind:"project",projectId:"DEJ",projectTab:"units",params:undefined});
   assert.equal(parseCrmRoute("/units/101","tab=history").unitTab,"history");
 });
@@ -57,6 +58,7 @@ test("refresh and new-tab parsing resolve every supported deep link",()=>{
   assert.equal(parseCrmRoute("/units/101").kind,"unit");
   assert.equal(parseCrmRoute("/clients/c1").kind,"client");
   assert.equal(parseCrmRoute("/contracts/preview-contract-a203-sbk").kind,"contract");
+  assert.equal(parseCrmRoute("/documents/preview-doc-a203-sbk").kind,"document");
   assert.equal(parseCrmRoute("/admin/users").kind,"admin-users");
 });
 

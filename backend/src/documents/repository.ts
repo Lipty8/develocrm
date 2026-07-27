@@ -6,48 +6,60 @@ export type DocumentListItem = {
   projectName: string;
   name: string;
   category: string;
+  typeCode: string;
+  typeName: string;
+  status: "draft" | "ready" | "sent" | "negotiation" | "signed" | "archived";
+  note: string | null;
   mimeType: string;
   fileSize: number | null;
   storageProvider: "sharepoint" | "preview" | "external";
   webUrl: string | null;
   etag: string | null;
   sensitivity: "normal" | "sensitive";
+  createdAt: string;
   updatedAt: string;
   author: string | null;
   version: string | null;
   units: string[];
   parties: string[];
   contracts: string[];
+  salesCases: string[];
 };
 
 export type DocumentDetail = DocumentListItem & {
   externalDriveId: string | null;
   externalItemId: string | null;
   archivedAt: string | null;
-  versions: Array<{ id: string; identifier: string; externalVersionId: string | null; label: string; etag: string | null; fileSize: number | null; contentHash: string | null; createdAt: string; author: string | null }>;
+  versions: Array<{ id: string; identifier: string; externalVersionId: string | null; label: string; status:string;note:string|null;etag: string | null; fileSize: number | null; contentHash: string | null; createdAt: string; author: string | null }>;
+  events:Array<{id:string;type:string;title:string;note:string|null;previousStatus:string|null;newStatus:string|null;occurredAt:string;actor:string;versionLabel:string|null}>;
 };
 
 export type DocumentContext = { tenantId: string; userId: string; membershipId: string };
 
 type DocumentRow = {
-  id: string; project_id: string; project_name: string; name: string; category: string; mime_type: string;
+  id: string; project_id: string; project_name: string; name: string; category: string; type_code:string;type_name:string;status_code:DocumentListItem["status"];note:string|null;mime_type: string;
   file_size: string | number | null; storage_provider: "sharepoint" | "preview" | "external"; web_url: string | null;
-  etag: string | null; sensitivity: "normal" | "sensitive"; updated_at: string; author: string | null; version_label: string | null;
+  etag: string | null; sensitivity: "normal" | "sensitive"; created_at:string;updated_at: string; author: string | null; version_label: string | null;
   unit_codes: string | null; party_names: string | null; contract_refs: string | null;
+  sales_case_refs:string|null;
   external_drive_id?: string | null; external_item_id?: string | null; archived_at?: string | null;
 };
 
 const documentSelect = `
-  SELECT document.id,document.project_id,project.name project_name,document.name,document.category,document.mime_type,
-    document.file_size,document.storage_provider,document.web_url,document.etag,document.sensitivity,document.updated_at,
+  SELECT document.id,document.project_id,project.name project_name,document.name,document.category,
+    COALESCE(document_type.code,document.category) type_code,COALESCE(document_type.name,document.category) type_name,
+    document.status_code,document.note,document.mime_type,
+    document.file_size,document.storage_provider,document.web_url,document.etag,document.sensitivity,document.created_at,document.updated_at,
     document.external_drive_id,document.external_item_id,document.archived_at,
     author.display_name author,
     (SELECT version.version_label FROM document_versions version WHERE version.tenant_id=document.tenant_id AND version.document_id=document.id ORDER BY version.created_at DESC,version.id DESC LIMIT 1) version_label,
     (SELECT string_agg(DISTINCT unit.code, ', ' ORDER BY unit.code) FROM unit_documents link JOIN units unit ON unit.tenant_id=link.tenant_id AND unit.project_id=link.project_id AND unit.id=link.unit_id WHERE link.tenant_id=document.tenant_id AND link.document_id=document.id) unit_codes,
     (SELECT string_agg(DISTINCT party.display_name, ', ' ORDER BY party.display_name) FROM party_documents link JOIN parties party ON party.tenant_id=link.tenant_id AND party.id=link.party_id WHERE link.tenant_id=document.tenant_id AND link.document_id=document.id) party_names,
     (SELECT string_agg(DISTINCT contract.reference, ', ' ORDER BY contract.reference) FROM contract_documents link JOIN contracts contract ON contract.tenant_id=link.tenant_id AND contract.project_id=link.project_id AND contract.id=link.contract_id WHERE link.tenant_id=document.tenant_id AND link.document_id=document.id) contract_refs
+    ,(SELECT string_agg(DISTINCT sales_case.id::text, ', ' ORDER BY sales_case.id::text) FROM sales_case_documents link JOIN sales_cases sales_case ON sales_case.tenant_id=link.tenant_id AND sales_case.project_id=link.project_id AND sales_case.id=link.sales_case_id WHERE link.tenant_id=document.tenant_id AND link.document_id=document.id) sales_case_refs
   FROM documents document
   JOIN projects project ON project.tenant_id=document.tenant_id AND project.id=document.project_id
+  LEFT JOIN document_types document_type ON document_type.tenant_id=document.tenant_id AND document_type.id=document.document_type_id
   JOIN tenant_memberships creator ON creator.tenant_id=document.tenant_id AND creator.id=document.created_by_membership_id
   JOIN users author ON author.id=creator.user_id`;
 
@@ -81,6 +93,14 @@ export class DocumentRepository {
     });
   }
 
+  async listParty(input:DocumentContext & {partyId:string}):Promise<DocumentListItem[]>{
+    return this.listAll({...input,partyId:input.partyId});
+  }
+
+  async listContract(input:DocumentContext & {contractId:string}):Promise<DocumentListItem[]>{
+    return this.listAll({...input,contractId:input.contractId});
+  }
+
   async getById(input: DocumentContext & { documentId: string }): Promise<DocumentDetail | null> {
     return this.database.withContext({ tenantId: input.tenantId, userId: input.userId }, async (client) => {
       const result = await client.query<DocumentRow>(`${documentSelect}
@@ -89,12 +109,21 @@ export class DocumentRepository {
           AND (document.sensitivity='normal' OR app.has_project_permission(document.tenant_id,$2,document.project_id,'documents.view_sensitive'))`, [input.tenantId,input.membershipId,input.documentId]);
       const row = result.rows[0];
       if (!row) return null;
-      const versions = await client.query<{id:string;version_identifier:string;external_version_id:string|null;version_label:string;etag:string|null;file_size:string|number|null;content_hash:string|null;created_at:string;author:string|null}>(`
-        SELECT version.id,version.version_identifier,version.external_version_id,version.version_label,version.etag,version.file_size,version.content_hash,version.created_at,author.display_name author
+      const versions = await client.query<{id:string;version_identifier:string;external_version_id:string|null;version_label:string;status_code:string;note:string|null;etag:string|null;file_size:string|number|null;content_hash:string|null;created_at:string;author:string|null}>(`
+        SELECT version.id,version.version_identifier,version.external_version_id,version.version_label,version.status_code,version.note,version.etag,version.file_size,version.content_hash,version.created_at,author.display_name author
         FROM document_versions version JOIN tenant_memberships creator ON creator.tenant_id=version.tenant_id AND creator.id=version.created_by_membership_id JOIN users author ON author.id=creator.user_id
         WHERE version.tenant_id=$1 AND version.document_id=$2 ORDER BY version.created_at DESC,version.id DESC`,[input.tenantId,input.documentId]);
+      const events=await client.query<{id:string;event_type:string;title:string;note:string|null;previous_status:string|null;new_status:string|null;occurred_at:string;actor:string;version_label:string|null}>(`
+        SELECT event.id,event.event_type,event.title,event.note,event.previous_status,event.new_status,event.occurred_at,
+          actor.display_name actor,version.version_label
+        FROM document_events event
+        JOIN tenant_memberships membership ON membership.tenant_id=event.tenant_id AND membership.id=event.actor_membership_id
+        JOIN users actor ON actor.id=membership.user_id
+        LEFT JOIN document_versions version ON version.tenant_id=event.tenant_id AND version.id=event.document_version_id
+        WHERE event.tenant_id=$1 AND event.document_id=$2 ORDER BY event.occurred_at DESC,event.id DESC`,[input.tenantId,input.documentId]);
       return { ...mapDocument(row), externalDriveId:row.external_drive_id??null,externalItemId:row.external_item_id??null,archivedAt:row.archived_at??null,
-        versions:versions.rows.map(version=>({id:version.id,identifier:version.version_identifier,externalVersionId:version.external_version_id,label:version.version_label,etag:version.etag,fileSize:numberOrNull(version.file_size),contentHash:version.content_hash,createdAt:version.created_at,author:version.author})) };
+        versions:versions.rows.map(version=>({id:version.id,identifier:version.version_identifier,externalVersionId:version.external_version_id,label:version.version_label,status:version.status_code,note:version.note,etag:version.etag,fileSize:numberOrNull(version.file_size),contentHash:version.content_hash,createdAt:version.created_at,author:version.author})),
+        events:events.rows.map(event=>({id:event.id,type:event.event_type,title:event.title,note:event.note,previousStatus:event.previous_status,newStatus:event.new_status,occurredAt:event.occurred_at,actor:event.actor,versionLabel:event.version_label})) };
     });
   }
 
@@ -107,6 +136,24 @@ export class DocumentRepository {
 
   async createMetadata(input: DocumentContext & { projectId:string;name:string;category:string;mimeType:string;fileSize?:number;storageProvider:string;externalDriveId?:string;externalItemId?:string;webUrl?:string;etag?:string;sensitivity?:string;operation?:string }): Promise<{id:string}> {
     return this.command(input,(client)=>client.query<{id:string}>("SELECT app.create_document_metadata($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) id",[input.tenantId,input.projectId,input.name,input.category,input.mimeType,input.fileSize??null,input.storageProvider,input.externalDriveId??null,input.externalItemId??null,input.webUrl??null,input.etag??null,input.sensitivity??"normal",input.membershipId,input.operation??"import"]));
+  }
+
+  async createRecord(input:DocumentContext & {projectId:string;typeCode:string;name:string;mimeType?:string;status?:string;note?:string;storageProvider?:string}):Promise<{id:string}>{
+    return this.command(input,client=>client.query<{id:string}>(`SELECT app.create_document_record($1,$2,$3,$4,$5,$6,$7,$8,NULL,NULL,NULL,$9) id`,[
+      input.tenantId,input.projectId,input.typeCode,input.name,input.mimeType??"application/octet-stream",input.status??"draft",input.note??null,input.storageProvider??"external",input.membershipId,
+    ]));
+  }
+
+  async updateRecord(input:DocumentContext & {documentId:string;name:string;typeCode:string;status:string;note?:string}):Promise<{id:string}>{
+    return this.command(input,client=>client.query<{id:string}>(`SELECT app.update_document_record($1,$2,$3,$4,$5,$6,$7) id`,[
+      input.tenantId,input.documentId,input.name,input.typeCode,input.status,input.note??null,input.membershipId,
+    ]));
+  }
+
+  async createVersionV2(input:DocumentContext & {documentId:string;versionIdentifier:string;versionLabel:string;status:string;note?:string;fileSize?:number;contentHash?:string}):Promise<{id:string}>{
+    return this.command(input,client=>client.query<{id:string}>(`SELECT app.create_document_version_v2($1,$2,$3,$4,$5,$6,$7,$8,$9) id`,[
+      input.tenantId,input.documentId,input.versionIdentifier,input.versionLabel,input.status,input.note??null,input.fileSize??null,input.contentHash??null,input.membershipId,
+    ]));
   }
 
   async updateMetadata(input: DocumentContext & { documentId:string;name:string;category:string;webUrl?:string;etag?:string;fileSize?:number }): Promise<{id:string}> {
@@ -125,12 +172,33 @@ export class DocumentRepository {
   async linkUnit(input: DocumentContext & { documentId:string;unitId:string }): Promise<{id:string}> { return this.command(input,client=>client.query<{id:string}>("SELECT app.link_document_to_unit($1,$2,$3,$4) id",[input.tenantId,input.documentId,input.unitId,input.membershipId])); }
   async linkParty(input: DocumentContext & { documentId:string;partyId:string }): Promise<{id:string}> { return this.command(input,client=>client.query<{id:string}>("SELECT app.link_document_to_party($1,$2,$3,$4) id",[input.tenantId,input.documentId,input.partyId,input.membershipId])); }
   async linkContract(input: DocumentContext & { documentId:string;contractId:string;contractVersionId?:string;documentVersionId?:string }): Promise<{id:string}> { return this.command(input,client=>client.query<{id:string}>("SELECT app.link_document_to_contract($1,$2,$3,$4,$5,$6) id",[input.tenantId,input.documentId,input.contractId,input.contractVersionId??null,input.documentVersionId??null,input.membershipId])); }
+  async linkSalesCase(input:DocumentContext & {documentId:string;salesCaseId:string}):Promise<{id:string}>{return this.command(input,client=>client.query<{id:string}>("SELECT app.link_document_to_sales_case($1,$2,$3,$4) id",[input.tenantId,input.documentId,input.salesCaseId,input.membershipId]));}
+
+  async listAll(input:DocumentContext & {query?:string;typeCode?:string;status?:string;projectId?:string;partyId?:string;unitId?:string;contractId?:string}):Promise<DocumentListItem[]>{
+    return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
+      const result=await client.query<DocumentRow>(`${documentSelect}
+        WHERE document.tenant_id=$1 AND document.archived_at IS NULL
+          AND app.has_project_permission(document.tenant_id,$2,document.project_id,'documents.view')
+          AND (document.sensitivity='normal' OR app.has_project_permission(document.tenant_id,$2,document.project_id,'documents.view_sensitive'))
+          AND ($3::text IS NULL OR document.name ILIKE '%'||$3||'%' OR project.name ILIKE '%'||$3||'%')
+          AND ($4::text IS NULL OR document_type.code=$4)
+          AND ($5::text IS NULL OR document.status_code=$5)
+          AND ($6::uuid IS NULL OR document.project_id=$6)
+          AND ($7::uuid IS NULL OR EXISTS(SELECT 1 FROM party_documents filter_link WHERE filter_link.tenant_id=document.tenant_id AND filter_link.document_id=document.id AND filter_link.party_id=$7))
+          AND ($8::uuid IS NULL OR EXISTS(SELECT 1 FROM unit_documents filter_link WHERE filter_link.tenant_id=document.tenant_id AND filter_link.document_id=document.id AND filter_link.unit_id=$8))
+          AND ($9::uuid IS NULL OR EXISTS(SELECT 1 FROM contract_documents filter_link WHERE filter_link.tenant_id=document.tenant_id AND filter_link.document_id=document.id AND filter_link.contract_id=$9))
+        ORDER BY document.updated_at DESC,document.name`,[
+          input.tenantId,input.membershipId,input.query??null,input.typeCode??null,input.status??null,input.projectId??null,input.partyId??null,input.unitId??null,input.contractId??null,
+        ]);
+      return result.rows.map(mapDocument);
+    });
+  }
 
   private async command(input:DocumentContext,query:(client:SqlClient)=>Promise<{rows:Array<{id:string}>}>):Promise<{id:string}>{
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{const result=await query(client);return result.rows[0];});
   }
 }
 
-function mapDocument(row:DocumentRow):DocumentListItem{return{id:row.id,projectId:row.project_id,projectName:row.project_name,name:row.name,category:row.category,mimeType:row.mime_type,fileSize:numberOrNull(row.file_size),storageProvider:row.storage_provider,webUrl:row.web_url,etag:row.etag,sensitivity:row.sensitivity,updatedAt:row.updated_at,author:row.author,version:row.version_label,units:splitList(row.unit_codes),parties:splitList(row.party_names),contracts:splitList(row.contract_refs)};}
+function mapDocument(row:DocumentRow):DocumentListItem{return{id:row.id,projectId:row.project_id,projectName:row.project_name,name:row.name,category:row.category,typeCode:row.type_code,typeName:row.type_name,status:row.status_code,note:row.note,mimeType:row.mime_type,fileSize:numberOrNull(row.file_size),storageProvider:row.storage_provider,webUrl:row.web_url,etag:row.etag,sensitivity:row.sensitivity,createdAt:row.created_at,updatedAt:row.updated_at,author:row.author,version:row.version_label,units:splitList(row.unit_codes),parties:splitList(row.party_names),contracts:splitList(row.contract_refs),salesCases:splitList(row.sales_case_refs)};}
 function splitList(value:string|null):string[]{return value?value.split(", ").filter(Boolean):[];}
 function numberOrNull(value:string|number|null):number|null{return value==null?null:Number(value);}

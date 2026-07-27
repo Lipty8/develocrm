@@ -21,7 +21,7 @@ const beforeSeed = [
   "0001_block_a_identity.sql", "0002_block_b_inventory.sql", "0003_block_c_sales.sql",
   "0004_block_d_pricing_contracts.sql", "0005_pilot_import_compatibility.sql", "0006_crud_operations.sql",
 ];
-const afterSeed = ["0007_practical_editing_rbac.sql", "0008_completion_workflows.sql", "0009_documents_sharepoint_foundation.sql"];
+const afterSeed = ["0007_practical_editing_rbac.sql", "0008_completion_workflows.sql", "0009_documents_sharepoint_foundation.sql", "0010_document_workspace.sql"];
 
 async function database() {
   const db = new PGlite();
@@ -211,5 +211,36 @@ test("composite FK odmítne vazbu dokumentu na jednotku jiného projektu", async
   await asApp(db);
   const documentId = await createDocument(db);
   await assert.rejects(db.query("SELECT app.link_document_to_unit($1,$2,'f0000000-0000-4000-8000-000000000007',$3)", [tenant, documentId, member]), /permission required/i);
+  await db.close();
+});
+
+test("document workspace má rozšiřitelné typy, sales-case vazby a append-only události", async () => {
+  const db = await database();
+  const tables = await db.query<{ table_name:string }>("SELECT table_name FROM information_schema.tables WHERE table_name=ANY($1::text[])", [["document_types","sales_case_documents","document_events"]]);
+  assert.equal(tables.rows.length, 3);
+  await db.query("INSERT INTO document_types(tenant_id,code,name) VALUES($1,'future_purchase_contract','Smlouva o budoucí kupní')",[tenant]);
+  await asApp(db);
+  const documentId=(await db.query<{id:string}>("SELECT app.create_document_record($1,$2,'future_purchase_contract','SBK A203','application/pdf','draft','První návrh','external',NULL,NULL,NULL,$3) id",[tenant,project,member])).rows[0].id;
+  await db.query("SELECT app.link_document_to_sales_case($1,$2,'c6000000-0000-4000-8000-000000000001',$3)",[tenant,documentId,member]);
+  const versionId=(await db.query<{id:string}>("SELECT app.create_document_version_v2($1,$2,'sbk-a203-v1','v1','ready','Připraveno k odeslání',1200,'sha256:v1',$3) id",[tenant,documentId,member])).rows[0].id;
+  await db.query("SELECT app.update_document_record($1,$2,'SBK A203 – klient','future_purchase_contract','sent','Odesláno klientovi',$3)",[tenant,documentId,member]);
+  assert.equal((await db.query("SELECT id FROM sales_case_documents WHERE document_id=$1",[documentId])).rows.length,1);
+  assert.ok((await db.query("SELECT id FROM document_events WHERE document_id=$1",[documentId])).rows.length>=4);
+  assert.ok((await db.query("SELECT id FROM audit_log WHERE entity_id IN ($1,$2)",[documentId,versionId])).rows.length>=2);
+  assert.ok((await db.query("SELECT id FROM outbox_events WHERE aggregate_id=$1 AND event_type LIKE 'document.%'",[documentId])).rows.length>=4);
+  await asRoot(db);
+  await assert.rejects(db.query("UPDATE document_events SET note='přepsáno' WHERE document_id=$1",[documentId]),/append-only/i);
+  await db.close();
+});
+
+test("workflow dokumentu odmítne nepovolený přechod a seed poskytuje realistické vazby", async () => {
+  const db=await database();
+  await db.exec(await readFile(new URL("../seeds/0005_preview_documents.sql",import.meta.url),"utf8"));
+  await asApp(db);
+  const seeded=await db.query<{name:string;status_code:string}>("SELECT name,status_code FROM documents WHERE id='dc200000-0000-4000-8000-000000000001'");
+  assert.equal(seeded.rows[0]?.status_code,"negotiation");
+  assert.equal((await db.query("SELECT id FROM contract_documents WHERE document_id='dc200000-0000-4000-8000-000000000001'")).rows.length,1);
+  assert.equal((await db.query("SELECT id FROM sales_case_documents WHERE document_id='dc200000-0000-4000-8000-000000000001'")).rows.length,1);
+  await assert.rejects(db.query("SELECT app.update_document_record($1,'dc200000-0000-4000-8000-000000000001','SBK A203','future_purchase_contract','draft','Neplatný návrat',$2)",[tenant,member]),/transition|přechod/i);
   await db.close();
 });
