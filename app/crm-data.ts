@@ -29,13 +29,14 @@ export type UnitRecord = {
   floorplanAvailable?: boolean;
   floorplanImageUrl?: string | null;
   accessories?: AccessoryAssignmentRecord[];
+  updatedAt?: string;
 };
 export type AccessoryAssignmentRecord = { id:string; assignmentId?:string; code:string; type:string; category:string; areaM2:number|null; relation?:string|null };
 export type CatalogAccessoryRecord = AccessoryAssignmentRecord & { project:string; projectBackendId?:string; available:boolean };
 export type MembershipOption = { id:string; name:string };
 export type ProjectStructureOption = { id:string; projectId:string; project:string; name:string; kind:string };
 export type ProjectRecord = { backendId?:string; name:string; sourceName?:string; code:string; location:string; progress:number; units:number; available:number; preReserved:number; reserved:number; sold:number; handedOver:number; attention:number; color:"sage"|"sand"|"slate"; stage:string; lifecycleStatus?:string; revenue:string; buildings:string[]; manager:string; managerMembershipId?:string|null; plannedHandover:string; plannedCompletionFrom?:string|null; plannedCompletionTo?:string|null; coverImageUrl?:string|null };
-export type TaskRecord = { id:string|number; title:string; description?:string; object:string; objectType?:string; objectId?:string; project:string; due:string; dueAt?:string|null; priority:string; owner:string; assigneeId?:string|null; done:boolean };
+export type TaskRecord = { id:string|number; title:string; description?:string; object:string; objectType?:string; objectId?:string; project:string; due:string; dueAt?:string|null; priority:string; owner:string; assigneeId?:string|null; done:boolean; updatedAt?:string };
 
 export type InterestHistoryRecord = { date: string; project: string; unit: string; type: string; result: string };
 export type ClientRecord = {
@@ -44,6 +45,7 @@ export type ClientRecord = {
   interestHistory?: InterestHistoryRecord[];
   firstName?:string; lastName?:string; legalName?:string; registrationNumber?:string; vatNumber?:string; contactPerson?:string;
   address?:{line1:string;line2?:string;city:string;postalCode?:string;countryCode:string;addressType:string}|null;
+  updatedAt?:string;
 };
 export type UnitCommercialContext = {
   buyers: Array<{ partyId: string; name: string; email: string; role: string; share: number | null }>;
@@ -52,7 +54,8 @@ export type UnitCommercialContext = {
   hold: { id: string; type: string; expiresAt: string } | null;
 };
 export type PriceHistoryRecord={id:string;unit:string;type:string;amount:number;amountNet?:number;currency:string;validFrom:string;validTo:string|null;reason:string;author:string;approver:string|null};
-export type ContractRecord={id?:string;unit:string;client:string;project:string;type:string;state:string;statusCode?:string;updated:string;owner:string;action:string;title?:string;reference?:string;parties?:Array<{id:string;name:string;role:string;signatureStatus:string}>;versions?:Array<{id:string;number:number;name:string;status:string;basedOnVersionId:string|null;source:string;createdAt:string;signedAt:string|null}>};
+export type ContractHistoryEvent={id:string;fromStatus:string|null;toStatus:string;occurredAt:string;actor:string;note:string;source:"manual"|"automation"|"signature"|"import"};
+export type ContractRecord={id?:string;unit:string;client:string;project:string;type:string;state:string;statusCode?:string;updated:string;updatedAt?:string;owner:string;action:string;title?:string;reference?:string;missingData?:number;missingAttachments?:number;history?:ContractHistoryEvent[];parties?:Array<{id:string;name:string;role:string;signatureStatus:string}>;versions?:Array<{id:string;number:number;name:string;status:string;basedOnVersionId:string|null;source:string;createdAt:string;signedAt:string|null}>};
 
 export const units: UnitRecord[] = [
   { id: "A203", project: "Rezidence Javorová", building: "Dům A", layout: "3+kk", area: 82.4, floor: "2. NP", orientation: "J / Z", price: 8990000, status: "SBK", construction: "Dokončovací práce", handover: "Připravenost 72 %", client: "Jana a Petr Novákovi", attention: "Doplnit číslo účtu klienta", accessory: "Sklep S18 · Parking P32 · Wallbox" },

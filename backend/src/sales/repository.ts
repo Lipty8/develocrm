@@ -7,6 +7,7 @@ export type ClientDirectoryItem = {
   interestHistory: Array<{ date: string; project: string; unit: string; type: string; result: string }>;
   firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;vatNumber?:string;contactPerson?:string;
   address?:{line1:string;line2?:string;city:string;postalCode?:string;countryCode:string;addressType:string}|null;
+  updatedAt?:string;
 };
 
 export type UnitCommercialContext = {
@@ -35,11 +36,11 @@ export class SalesRepository {
   async getDirectory(input: Context): Promise<{ clients: ClientDirectoryItem[]; unitContexts: Record<string, UnitCommercialContext> }> {
     return this.database.withContext({ tenantId: input.tenantId, userId: input.userId }, async (client) => {
       const partyRows = await client.query<{
-        id: string; display_name: string; party_type: string; email: string | null; phone: string | null;first_name:string|null;last_name:string|null;legal_name:string|null;registration_number:string|null;vat_number:string|null;contact_person:string|null;address:ClientDirectoryItem["address"];
+        id: string; display_name: string; party_type: string; email: string | null; phone: string | null;first_name:string|null;last_name:string|null;legal_name:string|null;registration_number:string|null;vat_number:string|null;contact_person:string|null;address:ClientDirectoryItem["address"];updated_at:string;
         projects: Array<{ id: string; name: string }>; units: string[]; state: string; stage: string | null;
         interest_history: ClientDirectoryItem["interestHistory"];
       }>(
-        `SELECT party.id,party.display_name,party.party_type,email.value AS email,phone.value AS phone,individual.first_name,individual.last_name,organization.legal_name,organization.registration_number,organization.vat_number,organization.contact_person,address.item address,
+        `SELECT party.id,party.display_name,party.party_type,email.value AS email,phone.value AS phone,individual.first_name,individual.last_name,organization.legal_name,organization.registration_number,organization.vat_number,organization.contact_person,address.item address,party.updated_at,
           COALESCE(projects.items,'[]'::jsonb) projects,COALESCE(unit_rows.items,'[]'::jsonb) units,
           CASE WHEN stage.current_stage='handover' THEN 'Předáno'
                WHEN stage.current_stage IS NOT NULL AND stage.current_stage<>'interest' THEN 'Aktivní klient'
@@ -127,7 +128,7 @@ export class SalesRepository {
           return { id: row.id,name: row.display_name,type: row.party_type === "individual" ? "Fyzická osoba" : "Právnická osoba",
             kind: row.party_type === "individual" ? "FO" : "PO",email,phone,contact: [email,phone].filter(Boolean).join(" · "),
             units: row.units,projects: projectNames.join(", "),projectNames,state: row.state,
-            contractStatus: stageLabel(row.stage),initials: initials(row.display_name),interestHistory: row.interest_history,firstName:row.first_name??undefined,lastName:row.last_name??undefined,legalName:row.legal_name??undefined,registrationNumber:row.registration_number??undefined,vatNumber:row.vat_number??undefined,contactPerson:row.contact_person??undefined,address:row.address };
+            contractStatus: stageLabel(row.stage),initials: initials(row.display_name),interestHistory: row.interest_history,firstName:row.first_name??undefined,lastName:row.last_name??undefined,legalName:row.legal_name??undefined,registrationNumber:row.registration_number??undefined,vatNumber:row.vat_number??undefined,contactPerson:row.contact_person??undefined,address:row.address,updatedAt:row.updated_at };
         }),
         unitContexts: Object.fromEntries(contextRows.rows.map((row) => [row.unit_code,{ buyers: row.buyers,interests: row.interests,stage: row.stage,hold: row.hold }])),
       };

@@ -8,12 +8,18 @@ const defaultRoles = [
   { code: "project_manager", name: "Project Manager" },
   { code: "sales", name: "Sales / Obchod" },
   { code: "back_office", name: "Back Office" },
+  { code: "finance", name: "Finance" },
+  { code: "handover_complaints", name: "Předání a reklamace" },
+  { code: "read_only", name: "Pouze pro čtení" },
 ] as const;
 const defaultPermissionCodes:Record<(typeof defaultRoles)[number]["code"],string[]>={
   admin:[],
   project_manager:["tenant.read","membership.read","role.read","project.read","project.manage","projects.change_manager","projects.change_status","structure.manage","construction_status.manage","unit.read","unit.manage","accessory.read","accessory.manage","clients.read","clients.manage","clients.export","interests.manage","sales_case.read","sales_case.manage","holds.manage","holds.cancel","price.read","price.manage","price.approve","prices.propose","prices.change","prices.approve","contract.read","contract.manage","contract.approve","contract.sign"],
   sales:["tenant.read","membership.read","project.read","unit.read","accessory.read","clients.read","clients.manage","clients.export","interests.manage","sales_case.read","sales_case.manage","holds.manage","holds.cancel","price.read","prices.propose","contract.read","contract.manage","contract.sign"],
   back_office:["tenant.read","membership.read","project.read","unit.read","accessory.read","clients.read","clients.manage","clients.export","sales_case.read","contract.read","contract.manage","contract.approve"],
+  finance:["tenant.read","project.read","unit.read","clients.read","price.read","contract.read","documents.view","finance.read","finance.manage","clients.export"],
+  handover_complaints:["tenant.read","project.read","unit.read","clients.read","documents.view","tasks.read","tasks.manage","handover.read","handover.manage","complaints.read","complaints.manage"],
+  read_only:["tenant.read","project.read","unit.read","accessory.read","clients.read","sales_case.read","price.read","contract.read","documents.view","tasks.read","handover.read"],
 };
 
 export class TenantProvisioningService {

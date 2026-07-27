@@ -10,6 +10,7 @@ const pagePaths = {
   payments: "/payments",
   handovers: "/handovers",
   tasks: "/tasks",
+  admin: "/admin/users",
 };
 
 const decode = (value) => {
@@ -39,7 +40,7 @@ export function contractRoute(contractId) {
 }
 
 export function documentRoute(documentId) {
-  return `/documents/${encodeURIComponent(documentId)}`;
+  return `/contracts/documents/${encodeURIComponent(documentId)}`;
 }
 
 export function parseCrmRoute(pathname, search = "") {
@@ -51,14 +52,15 @@ export function parseCrmRoute(pathname, search = "") {
   if (parts[0] === "units" && parts[1]) return { page: "projects", kind: "unit", unitId: parts[1], unitTab: unitTabSlugs.includes(params.get("tab")) ? params.get("tab") : "overview", params };
   if (parts[0] === "clients" && parts[1]) return { page: "clients", kind: "client", clientId: parts[1], params };
   if (parts[0] === "clients") return { page: "clients", kind: "page", params };
+  if (parts[0] === "contracts" && parts[1] === "documents" && parts[2]) return { page: "contracts", kind: "document", documentId: parts[2], params };
   if (parts[0] === "contracts" && parts[1]) return { page: "contracts", kind: "contract", contractId: parts[1], params };
   if (parts[0] === "contracts") return { page: "contracts", kind: "page", params };
-  if (parts[0] === "documents" && parts[1]) return { page: "documents", kind: "document", documentId: parts[1], params };
-  if (parts[0] === "documents") return { page: "documents", kind: "page", params };
+  if (parts[0] === "documents" && parts[1]) return { page: "contracts", kind: "legacy-document", documentId: parts[1], params };
+  if (parts[0] === "documents") return { page: "contracts", kind: "legacy-documents", params };
   if (parts[0] === "tasks") return { page: "tasks", kind: "page", taskScope: ["mine", "all", "completed"].includes(params.get("scope")) ? params.get("scope") : "mine", params };
   if (parts[0] === "payments") return { page: "payments", kind: "page", params };
   if (parts[0] === "handovers") return { page: "handovers", kind: "page", params };
-  if (parts[0] === "admin" && parts[1] === "users") return { page: "dashboard", kind: "admin-users", params };
+  if (parts[0] === "admin" && parts[1] === "users") return { page: "admin", kind: "admin-users", params };
   return { page: "dashboard", kind: "not-found", params };
 }
 

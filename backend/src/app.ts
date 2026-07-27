@@ -12,6 +12,7 @@ import { CommercialService } from "./commercial/service.js";
 import { ActivityRepository } from "./activity/repository.js";
 import { TaskRepository } from "./tasks/repository.js";
 import { DocumentRepository } from "./documents/repository.js";
+import { HandoverRepository } from "./handovers/repository.js";
 
 export function buildApp(dependencies: { database: Database; verifier: EntraTokenVerifier }): FastifyInstance {
   const app = Fastify({ logger: true });
@@ -25,6 +26,7 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
   const activities = new ActivityRepository(dependencies.database);
   const taskRepository = new TaskRepository(dependencies.database);
   const documentRepository = new DocumentRepository(dependencies.database);
+  const handoverRepository = new HandoverRepository(dependencies.database);
 
   app.get("/health", async () => ({ status: "ok", block: "documents" }));
 
@@ -70,6 +72,28 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
     }
   });
 
+  app.get("/v1/admin", async(request,reply)=>{
+    try{
+      const identity=await authenticate(request,dependencies.verifier);const tenantId=headerValue(request.headers["x-tenant-id"]);
+      if(!tenantId)return reply.code(400).send({error:"Chybí x-tenant-id"});
+      const user=await repository.resolveUser(identity);const session=await repository.getSession(user,identity,tenantId);
+      if(!session?.workspace.permissions.includes("users.manage"))return reply.code(403).send({error:"Chybí oprávnění users.manage"});
+      return repository.adminSnapshot({tenantId,userId:user.id});
+    }catch(error){return reply.code(403).send({error:error instanceof Error?error.message:"Administraci nelze načíst"});}
+  });
+  app.post<{Body:{name:string;email:string;jobTitle?:string;workPhone?:string;status:"invited";roleIds:string[];projectIds:string[]}}>("/v1/admin/users",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není přístupný"});return reply.code(201).send(await repository.inviteMember({...context,...request.body}));}
+    catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Pozvánku nelze vytvořit"});}
+  });
+  app.patch<{Params:{membershipId:string};Body:{name:string;email:string;jobTitle?:string;workPhone?:string;status:string;roleIds:string[];projectIds:string[]}}>("/v1/admin/users/:membershipId",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není přístupný"});return repository.updateMember({...context,targetMembershipId:request.params.membershipId,...request.body});}
+    catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Uživatele nelze upravit"});}
+  });
+  app.patch<{Params:{roleId:string};Body:{permissionCodes:string[]}}>("/v1/admin/roles/:roleId",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není přístupný"});return repository.setRolePermissions({...context,roleId:request.params.roleId,permissionCodes:request.body.permissionCodes});}
+    catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Oprávnění role nelze upravit"});}
+  });
+
   app.get("/v1/catalog", async (request, reply) => {
     try {
       const identity = await authenticate(request, dependencies.verifier);
@@ -86,6 +110,7 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
 
   app.get<{Params:{unitId:string}}>("/v1/units/:unitId/timeline",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return{events:await activities.unitTimeline({...context,unitId:request.params.unitId})};}catch(error){return reply.code(403).send({error:error instanceof Error?error.message:"Historii nelze načíst"});}});
   app.get<{Querystring:{scope?:"mine"|"all"|"completed"}}>("/v1/tasks",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return{tasks:await taskRepository.list({...context,scope:request.query.scope??"mine"})};}catch(error){return reply.code(403).send({error:error instanceof Error?error.message:"Úkoly nelze načíst"});}});
+  app.get<{Querystring:{projectId?:string;status?:string;ownerId?:string;query?:string;sort?:string;direction?:"asc"|"desc"}}>("/v1/handovers",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return handoverRepository.list({...context,...request.query});}catch(error){return reply.code(403).send({error:error instanceof Error?error.message:"Předání nelze načíst"});}});
   app.post<{Body:{projectId?:string;unitId?:string;partyId?:string;contractId?:string;title:string;description?:string;priority:string;dueAt?:string;assigneeMembershipId:string}}>("/v1/tasks",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await taskRepository.create({...context,...request.body}));}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Úkol nelze vytvořit"});}});
   app.patch<{Params:{taskId:string};Body:{completed:boolean}}>("/v1/tasks/:taskId/completion",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return taskRepository.complete({...context,taskId:request.params.taskId,completed:request.body.completed});}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Úkol nelze aktualizovat"});}});
   app.post<{Params:{projectId:string};Body:{url:string;mimeType:string;source?:string;externalId?:string}}>("/v1/projects/:projectId/cover",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.send(await dependencies.database.withContext({tenantId:context.tenantId,userId:context.userId},async client=>(await client.query("SELECT app.set_project_cover($1,$2,$3,$4,$5,$6,$7) id",[context.tenantId,request.params.projectId,request.body.url,request.body.mimeType,request.body.source??"crm",request.body.externalId??null,context.membershipId])).rows[0]));}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Titulní obrázek nelze uložit"});}});

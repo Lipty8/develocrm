@@ -6,7 +6,7 @@ import {CommercialRepository} from "../src/commercial/repository.js";
 import type {Database} from "../src/database.js";
 
 const tenant="d0000000-0000-4000-8000-000000000001",user="d1000000-0000-4000-8000-000000000001",member="d3000000-0000-4000-8000-000000000001";
-async function database(){const db=new PGlite();for(const name of ["0001_block_a_identity.sql","0002_block_b_inventory.sql","0003_block_c_sales.sql","0004_block_d_pricing_contracts.sql"])await db.exec(await readFile(new URL(`../migrations/${name}`,import.meta.url),"utf8"));for(const name of ["0001_preview_block_b.sql","0002_preview_block_c.sql","0003_preview_block_d.sql"])await db.exec(await readFile(new URL(`../seeds/${name}`,import.meta.url),"utf8"));return db;}
+async function database(){const db=new PGlite();for(const name of ["0001_block_a_identity.sql","0002_block_b_inventory.sql","0003_block_c_sales.sql","0004_block_d_pricing_contracts.sql","0011_v31_workflow_and_administration.sql"])await db.exec(await readFile(new URL(`../migrations/${name}`,import.meta.url),"utf8"));for(const name of ["0001_preview_block_b.sql","0002_preview_block_c.sql","0003_preview_block_d.sql"])await db.exec(await readFile(new URL(`../seeds/${name}`,import.meta.url),"utf8"));return db;}
 async function asApp(db:PGlite,userId=user,tenantId=tenant){await db.exec(`SET ROLE develocrm_app;SELECT set_config('app.user_id','${userId}',false);SELECT set_config('app.tenant_id','${tenantId}',false);`);}
 async function asRoot(db:PGlite){await db.exec("RESET ROLE");}
 

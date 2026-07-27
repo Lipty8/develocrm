@@ -13,7 +13,7 @@ test("stable deep links use IDs and restore project and unit tabs",()=>{
   assert.equal(unitRoute("101","history"),"/units/101?tab=history");
   assert.equal(clientRoute("party-101"),"/clients/party-101");
   assert.equal(contractRoute("contract-101"),"/contracts/contract-101");
-  assert.equal(documentRoute("document-101"),"/documents/document-101");
+  assert.equal(documentRoute("document-101"),"/contracts/documents/document-101");
   assert.deepEqual({...parseCrmRoute("/projects/DEJ/units"),params:undefined},{page:"projects",kind:"project",projectId:"DEJ",projectTab:"units",params:undefined});
   assert.equal(parseCrmRoute("/units/101","tab=history").unitTab,"history");
 });
@@ -58,8 +58,11 @@ test("refresh and new-tab parsing resolve every supported deep link",()=>{
   assert.equal(parseCrmRoute("/units/101").kind,"unit");
   assert.equal(parseCrmRoute("/clients/c1").kind,"client");
   assert.equal(parseCrmRoute("/contracts/preview-contract-a203-sbk").kind,"contract");
-  assert.equal(parseCrmRoute("/documents/preview-doc-a203-sbk").kind,"document");
+  assert.equal(parseCrmRoute("/contracts/documents/preview-doc-a203-sbk").kind,"document");
+  assert.equal(parseCrmRoute("/documents/preview-doc-a203-sbk").kind,"legacy-document");
+  assert.equal(parseCrmRoute("/documents").kind,"legacy-documents");
   assert.equal(parseCrmRoute("/admin/users").kind,"admin-users");
+  assert.equal(parseCrmRoute("/admin/users").page,"admin");
 });
 
 test("renaming a project does not alter its stable route",()=>{

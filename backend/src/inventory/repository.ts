@@ -12,6 +12,7 @@ export type CatalogUnit = {
   layout: string | null; areaM2: number; usableAreaM2: number | null; floorLabel: string | null; orientation: string | null;
   balconyM2: number | null; terraceM2: number | null; gardenM2: number | null;
   commercialStatus: string; constructionStatus: string | null;
+  updatedAt: string;
   accessories: Array<{ id: string; assignmentId:string; code: string; type: string; category: string; areaM2: number | null; relation:string|null }>;
 };
 
@@ -55,12 +56,12 @@ export class InventoryRepository {
         id: string; code: string; project_id: string; project_name: string; structure_id:string|null; structure_name: string | null;
         layout: string | null; area_m2: string; usable_area_m2: string | null; floor_label: string | null; orientation: string | null;
         balcony_m2: string | null; terrace_m2: string | null; garden_m2: string | null;
-        commercial_status: string; construction_status: string | null; accessories: CatalogUnit["accessories"];
+        commercial_status: string; construction_status: string | null; updated_at:string; accessories: CatalogUnit["accessories"];
       }>(
         `SELECT unit.id, unit.code, unit.project_id,unit.structure_id, project.name AS project_name,
                 structure.name AS structure_name, unit.layout, unit.area_m2::text, unit.usable_area_m2::text,
                 unit.floor_label, unit.orientation, unit.balcony_m2::text, unit.terrace_m2::text, unit.garden_m2::text,
-                unit.commercial_status,
+                unit.commercial_status,unit.updated_at,
                 app.effective_unit_construction_status(unit.tenant_id, unit.id) AS construction_status,
                 COALESCE(accessory_rows.items, '[]'::jsonb) AS accessories
          FROM units unit
@@ -107,7 +108,7 @@ export class InventoryRepository {
           terraceM2: row.terrace_m2 === null ? null : Number(row.terrace_m2),
           gardenM2: row.garden_m2 === null ? null : Number(row.garden_m2),
           floorLabel: row.floor_label, orientation: row.orientation, commercialStatus: row.commercial_status,
-          constructionStatus: row.construction_status, accessories: row.accessories,
+          constructionStatus: row.construction_status,updatedAt:row.updated_at, accessories: row.accessories,
         })),accessories:accessories.rows.map(row=>({id:row.id,code:row.code,projectId:row.project_id,projectName:row.project_name,type:row.type,category:row.category,areaM2:row.area_m2===null?null:Number(row.area_m2),available:row.available,relation:row.relation})),memberships:memberships.rows,structures:structures.rows.map(row=>({id:row.id,projectId:row.project_id,projectName:row.project_name,name:row.name,kind:row.kind})),
       };
     });

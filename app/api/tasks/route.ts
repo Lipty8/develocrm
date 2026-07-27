@@ -2,6 +2,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { tasks, tenants, users } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
+import { addPragueCalendarDaysKey, systemClock } from "../../lib/date-time";
 
 const DEMO_TENANT_ID = "develocrm-demo";
 const FALLBACK_USER_ID = "iva-novotna";
@@ -63,7 +64,7 @@ export async function POST(request: Request) {
       objectId: payload.objectId || "A203",
       assignedToUserId: assigneeId,
       priority: payload.priority || "medium",
-      dueAt: payload.dueAt || "2026-07-22",
+      dueAt: payload.dueAt || addPragueCalendarDaysKey(systemClock.now(), 1),
       source: "manual",
     }).returning();
     return Response.json({ task: {...created,assigneeName} }, { status: 201 });
