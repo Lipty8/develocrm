@@ -59,13 +59,13 @@ test("keeps unit filters combinable and project clients in one table", async () 
   assert.match(app, /buildingFilter\.includes\(unit\.building\)/);
   assert.match(app, /projectFilter\.some/);
   assert.match(app, /projectMatchesName/);
-  assert.match(app, /installmentFilter\.includes\(payment\.installment\)/);
+  assert.match(app, /paymentRepository\.list\(\{query,sort,direction\}/);
   assert.match(app, /data-table unit-table filter-table/);
   assert.match(app, /data-table client-table filter-table/);
   assert.match(app, /data-table payment-table filter-table/);
   assert.match(app, /column-filter-heading/);
   assert.match(app, /Filtrovat jméno nebo název/);
-  assert.match(app, /Filtrovat platbu podle jednotky nebo klienta/);
+  assert.match(app, /aria-label="Filtrovat platbu"/);
   assert.match(app, /Vybrat všech .* výsledků aktuálního filtru/);
   assert.match(app, /Kopírovat e-maily pro BCC/);
   assert.match(app, /Excel \/ CSV/);
