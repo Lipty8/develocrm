@@ -594,7 +594,7 @@ export default function CRMApp() {
                 </div>
                 <div className="page-actions">
                   {page === "projects" && <button className="secondary-button" onClick={() => notify("Ceník se připravuje ke stažení")}><Download size={17} /> Export ceníku</button>}
-                  {page !== "admin"&&<button className="primary-button" onClick={() => page === "tasks" || page === "dashboard" ? setNewTaskOpen(true) : page==="contracts"&&searchParams.get("view")==="documents"?setNewDocumentOpen(true):notify(page === "clients" ? "Formulář nového klienta je připraven" : "Nový záznam lze nyní založit")}>
+                  {page !== "admin"&&page!=="payments"&&<button className="primary-button" onClick={() => page === "tasks" || page === "dashboard" ? setNewTaskOpen(true) : page==="contracts"&&searchParams.get("view")==="documents"?setNewDocumentOpen(true):notify(page === "clients" ? "Formulář nového klienta je připraven" : "Nový záznam lze nyní založit")}>
                     <Plus size={18} /> {page === "tasks" ? "Nový úkol" : page === "clients" ? "Nový klient" : page === "contracts" ? searchParams.get("view")==="documents"?"Nový dokument":"Nová smlouva" : page === "payments" ? "Přidat platbu" : page === "handovers" ? "Naplánovat předání" : page === "projects" ? "Nový projekt" : "Přidat úkol"}
                   </button>}
                 </div>
