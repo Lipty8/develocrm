@@ -78,7 +78,7 @@ export class InventoryRepository {
            WHERE assignment.tenant_id=unit.tenant_id AND assignment.unit_id=unit.id
              AND assignment.valid_from <= now() AND (assignment.valid_to IS NULL OR assignment.valid_to > now())
          ) accessory_rows ON true
-         WHERE unit.tenant_id=$1 AND unit.archived_at IS NULL
+         WHERE unit.tenant_id=$1 AND unit.archived_at IS NULL AND project.archived_at IS NULL
            AND app.has_project_permission(unit.tenant_id, $2, unit.project_id, 'unit.read')
          ORDER BY project.name, unit.code`,
         [input.tenantId, input.membershipId],
@@ -90,9 +90,9 @@ export class InventoryRepository {
          FROM accessories accessory JOIN projects project ON project.tenant_id=accessory.tenant_id AND project.id=accessory.project_id
          JOIN accessory_types type ON type.tenant_id=accessory.tenant_id AND type.id=accessory.accessory_type_id
          LEFT JOIN LATERAL (SELECT target.code target_code FROM accessory_relations link JOIN accessories target ON target.tenant_id=link.tenant_id AND target.id=link.target_accessory_id WHERE link.tenant_id=accessory.tenant_id AND link.source_accessory_id=accessory.id AND link.relation_type='installed_at' LIMIT 1) relation ON true
-         WHERE accessory.tenant_id=$1 AND accessory.archived_at IS NULL AND app.has_project_permission(accessory.tenant_id,$2,accessory.project_id,'accessory.read') ORDER BY project.name,type.category,accessory.code`,[input.tenantId,input.membershipId]);
+         WHERE accessory.tenant_id=$1 AND accessory.archived_at IS NULL AND project.archived_at IS NULL AND app.has_project_permission(accessory.tenant_id,$2,accessory.project_id,'accessory.read') ORDER BY project.name,type.category,accessory.code`,[input.tenantId,input.membershipId]);
       const memberships=await client.query<{id:string;name:string}>(`SELECT membership.id,user_row.display_name name FROM tenant_memberships membership JOIN users user_row ON user_row.id=membership.user_id WHERE membership.tenant_id=$1 AND membership.status='active' ORDER BY user_row.display_name`,[input.tenantId]);
-      const structures=await client.query<{id:string;project_id:string;project_name:string;name:string;kind:string}>(`SELECT structure.id,structure.project_id,project.name project_name,structure.name,structure.kind FROM project_structures structure JOIN projects project ON project.tenant_id=structure.tenant_id AND project.id=structure.project_id WHERE structure.tenant_id=$1 AND structure.archived_at IS NULL AND app.has_project_permission(structure.tenant_id,$2,structure.project_id,'project.read') ORDER BY project.name,structure.sort_order,structure.name`,[input.tenantId,input.membershipId]);
+      const structures=await client.query<{id:string;project_id:string;project_name:string;name:string;kind:string}>(`SELECT structure.id,structure.project_id,project.name project_name,structure.name,structure.kind FROM project_structures structure JOIN projects project ON project.tenant_id=structure.tenant_id AND project.id=structure.project_id WHERE structure.tenant_id=$1 AND structure.archived_at IS NULL AND project.archived_at IS NULL AND app.has_project_permission(structure.tenant_id,$2,structure.project_id,'project.read') ORDER BY project.name,structure.sort_order,structure.name`,[input.tenantId,input.membershipId]);
       return {
         projects: projects.rows.map((row): CatalogProject => ({
           id: row.id, code: row.code, name: row.name, location: row.location,

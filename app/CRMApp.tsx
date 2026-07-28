@@ -213,7 +213,20 @@ function vocativeFirstName(displayName: string): string {
   return firstName === "Iva" ? "Ivo" : firstName;
 }
 
+function ensurePilotPreviewStorage(){
+  if(typeof window==="undefined"||localStorage.getItem("develocrm.pilot-cleanup")==="v1")return;
+  for(const key of [
+    "develocrm-preview-payments-v2","develocrm.admin.v32","develocrm.documents.created",
+    "develocrm.documents.edits","develocrm.catalog.edits","develocrm.accessory.assignments",
+    "develocrm.sales.commands","develocrm.contract.edits","develocrm.contract.edits.v31",
+    "develocrm.price.edits","develocrm.price.proposals.v32","develocrm.preview.audit",
+    "develocrm-read-notifications",
+  ])localStorage.removeItem(key);
+  localStorage.setItem("develocrm.pilot-cleanup","v1");
+}
+
 export default function CRMApp() {
+  ensurePilotPreviewStorage();
   const router=useRouter();
   const pathname=usePathname();
   const searchParams=useSearchParams();
@@ -643,30 +656,21 @@ function Dashboard({ navigate, openUnit, taskRows, toggleTask }: { navigate: (pa
     <div className="dashboard-grid">
       <section className="attention-card card span-8">
         <div className="attention-heading">
-          <div><span className="attention-icon"><Sparkles size={19} /></span><div><h2>Vyžaduje pozornost</h2><p>5 věcí, které je dobré dnes vyřešit</p></div></div>
+          <div><span className="attention-icon"><Sparkles size={19} /></span><div><h2>Vyžaduje pozornost</h2><p>{taskRows.filter(item=>!item.done).length+paymentAlerts.length} věcí, které je dobré vyřešit</p></div></div>
           <button className="text-button" onClick={() => navigate("tasks")}>Zobrazit vše <ArrowRight size={15} /></button>
         </div>
         <div className="attention-list">
-          <button onClick={() => openUnit(units[0])}>
-            <span className="attention-type danger"><AlertTriangle size={18} /></span>
-            <span><strong>A203 · SBK nelze vygenerovat</strong><small>Chybí číslo účtu klienta · Rezidence Javorová</small></span>
-            <Badge tone="danger">Dnes</Badge><ChevronRight size={18} />
-          </button>
-          <button onClick={() => openUnit(units[6])}>
-            <span className="attention-type warning"><KeyRound size={18} /></span>
-            <span><strong>C102 · Předání není připraveno</strong><small>Chybí revize wallboxu · termín 26. 7.</small></span>
-            <Badge tone="warning">5 dní</Badge><ChevronRight size={18} />
-          </button>
+          {taskRows.filter(item=>!item.done).slice(0,3).map(task=><button key={task.id} onClick={()=>navigate("tasks")}>
+            <span className="attention-type warning"><AlertTriangle size={18}/></span>
+            <span><strong>{task.title}</strong><small>{task.object} · {task.project}</small></span>
+            <Badge tone={task.priority==="Vysoká"?"danger":"neutral"}>{task.due}</Badge><ChevronRight size={18}/>
+          </button>)}
           {paymentAlerts.slice(0,1).map(payment=><button key={payment.id} onClick={() => openUnit(units.find(unit=>unit.id===payment.unit)??units[0])}>
             <span className="attention-type danger"><Banknote size={18} /></span>
             <span><strong>{payment.unit} · {payment.type==="reservation_fee"&&payment.status!=="paid"?"Čeká na rezervační poplatek":`${payment.label} ${paymentStatusLabel[payment.status].toLocaleLowerCase("cs-CZ")}`}</strong><small>Zbývá uhradit {formatMoney(Math.max(0,payment.amount-payment.paid))} · {payment.project}</small></span>
             <Badge tone={payment.status==="overdue"?"danger":"warning"}>{payment.status==="overdue"?"Urgentní":"K řešení"}</Badge><ChevronRight size={18} />
           </button>)}
-          <button onClick={() => openUnit(units[2])}>
-            <span className="attention-type blue"><FileText size={18} /></span>
-            <span><strong>A305 · RS čeká na podpis</strong><small>Odesláno klientovi před 3 dny</small></span>
-            <Badge tone="neutral">3 dny</Badge><ChevronRight size={18} />
-          </button>
+          {!taskRows.some(item=>!item.done)&&!paymentAlerts.length&&<div className="empty-filter-state"><CheckCircle2 size={20}/><strong>Nic urgentního</strong><small>Rezidence Dejvice nyní nemá žádné aktivní upozornění.</small></div>}
         </div>
       </section>
 
@@ -674,9 +678,7 @@ function Dashboard({ navigate, openUnit, taskRows, toggleTask }: { navigate: (pa
         <SectionTitle title="Dnes" />
         <div className="today-date"><strong>{now?new Intl.DateTimeFormat("cs-CZ",{timeZone:PRAGUE_TIME_ZONE,day:"numeric"}).format(now):"—"}</strong><span>{now?new Intl.DateTimeFormat("cs-CZ",{timeZone:PRAGUE_TIME_ZONE,month:"long"}).format(now).toLocaleUpperCase("cs-CZ"):""}<small>{now?new Intl.DateTimeFormat("cs-CZ",{timeZone:PRAGUE_TIME_ZONE,weekday:"long"}).format(now):""}</small></span></div>
         <div className="today-events">
-          <div><span className="event-time">10:00</span><span className="event-line green" /><span><strong>Kontrola předání C102</strong><small>Parková čtvrť · 45 min</small></span></div>
-          <div><span className="event-time">13:30</span><span className="event-line purple" /><span><strong>Podpis SBK · A203</strong><small>Online schůzka · 30 min</small></span></div>
-          <div><span className="event-time">15:00</span><span className="event-line sand" /><span><strong>Porada projektu</strong><small>Rezidence Javorová</small></span></div>
+          <div><span className="event-time">—</span><span className="event-line green" /><span><strong>Bez naplánovaných událostí</strong><small>Rezidence Dejvice</small></span></div>
         </div>
         <button className="calendar-link" onClick={() => navigate("handovers")}><CalendarDays size={16} /> Otevřít kalendář</button>
       </section>
@@ -734,7 +736,7 @@ function Projects({ openProject }: { openProject: (project: ProjectRecord) => vo
   return (
     <div className="projects-page">
       <div className="portfolio-summary card">
-        <div><span className="metric-icon green"><Building2 size={20} /></span><span><small>Aktivní projekty</small><strong>3</strong></span></div>
+        <div><span className="metric-icon green"><Building2 size={20} /></span><span><small>Aktivní projekty</small><strong>{projects.length}</strong></span></div>
         <div><span className="metric-icon blue"><Home size={20} /></span><span><small>Jednotky celkem</small><strong>{totals.units}</strong></span></div>
         <div><span className="metric-icon sand"><Clock3 size={20} /></span><span><small>Rezervované</small><strong>{totals.reserved}</strong></span></div>
         <div><span className="metric-icon purple"><CheckCircle2 size={20} /></span><span><small>Prodané a předané</small><strong>{totals.sold}</strong></span></div>

@@ -6,17 +6,7 @@ export type PaymentFilters={projectId?:string;project?:string;unitId?:string;uni
 export type ImportPreviewRow={row:number;bankTransactionId:string;paidAt:string;amount:number;variableSymbol:string;counterpartyAccount:string;duplicate:boolean;proposedObligationId?:string;proposedLabel?:string;confidence:number};
 const STORAGE_KEY="develocrm-preview-payments-v2";
 
-const initialPayments:PaymentRecord[]=[
-  make("pay-d404","Parková čtvrť","D404","Lenka Horáková","2. splátka · 25 %",1996000,998000,"2026-07-16T23:59:00+02:00","purchase_installment","4042026"),
-  make("pay-a203","Rezidence Javorová","A203","Jana a Petr Novákovi","3. splátka · 30 %",2697000,0,"2026-07-31T23:59:00+02:00","purchase_installment","2032026"),
-  make("pay-b308","Rezidence Javorová","B308","Alto Services s.r.o.","Doplatek kupní ceny",1938000,0,"2026-08-08T23:59:00+02:00","purchase_balance","3082026"),
-  make("pay-c102","Parková čtvrť","C102","Marek Beneš","Kupní cena",4790000,4790000,"2026-04-01T12:00:00+02:00","purchase_balance","1022026"),
-  make("pay-a305","Rezidence Javorová","A305","David Kříž","Rezervační poplatek",250000,0,"2026-08-02T23:59:00+02:00","reservation_fee","3052026"),
-];
-function make(id:string,project:string,unit:string,client:string,label:string,amount:number,paid:number,dueAt:string,type:string,variableSymbol:string):PaymentRecord{
-  const transactions=paid?[{id:`tx-${id}`,amount:paid,paidAt:"2026-07-18T10:15:00+02:00",variableSymbol,bankTransactionId:`preview-${id}`,counterpartyAccount:"123456789/0100"}]:[];
-  return{id,projectId:project,project,unitId:unit,unit,client,salesCaseId:`case-${unit}`,contractId:`contract-${unit}`,contractReference:`${unit}-${type==="reservation_fee"?"RS":"SBK"}`,type,label,amount,currency:"CZK",dueAt,variableSymbol,paid,status:deriveStatus(amount,paid,dueAt),transactions,events:transactions.map(tx=>({id:`event-${tx.id}`,type:"payment.recorded",at:tx.paidAt,payload:{amount:tx.amount}}))};
-}
+const initialPayments:PaymentRecord[]=[];
 function deriveStatus(amount:number,paid:number,dueAt:string,cancelled=false):PaymentStatus{
   if(cancelled)return"cancelled";if(paid>amount)return"overpaid";if(paid===amount)return"paid";if(new Date(dueAt)<new Date())return"overdue";if(paid>0)return"partially_paid";return"pending";
 }

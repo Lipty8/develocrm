@@ -20,7 +20,9 @@ export class CommercialRepository {
          JOIN users author ON author.id=author_membership.user_id
          LEFT JOIN tenant_memberships approver_membership ON approver_membership.tenant_id=price.tenant_id AND approver_membership.id=price.approved_by_membership_id
          LEFT JOIN users approver ON approver.id=approver_membership.user_id
-         WHERE price.tenant_id=$1 AND app.has_project_permission(price.tenant_id,$2,price.project_id,'price.read')
+         WHERE price.tenant_id=$1 AND unit.archived_at IS NULL
+           AND EXISTS(SELECT 1 FROM projects active_project WHERE active_project.tenant_id=price.tenant_id AND active_project.id=price.project_id AND active_project.archived_at IS NULL)
+           AND app.has_project_permission(price.tenant_id,$2,price.project_id,'price.read')
          ORDER BY unit.code,price.valid_from DESC,price.recorded_at DESC`,[input.tenantId,input.membershipId]);
       const contracts=await client.query<{id:string;unit:string;project:string;type:string;status:string;updated_at:string;title:string;reference:string;owner:string;parties:ContractItem["parties"];versions:ContractItem["versions"];history:ContractHistoryItem[]}>(
         `SELECT contract.id,unit.code unit,project.name project,contract.contract_type type,contract.current_status status,
@@ -41,18 +43,21 @@ export class CommercialRepository {
            JOIN tenant_memberships event_membership ON event_membership.tenant_id=event.tenant_id AND event_membership.id=event.recorded_by_membership_id
            JOIN users actor ON actor.id=event_membership.user_id
            WHERE event.tenant_id=contract.tenant_id AND event.contract_id=contract.id) history ON true
-         WHERE contract.tenant_id=$1 AND app.has_project_permission(contract.tenant_id,$2,contract.project_id,'contract.read')
+         WHERE contract.tenant_id=$1 AND project.archived_at IS NULL AND unit.archived_at IS NULL
+           AND app.has_project_permission(contract.tenant_id,$2,contract.project_id,'contract.read')
          ORDER BY contract.updated_at DESC`,[input.tenantId,input.membershipId]);
       const hasProposalTable=Boolean((await client.query("SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='unit_price_proposals'")).rowCount);
       const proposals=hasProposalTable?await client.query<{id:string;unit:string;price_type:string;current_amount:number;proposed_amount:number;valid_from:string;reason:string;status:string;proposer:string;decider:string|null}>(`SELECT proposal.id,unit.code unit,proposal.price_type,proposal.current_amount::float8 current_amount,proposal.proposed_amount::float8 proposed_amount,proposal.valid_from,proposal.reason,proposal.status,proposer.display_name proposer,decider.display_name decider
         FROM unit_price_proposals proposal JOIN units unit ON unit.tenant_id=proposal.tenant_id AND unit.id=proposal.unit_id
         JOIN tenant_memberships proposer_membership ON proposer_membership.tenant_id=proposal.tenant_id AND proposer_membership.id=proposal.proposed_by_membership_id JOIN users proposer ON proposer.id=proposer_membership.user_id
         LEFT JOIN tenant_memberships decider_membership ON decider_membership.tenant_id=proposal.tenant_id AND decider_membership.id=proposal.decided_by_membership_id LEFT JOIN users decider ON decider.id=decider_membership.user_id
-        WHERE proposal.tenant_id=$1 AND app.has_project_permission(proposal.tenant_id,$2,proposal.project_id,'prices.read') ORDER BY proposal.proposed_at DESC`,[input.tenantId,input.membershipId]):{rows:[]};
+        WHERE proposal.tenant_id=$1 AND unit.archived_at IS NULL
+          AND EXISTS(SELECT 1 FROM projects active_project WHERE active_project.tenant_id=proposal.tenant_id AND active_project.id=proposal.project_id AND active_project.archived_at IS NULL)
+          AND app.has_project_permission(proposal.tenant_id,$2,proposal.project_id,'prices.read') ORDER BY proposal.proposed_at DESC`,[input.tenantId,input.membershipId]):{rows:[]};
       const priceHistories:Record<string,PriceItem[]>={};
       for(const row of prices.rows)(priceHistories[row.unit]??=[]).push({id:row.id,unit:row.unit,type:row.type,amount:row.amount,...(row.amount_net===null?{}:{amountNet:row.amount_net}),currency:row.currency,validFrom:row.valid_from,validTo:row.valid_to,reason:row.reason,author:row.author,approver:row.approver});
       const currentPrices=Object.fromEntries(await Promise.all(Object.keys(priceHistories).map(async unit=>{
-        const unitId=(await client.query<{id:string}>("SELECT id FROM units WHERE tenant_id=$1 AND code=$2",[input.tenantId,unit])).rows[0]?.id;
+        const unitId=(await client.query<{id:string}>("SELECT id FROM units WHERE tenant_id=$1 AND code=$2 AND archived_at IS NULL",[input.tenantId,unit])).rows[0]?.id;
         const amount=unitId?(await client.query<{amount:number}>("SELECT app.current_unit_price($1,$2)::float8 amount",[input.tenantId,unitId])).rows[0]?.amount:0;
         return [unit,amount??0];
       })));

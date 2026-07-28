@@ -30,7 +30,8 @@ export class PaymentRepository{
          WHERE allocation.tenant_id=obligation.tenant_id AND allocation.obligation_id=obligation.id) transactions ON true
        LEFT JOIN LATERAL(SELECT json_agg(json_build_object('id',event.id,'type',event.event_type,'at',event.recorded_at,'payload',event.payload) ORDER BY event.recorded_at DESC) items
          FROM payment_events event WHERE event.tenant_id=obligation.tenant_id AND event.obligation_id=obligation.id) events ON true
-       WHERE obligation.tenant_id=$1 AND app.has_project_permission(obligation.tenant_id,$2,obligation.project_id,'payments.read')
+       WHERE obligation.tenant_id=$1 AND project.archived_at IS NULL AND unit.archived_at IS NULL
+        AND app.has_project_permission(obligation.tenant_id,$2,obligation.project_id,'payments.read')
         AND ($3::uuid IS NULL OR obligation.project_id=$3) AND ($4::uuid IS NULL OR obligation.unit_id=$4)
         AND ($5::uuid IS NULL OR obligation.party_id=$5) AND ($6::uuid IS NULL OR obligation.contract_id=$6)
         AND ($7::uuid IS NULL OR obligation.sales_case_id=$7)

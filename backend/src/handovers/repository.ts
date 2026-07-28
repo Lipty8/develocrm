@@ -18,7 +18,8 @@ export class HandoverRepository{
          JOIN sales_case_parties participant ON participant.tenant_id=sales_case.tenant_id AND participant.sales_case_id=sales_case.id AND participant.role IN ('buyer','co_buyer')
          JOIN parties party ON party.tenant_id=participant.tenant_id AND party.id=participant.party_id
          WHERE sales_case.tenant_id=handover.tenant_id AND sales_case.unit_id=handover.unit_id AND sales_case.status='active') buyers ON true
-       WHERE handover.tenant_id=$1 AND app.has_project_permission(handover.tenant_id,$2,handover.project_id,'handover.read')
+       WHERE handover.tenant_id=$1 AND project.archived_at IS NULL AND unit.archived_at IS NULL
+         AND handover.status<>'cancelled' AND app.has_project_permission(handover.tenant_id,$2,handover.project_id,'handover.read')
          AND ($3::uuid IS NULL OR handover.project_id=$3) AND ($4::text IS NULL OR handover.status=$4)
          AND ($5::uuid IS NULL OR handover.responsible_membership_id=$5)
          AND ($6::text IS NULL OR unit.code ILIKE '%'||$6||'%' OR COALESCE(buyers.names,'') ILIKE '%'||$6||'%')

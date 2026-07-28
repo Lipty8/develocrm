@@ -12,6 +12,7 @@
     "test": "pnpm run build && node --test tests/*.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
+    "db:seed": "tsx backend/scripts/seed-profile.ts",
     "backend:dev": "tsx watch backend/src/server.ts",
     "backend:build": "tsc -p backend/tsconfig.json",
     "backend:test": "tsx --test backend/tests/*.test.ts",

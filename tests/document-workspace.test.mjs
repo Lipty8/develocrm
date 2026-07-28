@@ -15,7 +15,7 @@ test("global Documents workspace exposes filters, detail, versions, history and 
   assert.match(repository,/listParty/);
   assert.match(repository,/listContract/);
   assert.match(repository,/localStorage\.setItem\("develocrm\.documents\.edits"/);
-  assert.match(route,/preview-doc-a203-sbk/);
+  assert.match(route,/previewDocuments:DocumentRecord\[\]=\[\]/);
   assert.match(route,/source:"preview-adapter"/);
 });
 

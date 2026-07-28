@@ -61,7 +61,7 @@ export async function POST(request: Request) {
       title,
       description: payload.description?.trim() || null,
       objectType: payload.objectType || "unit",
-      objectId: payload.objectId || "A203",
+      objectId: payload.objectId || "101",
       assignedToUserId: assigneeId,
       priority: payload.priority || "medium",
       dueAt: payload.dueAt || addPragueCalendarDaysKey(systemClock.now(), 1),

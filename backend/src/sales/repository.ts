@@ -62,13 +62,14 @@ export class SalesRepository {
          LEFT JOIN LATERAL (
            SELECT jsonb_agg(DISTINCT jsonb_build_object('id',project.id,'name',project.name)) items
            FROM party_project_links link JOIN projects project ON project.tenant_id=link.tenant_id AND project.id=link.project_id
-           WHERE link.tenant_id=party.tenant_id AND link.party_id=party.id AND link.valid_to IS NULL
+           WHERE link.tenant_id=party.tenant_id AND link.party_id=party.id AND link.valid_to IS NULL AND project.archived_at IS NULL
              AND app.has_project_permission(link.tenant_id,$2,link.project_id,'clients.read')
          ) projects ON true
          LEFT JOIN LATERAL (
            SELECT jsonb_agg(DISTINCT unit.code ORDER BY unit.code) items
            FROM unit_interests interest JOIN units unit ON unit.tenant_id=interest.tenant_id AND unit.id=interest.unit_id
-           WHERE interest.tenant_id=party.tenant_id AND interest.party_id=party.id
+           WHERE interest.tenant_id=party.tenant_id AND interest.party_id=party.id AND unit.archived_at IS NULL
+             AND EXISTS(SELECT 1 FROM projects active_project WHERE active_project.tenant_id=interest.tenant_id AND active_project.id=interest.project_id AND active_project.archived_at IS NULL)
              AND app.has_project_permission(interest.tenant_id,$2,interest.project_id,'clients.read')
          ) unit_rows ON true
          LEFT JOIN LATERAL (
@@ -86,7 +87,7 @@ export class SalesRepository {
            FROM unit_interests interest JOIN units unit ON unit.tenant_id=interest.tenant_id AND unit.id=interest.unit_id
            JOIN projects project ON project.tenant_id=interest.tenant_id AND project.id=interest.project_id
            LEFT JOIN LATERAL (SELECT outcome FROM interest_events event WHERE event.tenant_id=interest.tenant_id AND event.unit_interest_id=interest.id ORDER BY occurred_at DESC LIMIT 1) latest ON true
-           WHERE interest.tenant_id=party.tenant_id AND interest.party_id=party.id
+           WHERE interest.tenant_id=party.tenant_id AND interest.party_id=party.id AND project.archived_at IS NULL AND unit.archived_at IS NULL
              AND app.has_project_permission(interest.tenant_id,$2,interest.project_id,'clients.read')
          ) history ON true
          WHERE party.tenant_id=$1 AND party.archived_at IS NULL AND party.lifecycle_status<>'merged'
@@ -125,7 +126,9 @@ export class SalesRepository {
          ) interests ON true
          LEFT JOIN LATERAL (SELECT jsonb_build_object('id',id,'type',hold_type,'expiresAt',expires_at) item FROM unit_holds
            WHERE tenant_id=unit.tenant_id AND unit_id=unit.id AND status='active' AND expires_at>now() ORDER BY expires_at DESC LIMIT 1) hold ON true
-         WHERE unit.tenant_id=$1 AND app.has_project_permission(unit.tenant_id,$2,unit.project_id,'sales_case.read')`,
+         WHERE unit.tenant_id=$1 AND unit.archived_at IS NULL
+           AND EXISTS(SELECT 1 FROM projects active_project WHERE active_project.tenant_id=unit.tenant_id AND active_project.id=unit.project_id AND active_project.archived_at IS NULL)
+           AND app.has_project_permission(unit.tenant_id,$2,unit.project_id,'sales_case.read')`,
         [input.tenantId,input.membershipId],
       );
 
@@ -149,7 +152,9 @@ export class SalesRepository {
       const hasPartyScope=Boolean((await client.query("SELECT 1 FROM pg_proc procedure JOIN pg_namespace namespace ON namespace.oid=procedure.pronamespace WHERE namespace.nspname='app' AND procedure.proname='can_access_party'")).rowCount);
       const allowed = await client.query<{ id: string }>(
         `SELECT DISTINCT party.id FROM parties party JOIN party_project_links link ON link.tenant_id=party.tenant_id AND link.party_id=party.id AND link.valid_to IS NULL
-         WHERE party.tenant_id=$1 AND app.has_project_permission(link.tenant_id,$2,link.project_id,'${hasPartyScope?"exports.run":"clients.export"}')
+         JOIN projects project ON project.tenant_id=link.tenant_id AND project.id=link.project_id
+         WHERE party.tenant_id=$1 AND party.archived_at IS NULL AND project.archived_at IS NULL
+           AND app.has_project_permission(link.tenant_id,$2,link.project_id,'${hasPartyScope?"exports.run":"clients.export"}')
            AND ${hasPartyScope?"app.can_access_party(party.tenant_id,$2,party.id,true)":"true"}
            AND ($3::uuid[] IS NULL OR party.id=ANY($3::uuid[]))`,
         [input.tenantId,input.membershipId,input.partyIds?.length ? input.partyIds : null],

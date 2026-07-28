@@ -29,7 +29,7 @@ test("preview does not claim SharePoint persistence and keeps media adapter", as
   assert.match(app, /SharePoint zatím není připojen/);
   assert.match(app, /Žádný soubor se nevydává za nahraný na SharePoint/);
   assert.doesNotMatch(app, /SharePoint synchronizován/);
-  assert.match(route, /webUrl:null/);
+  assert.match(route, /previewDocuments:DocumentRecord\[\]=\[\]/);
   assert.match(media, /\/api\/media/);
 });
 

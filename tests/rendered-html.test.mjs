@@ -69,7 +69,8 @@ test("keeps unit filters combinable and project clients in one table", async () 
   assert.match(app, /Vybrat všech .* výsledků aktuálního filtru/);
   assert.match(app, /Kopírovat e-maily pro BCC/);
   assert.match(app, /Excel \/ CSV/);
-  assert.match(data, /projectNames: \["Rezidence Javorová", "Vily Stráň"\]/);
+  assert.match(data, /projects:ProjectRecord\[\] = \[dejviceProject\]/);
+  for(const demo of ["Rezidence Javorová","Parková čtvrť","Vily Stráň"])assert.doesNotMatch(data,new RegExp(demo));
 });
 
 test("unit detail exposes persistent commercial context", async () => {

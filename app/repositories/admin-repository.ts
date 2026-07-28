@@ -26,10 +26,10 @@ const previewRoles: AdminRole[] = [
   {id:"role-handover",code:"handover_complaints",name:"Předání a reklamace",description:"Předání, vady a reklamace",isSystem:true,permissionCodes:["projects.read","units.read","clients.read_all","clients.read_contact_details","handovers.read","handovers.manage","complaints.read","complaints.manage","tasks.read","tasks.manage"],assignedUserCount:1},
   {id:"role-read",code:"read_only",name:"Pouze pro čtení",description:"Projektové čtení bez mutací",isSystem:true,permissionCodes:["projects.read","units.read","accessories.read","clients.read_all","sales_cases.read","contracts.read","documents.read","prices.read","payments.read","handovers.read","tasks.read"],assignedUserCount:0,restrictions:["Bez mutací a exportu"]},
 ];
-const previewProjects=[{id:"DEJ",name:"Rezidence Dejvice"},{id:"RJ",name:"Rezidence Javorová"},{id:"PC",name:"Parková čtvrť"},{id:"VS",name:"Vily Stráň"}];
+const previewProjects=[{id:"DEJ",name:"Rezidence Dejvice"}];
 const defaultPreview:AdminSnapshot={users:[
   {membershipId:"prototype-iva-membership",userId:"prototype-iva",name:"Iva Novotná",email:"iva@develo.example",jobTitle:"Back Office",workPhone:"+420 222 000 101",status:"active",lastLoginAt:new Date().toISOString(),roleIds:["role-admin"],projectIds:[]},
-  {membershipId:"prototype-martin-membership",userId:"prototype-martin",name:"Martin Jelínek",email:"martin@develo.example",jobTitle:"Vedoucí projektu",workPhone:"+420 222 000 102",status:"active",lastLoginAt:null,roleIds:["role-pm"],projectIds:["RJ","DEJ"]},
+  {membershipId:"prototype-martin-membership",userId:"prototype-martin",name:"Martin Jelínek",email:"martin@develo.example",jobTitle:"Vedoucí projektu",workPhone:"+420 222 000 102",status:"active",lastLoginAt:null,roleIds:["role-pm"],projectIds:["DEJ"]},
 ],roles:previewRoles,projects:previewProjects,permissions:Array.from(new Set(previewRoles.flatMap(role=>role.permissionCodes))).sort().map(code=>({code,description:code}))};
 
 export interface AdminRepository {
