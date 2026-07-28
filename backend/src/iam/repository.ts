@@ -150,9 +150,14 @@ export class IamRepository {
          WHERE role.tenant_id=$1 AND role.status='active' GROUP BY role.id ORDER BY role.name`,[input.tenantId]);
       const projects=await client.query<{id:string;name:string}>("SELECT id,name FROM projects WHERE tenant_id=$1 AND lifecycle_status<>'archived' ORDER BY name",[input.tenantId]);
       const permissions=await client.query<{code:string;description:string}>("SELECT code,description FROM permissions ORDER BY code");
+      const roleHistory=await client.query<{entity_id:string;occurred_at:string;actor:string|null}>(
+        `SELECT audit.entity_id,audit.occurred_at,user_account.display_name actor
+         FROM audit_log audit LEFT JOIN users user_account ON user_account.id=audit.actor_user_id
+         WHERE audit.tenant_id=$1 AND audit.entity_type='role' AND audit.action='role.permissions_changed'
+         ORDER BY audit.occurred_at DESC LIMIT 100`,[input.tenantId]);
       return {
         users:users.rows.map(row=>({membershipId:row.membership_id,userId:row.user_id,name:row.name,email:row.email,jobTitle:row.job_title??"",workPhone:row.work_phone??"",status:row.status,lastLoginAt:row.last_login_at,roleIds:row.role_ids,projectIds:row.project_ids})),
-        roles:roles.rows.map(row=>({id:row.id,code:row.code,name:row.name,description:row.description??"",isSystem:row.is_system,permissionCodes:row.permission_codes,permissionGrants:row.permission_grants,assignedUserCount:row.assigned_user_count,restrictions:roleRestrictions(row.code)})),
+        roles:roles.rows.map(row=>({id:row.id,code:row.code,name:row.name,description:row.description??"",isSystem:row.is_system,permissionCodes:row.permission_codes,permissionGrants:row.permission_grants,assignedUserCount:row.assigned_user_count,restrictions:roleRestrictions(row.code),history:roleHistory.rows.filter(item=>item.entity_id===row.id).slice(0,5).map(item=>({occurredAt:item.occurred_at,actor:item.actor??"Systém"}))})),
         projects:projects.rows,
         permissions:permissions.rows,
       };
@@ -207,8 +212,13 @@ export class IamRepository {
         if(!permitted.rowCount)throw new Error("role.manage permission required");
         const role=(await client.query<{code:string}>("SELECT code FROM roles WHERE tenant_id=$1 AND id=$2 FOR UPDATE",[input.tenantId,input.roleId])).rows[0];
         if(!role)throw new Error("Role nebyla nalezena");
+        const codes=new Set(input.permissionCodes);
         if(role.code==="admin"&&input.permissionCodes.some(code=>["prices.approve","discounts.approve","commercial_exceptions.approve"].includes(code)))throw new Error("Administrátor nesmí schvalovat ceny ani obchodní výjimky");
+        if(role.code==="admin"&&!["users.manage","roles.manage","system.manage","integrations.manage"].every(code=>codes.has(code)))throw new Error("Systémové pravomoci administrátora nelze odebrat");
+        if(role.code==="executive"&&input.permissionCodes.some(code=>["users.manage","roles.manage","system.manage","integrations.manage"].includes(code)))throw new Error("Jednatel nesmí získat správu systému, uživatelů ani rolí");
         if(["admin","project_manager","back_office","finance","handover_complaints","sales","read_only"].includes(role.code)&&input.permissionCodes.includes("prices.approve"))throw new Error("Schvalování cen je oddělená pravomoc jednatele");
+        if(role.code==="sales"&&input.permissionCodes.some(code=>["holds.confirm","prices.approve","discounts.approve","commercial_exceptions.approve","exports.run","clients.read_all"].includes(code)))throw new Error("Obchodník nesmí potvrzovat rezervace, schvalovat ceny, exportovat ani číst cizí klienty");
+        if(role.code==="read_only"&&input.permissionCodes.some(code=>/(create|update|manage|approve|archive|cancel|confirm|propose|record|run)$/.test(code.split(".").at(-1)??"")))throw new Error("Role pouze pro čtení nesmí obsahovat mutace ani export");
         await client.query("DELETE FROM role_permissions WHERE tenant_id=$1 AND role_id=$2",[input.tenantId,input.roleId]);
         await client.query("INSERT INTO role_permissions(tenant_id,role_id,permission_id) SELECT $1,$2,id FROM permissions WHERE code=ANY($3::text[])",[input.tenantId,input.roleId,input.permissionCodes]);
         await client.query("INSERT INTO audit_log(tenant_id,actor_user_id,action,entity_type,entity_id,after_data) VALUES($1,$2,'role.permissions_changed','role',$3,$4::jsonb)",[input.tenantId,input.userId,input.roleId,JSON.stringify({permissionCodes:input.permissionCodes})]);

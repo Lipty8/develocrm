@@ -14,6 +14,7 @@ export type CommercialSnapshot = {
 export interface CommercialRepository {
   getSnapshot(signal?: AbortSignal): Promise<CommercialSnapshot>;
   recordPrice(input: { unitId: string; unitKey?: string; priceType: string; amount: number; validFrom: string; reason: string; approverMembershipId?: string; actorName?: string }): Promise<void>;
+  decidePrice(input:{proposalId:string;decision:"approved"|"rejected";reason:string;actorName?:string}):Promise<void>;
   transitionContract(input: { contractId: string; to: string; reason: string; actorName?: string }): Promise<void>;
 }
 
@@ -57,6 +58,28 @@ class ApiCommercialRepository implements CommercialRepository {
     }
     const payloadError = await response.json().catch(() => ({})) as { error?: string };
     throw new Error(payloadError.error || "Cenu se nepodařilo uložit");
+  }
+
+  async decidePrice(input:{proposalId:string;decision:"approved"|"rejected";reason:string;actorName?:string}) {
+    const response=await fetch(`/api/commercial/price-proposals/${input.proposalId}/decision`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});
+    if(response.ok)return;
+    if(response.status===503&&typeof window!=="undefined"){
+      const proposals=JSON.parse(localStorage.getItem("develocrm.price.proposals.v32")||"[]") as CommercialSnapshot["priceProposals"];
+      const proposal=proposals?.find(item=>item.id===input.proposalId);
+      if(!proposal||proposal.status!=="pending")throw new Error("Čekající návrh ceny nebyl nalezen");
+      proposal.status=input.decision;proposal.decider=input.actorName??"Jednatel";
+      localStorage.setItem("develocrm.price.proposals.v32",JSON.stringify(proposals));
+      if(input.decision==="approved"){
+        const edits=JSON.parse(localStorage.getItem("develocrm.price.edits")||"{}") as Record<string,PriceHistoryRecord[]>;
+        const row:PriceHistoryRecord={id:`preview-price-${crypto.randomUUID()}`,unit:proposal.unit,type:proposal.priceType,amount:proposal.proposedAmount,currency:"CZK",validFrom:proposal.validFrom,validTo:null,reason:proposal.reason,author:proposal.proposer,approver:proposal.decider??null};
+        edits[proposal.unit]=[row,...(edits[proposal.unit]??[])];
+        localStorage.setItem("develocrm.price.edits",JSON.stringify(edits));
+      }
+      recordPreviewActivity({unitKey:proposal.unit,title:input.decision==="approved"?"Schválena změna ceny":"Zamítnuta změna ceny",detail:`${proposal.decider} · ${input.reason}`,icon:"price",action:"unit.price_proposal_decided"});
+      return;
+    }
+    const payload=await response.json().catch(()=>({})) as {error?:string};
+    throw new Error(payload.error||"Návrh ceny se nepodařilo rozhodnout");
   }
 
   async transitionContract(input: { contractId: string; to: string; reason: string; actorName?: string }) {

@@ -35,6 +35,9 @@ export class SalesRepository {
 
   async getDirectory(input: Context): Promise<{ clients: ClientDirectoryItem[]; unitContexts: Record<string, UnitCommercialContext> }> {
     return this.database.withContext({ tenantId: input.tenantId, userId: input.userId }, async (client) => {
+      const hasPartyScope=Boolean((await client.query("SELECT 1 FROM pg_proc procedure JOIN pg_namespace namespace ON namespace.oid=procedure.pronamespace WHERE namespace.nspname='app' AND procedure.proname='can_access_party'")).rowCount);
+      const partyAccess=hasPartyScope?"app.can_access_party(party.tenant_id,$2,party.id,false)":"true";
+      const partyContactAccess=hasPartyScope?"app.can_access_party(party.tenant_id,$2,party.id,true)":"true";
       const partyRows = await client.query<{
         id: string; display_name: string; party_type: string; email: string | null; phone: string | null;first_name:string|null;last_name:string|null;legal_name:string|null;registration_number:string|null;vat_number:string|null;contact_person:string|null;address:ClientDirectoryItem["address"];updated_at:string;
         projects: Array<{ id: string; name: string }>; units: string[]; state: string; stage: string | null;
@@ -50,11 +53,12 @@ export class SalesRepository {
          FROM parties party
          LEFT JOIN party_individual_details individual ON individual.tenant_id=party.tenant_id AND individual.party_id=party.id
          LEFT JOIN party_organization_details organization ON organization.tenant_id=party.tenant_id AND organization.party_id=party.id
-         LEFT JOIN LATERAL (SELECT jsonb_build_object('line1',line1,'line2',line2,'city',city,'postalCode',postal_code,'countryCode',country_code,'addressType',address_type) item FROM party_addresses WHERE tenant_id=party.tenant_id AND party_id=party.id AND is_primary AND valid_to IS NULL ORDER BY created_at DESC LIMIT 1) address ON true
+         LEFT JOIN LATERAL (SELECT jsonb_build_object('line1',line1,'line2',line2,'city',city,'postalCode',postal_code,'countryCode',country_code,'addressType',address_type) item FROM party_addresses WHERE tenant_id=party.tenant_id AND party_id=party.id AND is_primary AND valid_to IS NULL
+           AND ${partyContactAccess} ORDER BY created_at DESC LIMIT 1) address ON true
          LEFT JOIN LATERAL (SELECT value FROM party_contacts WHERE tenant_id=party.tenant_id AND party_id=party.id
-           AND contact_type='email' AND archived_at IS NULL ORDER BY is_primary DESC,created_at LIMIT 1) email ON true
+           AND contact_type='email' AND archived_at IS NULL AND ${partyContactAccess} ORDER BY is_primary DESC,created_at LIMIT 1) email ON true
          LEFT JOIN LATERAL (SELECT value FROM party_contacts WHERE tenant_id=party.tenant_id AND party_id=party.id
-           AND contact_type='phone' AND archived_at IS NULL ORDER BY is_primary DESC,created_at LIMIT 1) phone ON true
+           AND contact_type='phone' AND archived_at IS NULL AND ${partyContactAccess} ORDER BY is_primary DESC,created_at LIMIT 1) phone ON true
          LEFT JOIN LATERAL (
            SELECT jsonb_agg(DISTINCT jsonb_build_object('id',project.id,'name',project.name)) items
            FROM party_project_links link JOIN projects project ON project.tenant_id=link.tenant_id AND project.id=link.project_id
@@ -86,6 +90,7 @@ export class SalesRepository {
              AND app.has_project_permission(interest.tenant_id,$2,interest.project_id,'clients.read')
          ) history ON true
          WHERE party.tenant_id=$1 AND party.archived_at IS NULL AND party.lifecycle_status<>'merged'
+           AND ${partyAccess}
            AND (projects.items IS NOT NULL OR history.items IS NOT NULL)
          ORDER BY party.display_name`,
         [input.tenantId,input.membershipId],
@@ -103,8 +108,10 @@ export class SalesRepository {
            SELECT jsonb_agg(jsonb_build_object('partyId',party.id,'name',party.display_name,'email',COALESCE(email.value,''),
              'role',participant.participant_role,'share',participant.ownership_share) ORDER BY participant.is_primary DESC,party.display_name) items
            FROM sales_case_parties participant JOIN parties party ON party.tenant_id=participant.tenant_id AND party.id=participant.party_id
-           LEFT JOIN LATERAL (SELECT value FROM party_contacts WHERE tenant_id=party.tenant_id AND party_id=party.id AND contact_type='email' AND archived_at IS NULL ORDER BY is_primary DESC LIMIT 1) email ON true
+           LEFT JOIN LATERAL (SELECT value FROM party_contacts WHERE tenant_id=party.tenant_id AND party_id=party.id AND contact_type='email' AND archived_at IS NULL
+             AND ${partyContactAccess} ORDER BY is_primary DESC LIMIT 1) email ON true
            WHERE participant.tenant_id=unit.tenant_id AND participant.sales_case_id=active_case.id AND participant.left_at IS NULL
+             AND ${partyAccess}
          ) buyers ON true
          LEFT JOIN LATERAL (
            SELECT jsonb_agg(jsonb_build_object('date',COALESCE(to_char(interest.first_interest_at,'DD. MM. YYYY'),'Datum neuvedeno'),'partyId',party.id,'name',party.display_name,
@@ -114,6 +121,7 @@ export class SalesRepository {
            LEFT JOIN LATERAL (SELECT outcome FROM interest_events event WHERE event.tenant_id=interest.tenant_id AND event.unit_interest_id=interest.id ORDER BY occurred_at DESC LIMIT 1) latest ON true
            LEFT JOIN LATERAL (SELECT CASE max(CASE event_type WHEN 'converted_to_sales_case' THEN 7 WHEN 'reservation_requested' THEN 6 WHEN 'pre_reservation_requested' THEN 5 WHEN 'offer' THEN 4 WHEN 'viewing' THEN 3 WHEN 'inquiry' THEN 2 ELSE 1 END) WHEN 7 THEN 'Převedeno do obchodního procesu' WHEN 6 THEN 'Rezervace' WHEN 5 THEN 'Předrezervace' WHEN 4 THEN 'Nabídka' WHEN 3 THEN 'Prohlídka' ELSE 'Zájem' END label FROM interest_events event WHERE event.tenant_id=interest.tenant_id AND event.unit_interest_id=interest.id) highest ON true
            WHERE interest.tenant_id=unit.tenant_id AND interest.unit_id=unit.id
+             AND ${partyAccess}
          ) interests ON true
          LEFT JOIN LATERAL (SELECT jsonb_build_object('id',id,'type',hold_type,'expiresAt',expires_at) item FROM unit_holds
            WHERE tenant_id=unit.tenant_id AND unit_id=unit.id AND status='active' AND expires_at>now() ORDER BY expires_at DESC LIMIT 1) hold ON true
@@ -138,9 +146,11 @@ export class SalesRepository {
   async exportContacts(input: Context & { partyIds?: string[] }): Promise<ClientDirectoryItem[]> {
     const directory = await this.getDirectory(input);
     return this.database.withContext({ tenantId: input.tenantId,userId: input.userId }, async (client) => {
+      const hasPartyScope=Boolean((await client.query("SELECT 1 FROM pg_proc procedure JOIN pg_namespace namespace ON namespace.oid=procedure.pronamespace WHERE namespace.nspname='app' AND procedure.proname='can_access_party'")).rowCount);
       const allowed = await client.query<{ id: string }>(
         `SELECT DISTINCT party.id FROM parties party JOIN party_project_links link ON link.tenant_id=party.tenant_id AND link.party_id=party.id AND link.valid_to IS NULL
-         WHERE party.tenant_id=$1 AND app.has_project_permission(link.tenant_id,$2,link.project_id,'clients.export')
+         WHERE party.tenant_id=$1 AND app.has_project_permission(link.tenant_id,$2,link.project_id,'${hasPartyScope?"exports.run":"clients.export"}')
+           AND ${hasPartyScope?"app.can_access_party(party.tenant_id,$2,party.id,true)":"true"}
            AND ($3::uuid[] IS NULL OR party.id=ANY($3::uuid[]))`,
         [input.tenantId,input.membershipId,input.partyIds?.length ? input.partyIds : null],
       );

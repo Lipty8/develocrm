@@ -222,14 +222,15 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
     try {
       const identity=await authenticate(request,dependencies.verifier); const tenantId=headerValue(request.headers["x-tenant-id"]);
       if (!tenantId) return reply.code(400).send({error:"Chybí x-tenant-id"}); const user=await repository.resolveUser(identity); const session=await repository.getSession(user,identity,tenantId);
-      if (!session || !await inventory.hasUnitPermission({tenantId,userId:user.id,membershipId:session.workspace.membershipId,unitId:request.params.unitId,permission:"holds.manage"})) return reply.code(403).send({error:"Chybí oprávnění holds.manage"});
+      const permission=request.body.type==="reservation"?"holds.confirm":"holds.create";
+      if (!session || !await inventory.hasUnitPermission({tenantId,userId:user.id,membershipId:session.workspace.membershipId,unitId:request.params.unitId,permission})) return reply.code(403).send({error:`Chybí oprávnění ${permission}`});
       return reply.code(201).send(await holds.create({tenantId,userId:user.id,unitId:request.params.unitId,membershipId:session.workspace.membershipId,...request.body}));
     } catch(error) { return reply.code(409).send({error:error instanceof Error?error.message:"Rezervaci nelze vytvořit"}); }
   });
 
   app.post<{ Params:{ holdId:string }; Body:{ expiresAt:string;idempotencyKey:string;reason:string } }>("/v1/holds/:holdId/convert", async (request,reply) => {
     try { const identity=await authenticate(request,dependencies.verifier); const tenantId=headerValue(request.headers["x-tenant-id"]); if(!tenantId)return reply.code(400).send({error:"Chybí x-tenant-id"}); const user=await repository.resolveUser(identity); const session=await repository.getSession(user,identity,tenantId);
-      if(!session||!await sales.hasHoldPermission({tenantId,userId:user.id,membershipId:session.workspace.membershipId,holdId:request.params.holdId,permission:"holds.manage"}))return reply.code(403).send({error:"Chybí oprávnění holds.manage"});
+      if(!session||!await sales.hasHoldPermission({tenantId,userId:user.id,membershipId:session.workspace.membershipId,holdId:request.params.holdId,permission:"holds.confirm"}))return reply.code(403).send({error:"Chybí oprávnění holds.confirm"});
       return reply.send(await holds.convert({tenantId,userId:user.id,holdId:request.params.holdId,membershipId:session.workspace.membershipId,...request.body}));
     } catch(error){return reply.code(409).send({error:error instanceof Error?error.message:"Převod rezervace se nezdařil"});}
   });
@@ -243,7 +244,7 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
 
   app.post<{ Params:{ holdId:string } }>("/v1/holds/:holdId/expire", async (request,reply) => {
     try { const identity=await authenticate(request,dependencies.verifier); const tenantId=headerValue(request.headers["x-tenant-id"]); if(!tenantId)return reply.code(400).send({error:"Chybí x-tenant-id"}); const user=await repository.resolveUser(identity); const session=await repository.getSession(user,identity,tenantId);
-      if(!session||!await sales.hasHoldPermission({tenantId,userId:user.id,membershipId:session.workspace.membershipId,holdId:request.params.holdId,permission:"holds.manage"}))return reply.code(403).send({error:"Chybí oprávnění holds.manage"});
+      if(!session||!await sales.hasHoldPermission({tenantId,userId:user.id,membershipId:session.workspace.membershipId,holdId:request.params.holdId,permission:"holds.confirm"}))return reply.code(403).send({error:"Chybí oprávnění holds.confirm"});
       return reply.send(await holds.expire({tenantId,userId:user.id,holdId:request.params.holdId,membershipId:session.workspace.membershipId}));
     } catch(error){return reply.code(409).send({error:error instanceof Error?error.message:"Expirace rezervace se nezdařila"});}
   });
