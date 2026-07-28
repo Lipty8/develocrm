@@ -1,5 +1,5 @@
 export type IdentitySession = {
-  user: { id: string; email: string; displayName: string };
+  user: { id: string; email: string; displayName: string;jobTitle?:string;phone?:string;initials?:string;avatarUrl?:string;language?:"cs"|"en";timezone?:string;notifications?:{email:boolean;inApp:boolean} };
   workspace: {
     tenantId: string;
     tenantName: string;
@@ -16,7 +16,7 @@ const prototypeSession: IdentitySession = {
     tenantId: "prototype-develo-group",
     tenantName: "Develo Group",
     roles: ["admin"],
-    permissions: ["tenant.read","membership.read","membership.manage","role.read","role.manage","users.manage","project.read","project.manage","projects.change_manager","projects.change_status","unit.read","unit.manage","accessory.read","accessory.manage","clients.read","clients.manage","clients.export","interests.manage","sales_case.read","sales_case.manage","holds.manage","holds.cancel","price.read","price.manage","prices.change","prices.approve","contract.read","contract.manage","contract.approve","contract.sign","documents.view","documents.upload","documents.edit_metadata","documents.archive","documents.manage","documents.view_sensitive"],
+    permissions: ["projects.read","projects.update","units.read","units.update","accessories.read","accessories.update","clients.read_all","clients.read_contact_details","clients.create","clients.update","interests.manage","sales_cases.read","sales_cases.manage","holds.create","holds.cancel","holds.confirm","prices.read","prices.propose","contracts.read","contracts.create","contracts.update","contracts.mark_ready","contracts.record_signature","documents.read","documents.create","documents.update","documents.review","documents.archive","payments.read","payments.manage","handovers.read","handovers.manage","complaints.read","complaints.manage","tasks.read","tasks.manage","users.manage","roles.manage","system.manage","integrations.manage","exports.run","audit.read"],
     projectScopes: [],
   },
   source: "prototype-fallback",

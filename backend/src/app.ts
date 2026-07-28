@@ -54,6 +54,11 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
     }
   });
 
+  app.patch<{Body:{displayName:string;jobTitle:string;phone:string;initials:string;language:"cs"|"en";timezone:string;notifications:{email:boolean;inApp:boolean}}}>("/v1/profile",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není přístupný"});return{user:await repository.updateOwnProfile({...context,...request.body})};}
+    catch(error){return reply.code(409).send({error:error instanceof Error?error.message:"Profil nelze uložit"});}
+  });
+
   app.get("/v1/roles", async (request, reply) => {
     try {
       const identity = await authenticate(request, dependencies.verifier);
@@ -172,6 +177,10 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
   app.post<{Params:{unitId:string};Body:{priceType:string;amount:number;currency?:string;validFrom:string;reason:string;approverMembershipId?:string}}>("/v1/units/:unitId/prices",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await commercialCommands.recordPrice({...context,unitId:request.params.unitId,...request.body,currency:request.body.currency??"CZK"}));}
     catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Cenu nelze zaznamenat"});}
+  });
+  app.post<{Params:{proposalId:string};Body:{decision:"approved"|"rejected";reason:string}}>("/v1/price-proposals/:proposalId/decision",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.send(await commercialCommands.decidePrice({...context,proposalId:request.params.proposalId,...request.body}));}
+    catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Návrh ceny nelze rozhodnout"});}
   });
 
   app.post<{Body:{salesCaseId:string;type:string;reference:string;title:string;parentContractId?:string}}>("/v1/contracts",async(request,reply)=>{

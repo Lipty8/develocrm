@@ -4,6 +4,7 @@ import type { EntraIdentity } from "../auth/entra.js";
 import type { UserIdentity } from "./types.js";
 
 const defaultRoles = [
+  { code: "executive", name: "Jednatel" },
   { code: "admin", name: "Admin" },
   { code: "project_manager", name: "Project Manager" },
   { code: "sales", name: "Sales / Obchod" },
@@ -13,13 +14,14 @@ const defaultRoles = [
   { code: "read_only", name: "Pouze pro čtení" },
 ] as const;
 const defaultPermissionCodes:Record<(typeof defaultRoles)[number]["code"],string[]>={
-  admin:[],
-  project_manager:["tenant.read","membership.read","role.read","project.read","project.manage","projects.change_manager","projects.change_status","structure.manage","construction_status.manage","unit.read","unit.manage","accessory.read","accessory.manage","clients.read","clients.manage","clients.export","interests.manage","sales_case.read","sales_case.manage","holds.manage","holds.cancel","price.read","price.manage","price.approve","prices.propose","prices.change","prices.approve","contract.read","contract.manage","contract.approve","contract.sign"],
-  sales:["tenant.read","membership.read","project.read","unit.read","accessory.read","clients.read","clients.manage","clients.export","interests.manage","sales_case.read","sales_case.manage","holds.manage","holds.cancel","price.read","prices.propose","contract.read","contract.manage","contract.sign"],
-  back_office:["tenant.read","membership.read","project.read","unit.read","accessory.read","clients.read","clients.manage","clients.export","sales_case.read","contract.read","contract.manage","contract.approve"],
-  finance:["tenant.read","project.read","unit.read","clients.read","price.read","contract.read","documents.view","finance.read","finance.manage","clients.export"],
-  handover_complaints:["tenant.read","project.read","unit.read","clients.read","documents.view","tasks.read","tasks.manage","handover.read","handover.manage","complaints.read","complaints.manage"],
-  read_only:["tenant.read","project.read","unit.read","accessory.read","clients.read","sales_case.read","price.read","contract.read","documents.view","tasks.read","handover.read"],
+  executive:["projects.read","projects.update","units.read","units.update","clients.read_all","clients.read_contact_details","contracts.read","documents.read","prices.read","prices.propose","prices.approve","discounts.approve","commercial_exceptions.approve","payments.read","handovers.read","tasks.read","exports.run","audit.read"],
+  admin:["projects.read","projects.update","units.read","units.update","units.update_sales_status","accessories.read","accessories.update","clients.read_all","clients.read_contact_details","clients.create","clients.update","interests.manage","sales_cases.read","sales_cases.manage","holds.create","holds.cancel","holds.confirm","contracts.read","contracts.create","contracts.update","contracts.mark_ready","contracts.record_signature","documents.read","documents.create","documents.update","documents.review","documents.archive","prices.read","prices.propose","payments.read","payments.manage","handovers.read","handovers.manage","complaints.read","complaints.manage","tasks.read","tasks.manage","users.manage","roles.manage","system.manage","integrations.manage","exports.run","audit.read"],
+  project_manager:["projects.read","projects.update","units.read","units.update","units.update_sales_status","accessories.read","accessories.update","clients.read_all","clients.read_contact_details","clients.create","clients.update","interests.manage","sales_cases.read","sales_cases.manage","holds.create","holds.cancel","holds.confirm","contracts.read","contracts.create","contracts.update","documents.read","documents.create","documents.update","prices.read","prices.propose","payments.read","handovers.read","handovers.manage","tasks.read","tasks.manage"],
+  sales:["projects.read","units.read","accessories.read","clients.read_own","clients.read_contact_details","clients.create","clients.update","interests.manage","sales_cases.read","sales_cases.manage","holds.create","holds.cancel"],
+  back_office:["projects.read","units.read","clients.read_all","clients.read_contact_details","clients.create","clients.update","sales_cases.read","contracts.read","contracts.create","contracts.update","contracts.mark_ready","contracts.record_signature","documents.read","documents.create","documents.update","documents.review","tasks.read","tasks.manage"],
+  finance:["projects.read","units.read","clients.read_all","contracts.read","documents.read","prices.read","payments.read","payments.manage","exports.run"],
+  handover_complaints:["projects.read","units.read","clients.read_all","clients.read_contact_details","handovers.read","handovers.manage","complaints.read","complaints.manage","tasks.read","tasks.manage"],
+  read_only:["projects.read","units.read","accessories.read","clients.read_all","sales_cases.read","contracts.read","documents.read","prices.read","payments.read","handovers.read","tasks.read"],
 };
 
 export class TenantProvisioningService {
@@ -49,12 +51,7 @@ export class TenantProvisioningService {
         );
         if (role.code === "admin") adminRoleId = roleId;
       }
-      await client.query(
-        `INSERT INTO role_permissions (tenant_id, role_id, permission_id)
-         SELECT $1, $2, id FROM permissions`,
-        [tenantId, adminRoleId],
-      );
-      for(const role of defaultRoles.filter(item=>item.code!=="admin"))await client.query(
+      for(const role of defaultRoles)await client.query(
         `INSERT INTO role_permissions (tenant_id, role_id, permission_id)
          SELECT $1,r.id,p.id FROM roles r CROSS JOIN permissions p WHERE r.tenant_id=$1 AND r.code=$2 AND p.code=ANY($3::text[])`,
         [tenantId,role.code,defaultPermissionCodes[role.code]],

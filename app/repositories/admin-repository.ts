@@ -10,27 +10,27 @@ export type AdminUser = {
   roleIds: string[];
   projectIds: string[];
 };
-export type AdminRole = { id: string; code: string; name: string; description: string; isSystem: boolean; permissionCodes: string[] };
+export type AdminRole = { id: string; code: string; name: string; description: string; isSystem: boolean; permissionCodes: string[];permissionGrants?:Array<{code:string;scope:"workspace"|"project"|"own"|"partner"}>;assignedUserCount?:number;restrictions?:string[] };
 export type AdminProject = { id: string; name: string };
 export type AdminSnapshot = { users: AdminUser[]; roles: AdminRole[]; projects: AdminProject[]; permissions: Array<{ code: string; description: string }> };
 
-const KEY = "develocrm.admin.v31";
+const KEY = "develocrm.admin.v32";
+const operational=["projects.read","projects.update","units.read","units.update","units.update_sales_status","accessories.read","accessories.update","clients.read_all","clients.read_contact_details","clients.create","clients.update","interests.manage","sales_cases.read","sales_cases.manage","holds.create","holds.cancel","holds.confirm","contracts.read","contracts.create","contracts.update","contracts.mark_ready","contracts.record_signature","documents.read","documents.create","documents.update","documents.review","documents.archive","prices.read","prices.propose","payments.read","payments.manage","handovers.read","handovers.manage","complaints.read","complaints.manage","tasks.read","tasks.manage"];
 const previewRoles: AdminRole[] = [
-  {id:"role-admin",code:"admin",name:"Administrátor",description:"Plný přístup k workspace",isSystem:true,permissionCodes:["view","create","edit","approve","archive","export"]},
-  {id:"role-pm",code:"project_manager",name:"Projektový manažer",description:"Řízení přidělených projektů",isSystem:true,permissionCodes:["view","create","edit","approve","export"]},
-  {id:"role-sales",code:"sales",name:"Obchodník",description:"Klienti, rezervace a smlouvy",isSystem:true,permissionCodes:["view","create","edit","export"]},
-  {id:"role-bo",code:"back_office",name:"Back Office",description:"Administrativa smluv a dokumentů",isSystem:true,permissionCodes:["view","create","edit","approve","export"]},
-  {id:"role-finance",code:"finance",name:"Finance",description:"Platby a finanční agenda",isSystem:true,permissionCodes:["view","edit","approve","export"]},
-  {id:"role-handover",code:"handover_complaints",name:"Předání a reklamace",description:"Předání, vady a reklamace",isSystem:true,permissionCodes:["view","create","edit"]},
-  {id:"role-read",code:"read_only",name:"Pouze pro čtení",description:"Čtení bez editace",isSystem:true,permissionCodes:["view"]},
+  {id:"role-executive",code:"executive",name:"Jednatel",description:"Obchodní dohled a schvalování",isSystem:true,permissionCodes:["projects.read","units.read","clients.read_all","contracts.read","documents.read","prices.read","prices.propose","prices.approve","discounts.approve","commercial_exceptions.approve","payments.read","exports.run"],assignedUserCount:1,restrictions:["Bez správy systému, uživatelů a rolí"]},
+  {id:"role-admin",code:"admin",name:"Administrátor",description:"Provozní a systémová správa workspace",isSystem:true,permissionCodes:[...operational,"users.manage","roles.manage","system.manage","integrations.manage","exports.run","audit.read"],assignedUserCount:1,restrictions:["Bez schvalování cen, slev a obchodních výjimek"]},
+  {id:"role-pm",code:"project_manager",name:"Projektový manažer",description:"Řízení přidělených projektů",isSystem:true,permissionCodes:operational.filter(code=>!code.includes("approve")&&!code.startsWith("payments.manage")),assignedUserCount:1,restrictions:["Projektový rozsah; bez schvalování cen a správy systému"]},
+  {id:"role-sales",code:"sales",name:"Obchodník",description:"Vlastní klienti, zájmy a předrezervace",isSystem:true,permissionCodes:["projects.read","units.read","accessories.read","clients.read_own","clients.read_contact_details","clients.create","clients.update","interests.manage","sales_cases.read","sales_cases.manage","holds.create","holds.cancel"],assignedUserCount:2,restrictions:["Bez cizích kontaktů, exportu, rezervace a cen"]},
+  {id:"role-bo",code:"back_office",name:"Back Office",description:"Formální připravenost smluv a dokumentů",isSystem:true,permissionCodes:["projects.read","units.read","clients.read_all","clients.read_contact_details","clients.create","clients.update","contracts.read","contracts.create","contracts.update","contracts.mark_ready","contracts.record_signature","documents.read","documents.create","documents.update","documents.review","tasks.read","tasks.manage"],assignedUserCount:2,restrictions:["Bez obchodního schvalování cen a výjimek"]},
+  {id:"role-finance",code:"finance",name:"Finance",description:"Platby a finanční agenda",isSystem:true,permissionCodes:["projects.read","units.read","clients.read_all","contracts.read","documents.read","prices.read","payments.read","payments.manage","exports.run"],assignedUserCount:1},
+  {id:"role-handover",code:"handover_complaints",name:"Předání a reklamace",description:"Předání, vady a reklamace",isSystem:true,permissionCodes:["projects.read","units.read","clients.read_all","clients.read_contact_details","handovers.read","handovers.manage","complaints.read","complaints.manage","tasks.read","tasks.manage"],assignedUserCount:1},
+  {id:"role-read",code:"read_only",name:"Pouze pro čtení",description:"Projektové čtení bez mutací",isSystem:true,permissionCodes:["projects.read","units.read","accessories.read","clients.read_all","sales_cases.read","contracts.read","documents.read","prices.read","payments.read","handovers.read","tasks.read"],assignedUserCount:0,restrictions:["Bez mutací a exportu"]},
 ];
 const previewProjects=[{id:"DEJ",name:"Rezidence Dejvice"},{id:"RJ",name:"Rezidence Javorová"},{id:"PC",name:"Parková čtvrť"},{id:"VS",name:"Vily Stráň"}];
 const defaultPreview:AdminSnapshot={users:[
   {membershipId:"prototype-iva-membership",userId:"prototype-iva",name:"Iva Novotná",email:"iva@develo.example",jobTitle:"Back Office",workPhone:"+420 222 000 101",status:"active",lastLoginAt:new Date().toISOString(),roleIds:["role-admin"],projectIds:[]},
   {membershipId:"prototype-martin-membership",userId:"prototype-martin",name:"Martin Jelínek",email:"martin@develo.example",jobTitle:"Vedoucí projektu",workPhone:"+420 222 000 102",status:"active",lastLoginAt:null,roleIds:["role-pm"],projectIds:["RJ","DEJ"]},
-],roles:previewRoles,projects:previewProjects,permissions:[
-  {code:"view",description:"Zobrazit"},{code:"create",description:"Vytvářet"},{code:"edit",description:"Upravovat"},{code:"approve",description:"Schvalovat"},{code:"archive",description:"Archivovat"},{code:"export",description:"Exportovat"},
-]};
+],roles:previewRoles,projects:previewProjects,permissions:Array.from(new Set(previewRoles.flatMap(role=>role.permissionCodes))).sort().map(code=>({code,description:code}))};
 
 export interface AdminRepository {
   getSnapshot(signal?:AbortSignal):Promise<AdminSnapshot>;

@@ -7,6 +7,7 @@ export type CommercialSnapshot = {
   priceHistories: Record<string, PriceHistoryRecord[]>;
   contracts: ContractRecord[];
   contractSummary: Record<string, number>;
+  priceProposals?:Array<{id:string;unit:string;priceType:string;currentAmount:number;proposedAmount:number;validFrom:string;reason:string;status:"pending"|"approved"|"rejected";proposer:string;decider?:string|null}>;
   source: "backend-api" | "preview-seed";
 };
 
@@ -31,6 +32,7 @@ class ApiCommercialRepository implements CommercialRepository {
         const first = (snapshot.priceHistories[unit] || [])[0];
         if (first) snapshot.currentPrices[unit] = first.amount;
       }
+      snapshot.priceProposals=[...(snapshot.priceProposals??[]),...JSON.parse(localStorage.getItem("develocrm.price.proposals.v32")||"[]")];
       const contractEdits = readContractEdits();
       snapshot.contracts = snapshot.contracts.map((item) => {
         const merged = { ...item, ...(item.id ? contractEdits[item.id] : {}) };
@@ -47,11 +49,10 @@ class ApiCommercialRepository implements CommercialRepository {
     if (response.status === 503 && typeof window !== "undefined") {
       const key = unitKey ?? input.unitId;
       const author = actorName ?? "Iva Novotná";
-      const rows = JSON.parse(localStorage.getItem("develocrm.price.edits") || "{}");
-      rows[key] ??= [];
-      rows[key].unshift({ id: `local-${Date.now()}`, unit: key, type: input.priceType, amount: input.amount, currency: "CZK", validFrom: input.validFrom, validTo: null, reason: input.reason, author, approver: null });
-      localStorage.setItem("develocrm.price.edits", JSON.stringify(rows));
-      recordPreviewActivity({ unitKey: key, title: "Zaznamenána nová cena jednotky", detail: `${author} · ${input.reason}`, icon: "price", action: "unit.price_recorded" });
+      const proposals=JSON.parse(localStorage.getItem("develocrm.price.proposals.v32")||"[]");
+      proposals.unshift({id:`preview-proposal-${crypto.randomUUID()}`,unit:key,priceType:input.priceType,currentAmount:0,proposedAmount:input.amount,validFrom:input.validFrom,reason:input.reason,status:"pending",proposer:author,decider:null});
+      localStorage.setItem("develocrm.price.proposals.v32",JSON.stringify(proposals));
+      recordPreviewActivity({ unitKey: key, title: "Navržena změna ceny jednotky", detail: `${author} · čeká na schválení · ${input.reason}`, icon: "price", action: "unit.price_proposed" });
       return;
     }
     const payloadError = await response.json().catch(() => ({})) as { error?: string };
