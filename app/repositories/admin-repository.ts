@@ -30,7 +30,7 @@ const previewProjects=[{id:"DEJ",name:"Rezidence Dejvice"}];
 const defaultPreview:AdminSnapshot={users:[
   {membershipId:"prototype-iva-membership",userId:"prototype-iva",name:"Iva Novotná",email:"iva@develo.example",jobTitle:"Back Office",workPhone:"+420 222 000 101",status:"active",lastLoginAt:new Date().toISOString(),roleIds:["role-admin"],projectIds:[]},
   {membershipId:"prototype-martin-membership",userId:"prototype-martin",name:"Martin Jelínek",email:"martin@develo.example",jobTitle:"Vedoucí projektu",workPhone:"+420 222 000 102",status:"active",lastLoginAt:null,roleIds:["role-pm"],projectIds:["DEJ"]},
-],roles:previewRoles,projects:previewProjects,permissions:Array.from(new Set(previewRoles.flatMap(role=>role.permissionCodes))).sort().map(code=>({code,description:code}))};
+],roles:previewRoles,projects:previewProjects,permissions:Array.from(new Set(previewRoles.flatMap(role=>role.permissionCodes))).sort().map(code=>({code,description:getPermissionDefinition(code).description}))};
 
 export interface AdminRepository {
   getSnapshot(signal?:AbortSignal):Promise<AdminSnapshot>;
@@ -49,3 +49,4 @@ function readPreview():AdminSnapshot{if(typeof window==="undefined")return struc
 function writePreview(snapshot:AdminSnapshot){localStorage.setItem(KEY,JSON.stringify(snapshot));}
 function validateSystemRole(role:string,codes:string[]){const selected=new Set(codes);if(role==="admin"&&!["users.manage","roles.manage","system.manage","integrations.manage"].every(code=>selected.has(code)))throw new Error("Systémové pravomoci administrátora nelze odebrat");if(role==="admin"&&codes.some(code=>["prices.approve","discounts.approve","commercial_exceptions.approve"].includes(code)))throw new Error("Administrátor nesmí schvalovat ceny ani obchodní výjimky");if(role==="executive"&&codes.some(code=>["users.manage","roles.manage","system.manage","integrations.manage"].includes(code)))throw new Error("Jednatel nesmí spravovat systém ani uživatele");if(role==="sales"&&codes.some(code=>["holds.confirm","prices.approve","exports.run","clients.read_all"].includes(code)))throw new Error("Obchodník nesmí potvrzovat rezervace, schvalovat ceny, exportovat ani číst cizí klienty");if(role==="read_only"&&codes.some(code=>/(create|update|manage|approve|archive|cancel|confirm|propose|record|run)$/.test(code.split(".").at(-1)??"")))throw new Error("Role pouze pro čtení nesmí obsahovat mutace ani export");}
 export const adminRepository:AdminRepository=new ApiAdminRepository();
+import { getPermissionDefinition } from "../lib/permission-catalog";
