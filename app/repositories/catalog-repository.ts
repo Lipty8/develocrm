@@ -2,6 +2,7 @@ import type { AccessoryAssignmentRecord, CatalogAccessoryRecord, MembershipOptio
 import { projects as previewProjects, units as previewUnits } from "../crm-data";
 import { recordPreviewActivity } from "./activity-repository";
 import { responseAllowsBrowserFallback } from "../lib/data-mode";
+import { apiFetch } from "../lib/api-client";
 
 export type CatalogSnapshot = { projects: ProjectRecord[]; units: UnitRecord[]; accessories:CatalogAccessoryRecord[]; memberships:MembershipOption[]; structures:ProjectStructureOption[]; source: "backend-api" | "preview-seed" };
 export type ProjectUpdate={id:string;name:string;location?:string|null;lifecycleStatus:string;managerMembershipId?:string|null;plannedHandoverFrom?:string|null;plannedHandoverTo?:string|null};
@@ -20,14 +21,14 @@ export interface CatalogRepository {
 
 export class ApiCatalogRepository implements CatalogRepository {
   async getCatalog(signal?: AbortSignal): Promise<CatalogSnapshot> {
-    const response = await fetch("/api/catalog", { signal, cache: "no-store" });
+    const response = await apiFetch("/api/catalog", { signal, cache: "no-store" });
     if (!response.ok){const payload=await response.json().catch(()=>({})) as {error?:string;correlationId?:string};throw new Error(`${payload.error||"Katalog projektů se nepodařilo načíst"}${payload.correlationId?` · ID chyby ${payload.correlationId}`:""}`);}
     const snapshot=await response.json() as CatalogSnapshot;
     if(typeof window!=="undefined") applyPreviewEdits(snapshot);
     return snapshot;
   }
   async createProject(input:ProjectCreate):Promise<{id:string}>{
-    const response=await fetch("/api/catalog/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});
+    const response=await apiFetch("/api/catalog/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});
     if(response.ok)return response.json() as Promise<{id:string}>;
     if(response.status===503&&responseAllowsBrowserFallback(response)){
       const id=`preview-project-${crypto.randomUUID()}`;
@@ -88,7 +89,7 @@ function applyPreviewEdits(snapshot:CatalogSnapshot){
 }
 function storeEdit(kind:"projects"|"units",id:string,value:unknown){if(typeof window==="undefined")return;const edits=JSON.parse(localStorage.getItem("develocrm.catalog.edits")||"{}");edits[kind]??={};edits[kind][id]={...(edits[kind][id]||{}),...(value as object)};localStorage.setItem("develocrm.catalog.edits",JSON.stringify(edits));}
 function previewAccessoryMutation(unitId:string,accessoryId:string,action:"assign"|"remove"){if(typeof window==="undefined")return;const rows=JSON.parse(localStorage.getItem("develocrm.accessory.assignments")||"[]");rows.push({unitId,accessoryId,action});localStorage.setItem("develocrm.accessory.assignments",JSON.stringify(rows));}
-async function requestJson(url:string,method:string,body?:unknown):Promise<boolean>{const response=await fetch(url,{method,headers:body?{"content-type":"application/json"}:undefined,body:body?JSON.stringify(body):undefined});if(response.ok)return false;if(response.status===503&&responseAllowsBrowserFallback(response))return true;const payload=await response.json().catch(()=>({})) as {error?:string;correlationId?:string};throw new Error(`${payload.error||"Změnu se nepodařilo uložit"}${payload.correlationId?` · ID chyby ${payload.correlationId}`:""}`);}
+async function requestJson(url:string,method:string,body?:unknown):Promise<boolean>{const response=await apiFetch(url,{method,headers:body?{"content-type":"application/json"}:undefined,body:body?JSON.stringify(body):undefined});if(response.ok)return false;if(response.status===503&&responseAllowsBrowserFallback(response))return true;const payload=await response.json().catch(()=>({})) as {error?:string;correlationId?:string};throw new Error(`${payload.error||"Změnu se nepodařilo uložit"}${payload.correlationId?` · ID chyby ${payload.correlationId}`:""}`);}
 function constructionLabel(status:string){return ({preparation:"Příprava",permitting:"Povolování",construction:"Ve výstavbě",rough_construction:"Hrubá stavba",installations:"Instalace",fit_out:"Dokončovací práce",completed:"Dokončeno"} as Record<string,string>)[status]??status;}
 function completionPeriodLabel(value?:string|null){if(!value)return "Neplánováno";const date=new Date(`${value}T00:00:00`);if(Number.isNaN(date.getTime()))return value;return `Q${Math.floor(date.getMonth()/3)+1} ${date.getFullYear()}`;}
 

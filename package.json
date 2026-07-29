@@ -14,12 +14,15 @@
     "db:generate": "drizzle-kit generate",
     "db:seed": "tsx backend/scripts/seed-profile.ts",
     "db:migrate": "tsx backend/scripts/migrate.ts",
+    "pilot:bootstrap": "tsx backend/scripts/bootstrap-pilot.ts",
+    "pilot:import:dejvice": "tsx backend/scripts/import-dejvice.ts",
     "backend:dev": "tsx watch backend/src/server.ts",
     "backend:build": "tsc -p backend/tsconfig.json",
     "backend:test": "tsx --test backend/tests/*.test.ts",
     "block-a:verify": "pnpm run backend:build && pnpm run backend:test"
   },
   "dependencies": {
+    "@azure/msal-browser": "^5.17.1",
     "drizzle-orm": "0.45.2",
     "fastify": "^5.10.0",
     "jose": "^6.2.3",

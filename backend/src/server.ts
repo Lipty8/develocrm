@@ -5,7 +5,7 @@ import { Database } from "./database.js";
 
 const config = loadConfig();
 const database = new Database(config.databaseUrl);
-const verifier = new EntraTokenVerifier(config.entraClientId, config.entraAllowedTenantIds);
+const verifier = new EntraTokenVerifier(config.entraClientId, config.entraAllowedTenantIds,config.entraRequiredScope);
 const app = buildApp({ database, verifier, corsAllowedOrigins:config.corsAllowedOrigins });
 
 const shutdown = async () => {

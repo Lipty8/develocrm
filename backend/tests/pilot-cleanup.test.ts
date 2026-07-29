@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFile,readdir} from "node:fs/promises";
 import {PGlite} from "@electric-sql/pglite";
+import {renderDejviceImport} from "../src/imports/dejvice.js";
 
 const tenant="d0000000-0000-4000-8000-000000000001";
 
@@ -10,7 +11,10 @@ async function fixture(){
   const migrations=(await readdir(new URL("../migrations/",import.meta.url))).filter(name=>name.endsWith(".sql")&&name<"0015").sort();
   for(const name of migrations)await db.exec(await readFile(new URL(`../migrations/${name}`,import.meta.url),"utf8"));
   for(const name of ["0001_preview_block_b.sql","0002_preview_block_c.sql","0003_preview_block_d.sql","0004_pilot_rezidence_dejvice.sql","0005_preview_documents.sql"]){
-    await db.exec(await readFile(new URL(`../seeds/${name}`,import.meta.url),"utf8"));
+    const source=await readFile(new URL(`../seeds/${name}`,import.meta.url),"utf8");
+    await db.exec(name==="0004_pilot_rezidence_dejvice.sql"
+      ?`BEGIN;${renderDejviceImport(source,{tenantId:tenant,membershipId:"d3000000-0000-4000-8000-000000000001"})}COMMIT;`
+      :source);
   }
   return db;
 }

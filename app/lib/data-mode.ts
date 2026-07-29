@@ -19,6 +19,10 @@ export function rememberClientDataMode(source:"production-api"|"prototype-fallba
   clientBrowserAdapterEnabled=source==="prototype-fallback";
 }
 
+export function clientUsesBrowserAdapter(): boolean {
+  return clientBrowserAdapterEnabled;
+}
+
 export function apiUnavailable(message: string, correlationId = crypto.randomUUID()): Response {
   return Response.json(
     {error:message,correlationId,retryable:true},

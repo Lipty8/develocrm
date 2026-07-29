@@ -27,6 +27,10 @@ Datum auditu: 29. 7. 2026
 
 Nebyl proveden Azure deployment, registrace Entra aplikace, vytvoření Azure PostgreSQL, Key Vaultu, Application Insights, vzdálená migrace ani vzdálený import. Nebyla proto publikována v40 jako pilotní preview. Veřejná v39 zůstává prototypem.
 
+Technické blokery z tohoto auditu řeší lokální kandidát v41. Provozní postup je
+v [`v41-pilot-bootstrap-and-deployment.md`](v41-pilot-bootstrap-and-deployment.md);
+ani v41 sama neprovádí vzdálený deployment nebo import.
+
 ## Akceptační podmínka pilotu
 
 Pilot lze označit za připravený až po splnění všech bodů:

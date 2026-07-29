@@ -1,4 +1,5 @@
 import { responseAllowsBrowserFallback } from "../lib/data-mode";
+import { apiFetch } from "../lib/api-client";
 
 export type PaymentStatus="pending"|"partially_paid"|"paid"|"overdue"|"overpaid"|"cancelled";
 export type PaymentTransactionRecord={id:string;amount:number;paidAt:string;variableSymbol?:string;counterpartyAccount?:string;bankTransactionId?:string;note?:string;reversedAt?:string|null;reversalReason?:string|null};
@@ -31,20 +32,20 @@ export interface PaymentRepository{
 class ApiPaymentRepository implements PaymentRepository{
   async list(filters:PaymentFilters={},signal?:AbortSignal){
     const query=new URLSearchParams(Object.entries(filters).filter((entry):entry is [string,string]=>Boolean(entry[1])));
-    const response=await fetch(`/api/payments?${query}`,{signal,cache:"no-store"});
+    const response=await apiFetch(`/api/payments?${query}`,{signal,cache:"no-store"});
     if(response.ok)return await response.json() as {payments:PaymentRecord[];source:"postgresql"};
     if(!(response.status===503&&responseAllowsBrowserFallback(response)))throw new Error("Platby nelze načíst");
     return{payments:filterRows(readPreview(),filters),source:"preview-adapter" as const};
   }
   async record(obligationId:string,input:{amount:number;paidAt:string;variableSymbol?:string;counterpartyAccount?:string;bankTransactionId?:string;note?:string}){
-    const response=await fetch(`/api/payments/${obligationId}/transactions`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});
+    const response=await apiFetch(`/api/payments/${obligationId}/transactions`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});
     if(response.ok)return;if(!(response.status===503&&responseAllowsBrowserFallback(response)))throw new Error((await response.json().catch(()=>({error:"Úhradu nelze uložit"}))).error);
     const rows=readPreview();const row=rows.find(item=>item.id===obligationId);if(!row)throw new Error("Předpis nebyl nalezen");
     if(input.bankTransactionId&&rows.some(item=>item.transactions.some(tx=>tx.bankTransactionId===input.bankTransactionId)))throw new Error("Tato bankovní transakce již byla importována");
     const tx={id:crypto.randomUUID(),...input};row.transactions.unshift(tx);row.events.unshift({id:crypto.randomUUID(),type:"payment.recorded",at:new Date().toISOString(),payload:{amount:input.amount}});row.paid=row.transactions.filter(item=>!item.reversedAt).reduce((sum,item)=>sum+item.amount,0);row.status=deriveStatus(row.amount,row.paid,row.dueAt);writePreview(rows);
   }
   async reverse(transactionId:string,reason:string){
-    const response=await fetch(`/api/payment-transactions/${transactionId}/reversal`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({reason})});
+    const response=await apiFetch(`/api/payment-transactions/${transactionId}/reversal`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({reason})});
     if(response.ok)return;if(!(response.status===503&&responseAllowsBrowserFallback(response)))throw new Error((await response.json().catch(()=>({error:"Reverzaci nelze provést"}))).error);
     const rows=readPreview();const row=rows.find(item=>item.transactions.some(tx=>tx.id===transactionId));const tx=row?.transactions.find(item=>item.id===transactionId);if(!row||!tx)throw new Error("Úhrada nebyla nalezena");if(tx.reversedAt)return;
     tx.reversedAt=new Date().toISOString();tx.reversalReason=reason;row.events.unshift({id:crypto.randomUUID(),type:"payment.reversed",at:tx.reversedAt,payload:{reason}});row.paid=row.transactions.filter(item=>!item.reversedAt).reduce((sum,item)=>sum+item.amount,0);row.status=deriveStatus(row.amount,row.paid,row.dueAt);writePreview(rows);

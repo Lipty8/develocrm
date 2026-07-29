@@ -1,4 +1,5 @@
 import { rememberClientDataMode } from "../lib/data-mode";
+import { apiFetch } from "../lib/api-client";
 
 export type IdentitySession = {
   user: { id: string; email: string; displayName: string;jobTitle?:string;phone?:string;initials?:string;avatarUrl?:string;language?:"cs"|"en";timezone?:string;notifications?:{email:boolean;inApp:boolean} };
@@ -31,13 +32,13 @@ export interface IdentityRepository {
 
 export class ApiIdentityRepository implements IdentityRepository {
   async getSession(signal?: AbortSignal): Promise<IdentitySession> {
-    const response = await fetch("/api/identity/session", { signal, cache: "no-store" });
+    const response = await apiFetch("/api/identity/session", { signal, cache: "no-store" });
     if (!response.ok){const payload=await response.json().catch(()=>({})) as {error?:string;correlationId?:string};throw new Error(`${payload.error||"Identitu se nepodařilo načíst"}${payload.correlationId?` · ID chyby ${payload.correlationId}`:""}`);}
     const session=await response.json() as IdentitySession;
     rememberClientDataMode(session.source);
     return session;
   }
-  async listWorkspaces(signal?:AbortSignal){const response=await fetch("/api/identity/workspaces",{signal,cache:"no-store"});if(!response.ok)return[{tenantId:prototypeSession.workspace.tenantId,tenantName:prototypeSession.workspace.tenantName,tenantSlug:"develo-group"}];const payload=await response.json() as {workspaces:Array<{tenantId:string;tenantName:string;tenantSlug:string}>};return payload.workspaces;}
+  async listWorkspaces(signal?:AbortSignal){const response=await apiFetch("/api/identity/workspaces",{signal,cache:"no-store"});if(!response.ok)return[{tenantId:prototypeSession.workspace.tenantId,tenantName:prototypeSession.workspace.tenantName,tenantSlug:"develo-group"}];const payload=await response.json() as {workspaces:Array<{tenantId:string;tenantName:string;tenantSlug:string}>};return payload.workspaces;}
 }
 
 export const identityRepository: IdentityRepository = new ApiIdentityRepository();

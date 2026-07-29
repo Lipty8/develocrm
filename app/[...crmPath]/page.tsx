@@ -1,5 +1,6 @@
 import CRMApp from "../CRMApp";
+import EntraAuthBoundary from "../components/EntraAuthBoundary";
 
 export default function CrmRoute() {
-  return <CRMApp />;
+  return <EntraAuthBoundary><CRMApp /></EntraAuthBoundary>;
 }

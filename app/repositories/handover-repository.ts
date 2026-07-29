@@ -1,12 +1,13 @@
 import {addCalendarDays} from "../lib/date-time";
 import {units} from "../crm-data";
 import { responseAllowsBrowserFallback } from "../lib/data-mode";
+import { apiFetch } from "../lib/api-client";
 export type HandoverRecord={id:string;projectId:string;project:string;unitId:string;unit:string;scheduledAt:string;client:string;owner:string;status:string;readiness:number;attention:string|null};
 export interface HandoverRepository{list(input:{project?:string;status?:string;owner?:string;query?:string;sort?:string;direction?:"asc"|"desc"},signal?:AbortSignal):Promise<HandoverRecord[]>}
 class ApiHandoverRepository implements HandoverRepository{
   async list(input:{project?:string;status?:string;owner?:string;query?:string;sort?:string;direction?:"asc"|"desc"},signal?:AbortSignal){
     const query=new URLSearchParams(Object.entries(input).filter((entry):entry is [string,string]=>Boolean(entry[1])));
-    const response=await fetch(`/api/handovers?${query}`,{signal,cache:"no-store"});
+    const response=await apiFetch(`/api/handovers?${query}`,{signal,cache:"no-store"});
     if(response.ok)return (await response.json() as {handovers:HandoverRecord[]}).handovers;
     if(!(response.status===503&&responseAllowsBrowserFallback(response)))throw new Error((await response.json().catch(()=>({} as {error?:string}))).error??"Předání nelze načíst");
     return previewHandovers();

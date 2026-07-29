@@ -2,6 +2,7 @@ import type { ContractHistoryEvent, ContractRecord, PriceHistoryRecord } from ".
 import { contractStatusLabel, isValidContractTransition, recommendedContractAction } from "../../backend/src/shared/contract-workflow";
 import { recordPreviewActivity } from "./activity-repository";
 import { responseAllowsBrowserFallback } from "../lib/data-mode";
+import { apiFetch } from "../lib/api-client";
 
 export type CommercialSnapshot = {
   currentPrices: Record<string, number>;
@@ -24,7 +25,7 @@ const PREVIEW_CONTRACT_EDITS = "develocrm.contract.edits.v31";
 
 class ApiCommercialRepository implements CommercialRepository {
   async getSnapshot(signal?: AbortSignal) {
-    const response = await fetch("/api/commercial", { signal, cache: "no-store" });
+    const response = await apiFetch("/api/commercial", { signal, cache: "no-store" });
     if (!response.ok) throw new Error("Ceny a smlouvy se nepodařilo načíst");
     const snapshot = await response.json() as CommercialSnapshot;
     if (typeof window !== "undefined") {
@@ -46,7 +47,7 @@ class ApiCommercialRepository implements CommercialRepository {
 
   async recordPrice(input: { unitId: string; unitKey?: string; priceType: string; amount: number; validFrom: string; reason: string; approverMembershipId?: string; actorName?: string }) {
     const { unitKey, actorName, ...payload } = input;
-    const response = await fetch("/api/commercial/prices", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+    const response = await apiFetch("/api/commercial/prices", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
     if (response.ok) return;
     if (response.status === 503 && responseAllowsBrowserFallback(response) && typeof window !== "undefined") {
       const key = unitKey ?? input.unitId;
@@ -62,7 +63,7 @@ class ApiCommercialRepository implements CommercialRepository {
   }
 
   async decidePrice(input:{proposalId:string;decision:"approved"|"rejected";reason:string;actorName?:string}) {
-    const response=await fetch(`/api/commercial/price-proposals/${input.proposalId}/decision`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});
+    const response=await apiFetch(`/api/commercial/price-proposals/${input.proposalId}/decision`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});
     if(response.ok)return;
     if(response.status===503&&responseAllowsBrowserFallback(response)&&typeof window!=="undefined"){
       const proposals=JSON.parse(localStorage.getItem("develocrm.price.proposals.v32")||"[]") as CommercialSnapshot["priceProposals"];
@@ -84,7 +85,7 @@ class ApiCommercialRepository implements CommercialRepository {
   }
 
   async transitionContract(input: { contractId: string; to: string; reason: string; actorName?: string }) {
-    const response = await fetch(`/api/commercial/contracts/${input.contractId}/status`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) });
+    const response = await apiFetch(`/api/commercial/contracts/${input.contractId}/status`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) });
     if (response.ok) return;
     if (response.status === 503 && responseAllowsBrowserFallback(response) && typeof window !== "undefined") {
       const current = await this.getSnapshot().then(snapshot => snapshot.contracts.find(contract => contract.id === input.contractId));

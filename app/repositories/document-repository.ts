@@ -1,6 +1,7 @@
 import type { MediaLink } from "./media-repository";
 import { mediaRepository } from "./media-repository";
 import { responseAllowsBrowserFallback } from "../lib/data-mode";
+import { apiFetch } from "../lib/api-client";
 
 export type DocumentCategory = "contract" | "floor_plan" | "project_documentation" | "client_document" | "price_document" | "reservation" | "other";
 export type DocumentStatus = "draft" | "ready" | "sent" | "negotiation" | "signed" | "archived";
@@ -54,7 +55,7 @@ class ApiDocumentRepository implements DocumentRepository {
     return response.documents.find(document=>document.id===documentId)??null;
   }
   async create(input:NewDocumentInput){
-    const response=await fetch("/api/documents",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});
+    const response=await apiFetch("/api/documents",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});
     if(response.ok)return (await response.json() as {document:DocumentRecord}).document;
     if(!(response.status===503&&responseAllowsBrowserFallback(response)))throw await responseError(response,"Dokument se nepodařilo vytvořit");
     const now=new Date().toISOString();const id=`preview-doc-${Date.now()}`;
@@ -62,21 +63,21 @@ class ApiDocumentRepository implements DocumentRepository {
     const rows=previewCreated();rows.unshift(document);localStorage.setItem("develocrm.documents.created",JSON.stringify(rows));return document;
   }
   async update(document:DocumentRecord,input:{name:string;typeCode:string;typeName:string;status:DocumentStatus;note:string}){
-    const response=await fetch(`/api/documents?documentId=${encodeURIComponent(document.id)}`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify(input)});
+    const response=await apiFetch(`/api/documents?documentId=${encodeURIComponent(document.id)}`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify(input)});
     if(response.ok)return;if(!(response.status===503&&responseAllowsBrowserFallback(response)))throw await responseError(response,"Dokument se nepodařilo upravit");
     const edits=previewEdits();const now=new Date().toISOString();const previousStatus=edits[document.id]?.status??document.status;
     const events=[{id:`${document.id}-event-${Date.now()}`,type:previousStatus===input.status?"metadata_changed":"status_changed",title:previousStatus===input.status?"Metadata dokumentu upravena":"Stav dokumentu změněn",note:input.note,previousStatus,newStatus:input.status,occurredAt:now,actor:"Iva Novotná",versionLabel:document.version},...(edits[document.id]?.events??[])];
     edits[document.id]={...input,updatedAt:now,events};localStorage.setItem("develocrm.documents.edits",JSON.stringify(edits));
   }
   async addVersion(document:DocumentRecord,input:{label:string;status:DocumentStatus;note:string;author?:string}){
-    const response=await fetch(`/api/documents?documentId=${encodeURIComponent(document.id)}&action=version`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});
+    const response=await apiFetch(`/api/documents?documentId=${encodeURIComponent(document.id)}&action=version`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});
     if(response.ok)return;if(!(response.status===503&&responseAllowsBrowserFallback(response)))throw await responseError(response,"Verzi dokumentu se nepodařilo vytvořit");
     const edits=previewEdits();const now=new Date().toISOString();const version={id:`${document.id}-${input.label}-${Date.now()}`,identifier:`${document.id}-${input.label}`,label:input.label,status:input.status,note:input.note,fileSize:null,createdAt:now,author:input.author??"Iva Novotná"};
     const event={id:`${document.id}-event-${Date.now()}`,type:"version_created",title:`Vytvořena nová verze ${input.label}`,note:input.note,previousStatus:document.status,newStatus:input.status,occurredAt:now,actor:input.author??"Iva Novotná",versionLabel:input.label};
     edits[document.id]={...(edits[document.id]??{}),status:input.status,version:input.label,updatedAt:now,versions:[version,...(edits[document.id]?.versions??[])],events:[event,...(edits[document.id]?.events??[])]};localStorage.setItem("develocrm.documents.edits",JSON.stringify(edits));
   }
   async connection(signal?:AbortSignal){
-    const response=await fetch("/api/documents?connection=sharepoint",{signal,cache:"no-store"});
+    const response=await apiFetch("/api/documents?connection=sharepoint",{signal,cache:"no-store"});
     if(!response.ok)return previewConnection;
     return ((await response.json()) as {connection:DocumentConnectionState}).connection;
   }
@@ -84,7 +85,7 @@ class ApiDocumentRepository implements DocumentRepository {
 
 async function requestDocuments(params:Record<string,string|undefined>,signal?:AbortSignal):Promise<DocumentListResponse>{
   const search=new URLSearchParams();for(const [key,value] of Object.entries(params))if(value)search.set(key,value);
-  const response=await fetch(`/api/documents?${search}`,{signal,cache:"no-store"});
+  const response=await apiFetch(`/api/documents?${search}`,{signal,cache:"no-store"});
   if(!response.ok)throw new Error("Dokumenty se nepodařilo načíst");
   return response.json() as Promise<DocumentListResponse>;
 }

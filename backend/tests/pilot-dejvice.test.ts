@@ -2,15 +2,20 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
+import {renderDejviceImport} from "../src/imports/dejvice.js";
 
 const migrations = ["0001_block_a_identity.sql","0002_block_b_inventory.sql","0003_block_c_sales.sql","0004_block_d_pricing_contracts.sql","0005_pilot_import_compatibility.sql","0006_crud_operations.sql"];
 const seeds = ["0001_preview_block_b.sql","0002_preview_block_c.sql","0003_preview_block_d.sql","0004_pilot_rezidence_dejvice.sql"];
 const tenant = "d0000000-0000-4000-8000-000000000001";
+const membership = "d3000000-0000-4000-8000-000000000001";
 
 async function pilotDatabase() {
   const db = new PGlite();
   for (const name of migrations) await db.exec(await readFile(new URL(`../migrations/${name}`, import.meta.url), "utf8"));
-  for (const name of seeds) await db.exec(await readFile(new URL(`../seeds/${name}`, import.meta.url), "utf8"));
+  for (const name of seeds) {
+    const source=await readFile(new URL(`../seeds/${name}`, import.meta.url),"utf8");
+    await db.exec(name==="0004_pilot_rezidence_dejvice.sql"?`BEGIN;${renderDejviceImport(source,{tenantId:tenant,membershipId:membership})}COMMIT;`:source);
+  }
   return db;
 }
 
@@ -29,8 +34,8 @@ test("pilot import vytvoří přesně jednu Rezidenci Dejvice a přesné zdrojov
 
 test("pilot import je idempotentní a nevytváří duplicitní canonical parties ani vazby", async () => {
   const db = await pilotDatabase();
-  const seed = await readFile(new URL("../seeds/0004_pilot_rezidence_dejvice.sql",import.meta.url),"utf8");
-  await db.exec(seed);
+  const seed = renderDejviceImport(await readFile(new URL("../seeds/0004_pilot_rezidence_dejvice.sql",import.meta.url),"utf8"),{tenantId:tenant,membershipId:membership});
+  await db.exec(`BEGIN;${seed}COMMIT;`);
   const project=(await db.query<{id:string}>("SELECT id FROM projects WHERE tenant_id=$1 AND code='DEJ'",[tenant])).rows[0];
   assert.equal((await db.query("SELECT id FROM units WHERE tenant_id=$1 AND project_id=$2 AND archived_at IS NULL",[tenant,project.id])).rows.length,19);
   assert.equal((await db.query("SELECT id FROM party_external_identifiers WHERE tenant_id=$1 AND source_system='rezidence_dejvice_excel'",[tenant])).rows.length,10);

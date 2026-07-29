@@ -3,7 +3,7 @@ import type { Database } from "../database.js";
 import type { EntraIdentity } from "../auth/entra.js";
 import type { UserIdentity } from "./types.js";
 
-const defaultRoles = [
+export const defaultRoles = [
   { code: "executive", name: "Jednatel" },
   { code: "admin", name: "Admin" },
   { code: "project_manager", name: "Project Manager" },
@@ -13,7 +13,7 @@ const defaultRoles = [
   { code: "handover_complaints", name: "Předání a reklamace" },
   { code: "read_only", name: "Pouze pro čtení" },
 ] as const;
-const defaultPermissionCodes:Record<(typeof defaultRoles)[number]["code"],string[]>={
+export const defaultPermissionCodes:Record<(typeof defaultRoles)[number]["code"],string[]>={
   executive:["projects.read","projects.create","projects.update","units.read","units.update","clients.read_all","clients.read_contact_details","contracts.read","documents.read","prices.read","prices.propose","prices.approve","discounts.approve","commercial_exceptions.approve","payments.read","handovers.read","tasks.read","exports.run","audit.read"],
   admin:["projects.read","projects.create","projects.update","units.read","units.update","units.update_sales_status","accessories.read","accessories.update","clients.read_all","clients.read_contact_details","clients.create","clients.update","interests.manage","sales_cases.read","sales_cases.manage","holds.create","holds.cancel","holds.confirm","contracts.read","contracts.create","contracts.update","contracts.mark_ready","contracts.record_signature","documents.read","documents.create","documents.update","documents.review","documents.archive","prices.read","prices.propose","payments.read","payments.manage","handovers.read","handovers.manage","complaints.read","complaints.manage","tasks.read","tasks.manage","users.manage","roles.manage","system.manage","integrations.manage","exports.run","audit.read"],
   project_manager:["projects.read","projects.update","units.read","units.update","units.update_sales_status","accessories.read","accessories.update","clients.read_all","clients.read_contact_details","clients.create","clients.update","interests.manage","sales_cases.read","sales_cases.manage","holds.create","holds.cancel","holds.confirm","contracts.read","contracts.create","contracts.update","documents.read","documents.create","documents.update","prices.read","prices.propose","payments.read","handovers.read","handovers.manage","tasks.read","tasks.manage"],

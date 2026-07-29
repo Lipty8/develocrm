@@ -1,3 +1,5 @@
+import { apiFetch } from "../lib/api-client";
+
 export type MediaLink = { id: string; entityType: "project" | "unit"; entityId: string; kind: "cover" | "floorplan"; fileName: string; mimeType: string; url: string };
 
 export interface MediaRepository {
@@ -35,7 +37,7 @@ async function prepareMediaUpload(file: File): Promise<File> {
 
 class ApiMediaRepository implements MediaRepository {
   async get(entityType: "project" | "unit", entityId: string, signal?: AbortSignal) {
-    const response = await fetch(`/api/media?entityType=${entityType}&entityId=${encodeURIComponent(entityId)}`, { signal, cache: "no-store" });
+    const response = await apiFetch(`/api/media?entityType=${entityType}&entityId=${encodeURIComponent(entityId)}`, { signal, cache: "no-store" });
     if (!response.ok) return null;
     const payload = await response.json() as { media: MediaLink[] };
     return payload.media[0] ?? null;
@@ -44,7 +46,7 @@ class ApiMediaRepository implements MediaRepository {
     const prepared = await prepareMediaUpload(file);
     const form = new FormData();
     form.set("entityType", entityType); form.set("entityId", entityId); form.set("kind", kind); form.set("file", prepared);
-    const response = await fetch("/api/media", { method: "POST", body: form });
+    const response = await apiFetch("/api/media", { method: "POST", body: form });
     const payload = await response.json().catch(() => ({})) as { media?: MediaLink; error?: string };
     if (!response.ok || !payload.media) throw new Error(payload.error || "Obrázek se nepodařilo uložit");
     return payload.media;

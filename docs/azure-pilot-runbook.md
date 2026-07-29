@@ -1,5 +1,8 @@
 # DeveloCRM – Azure pilot runbook
 
+Aktuální přesný postup autentizace, bootstrapu, importu a migračního jobu je v
+[`v41-pilot-bootstrap-and-deployment.md`](v41-pilot-bootstrap-and-deployment.md).
+
 ## 1. Nejjednodušší bezpečná topologie pilotu
 
 - Azure Container Apps: jeden backendový kontejner, min. 1 replika.
@@ -27,6 +30,7 @@ DEVELOCRM_ENV=pilot
 DATABASE_URL=<Key Vault secret reference>
 ENTRA_CLIENT_ID=<API application/client ID>
 ENTRA_ALLOWED_TENANT_IDS=<Entra tenant UUID>
+ENTRA_REQUIRED_SCOPE=access_as_user
 CORS_ALLOWED_ORIGINS=https://<pilot-frontend>
 APPLICATIONINSIGHTS_CONNECTION_STRING=<secret/reference>
 PORT=3001
@@ -39,6 +43,10 @@ Frontend:
 DEVELOCRM_DATA_MODE=api
 DEVELOCRM_API_URL=https://<container-app-fqdn>
 DEVELOCRM_TENANT_ID=<workspace UUID>
+DEVELOCRM_ENTRA_CLIENT_ID=<SPA application/client ID>
+DEVELOCRM_ENTRA_TENANT_ID=<Entra tenant UUID>
+DEVELOCRM_ENTRA_AUTHORITY=https://login.microsoftonline.com/<Entra tenant UUID>
+DEVELOCRM_API_SCOPE=api://<API application/client ID>/access_as_user
 ```
 
 `DEVELOCRM_DATA_MODE=browser` je povolen pouze lokálně nebo v explicitním demo prostředí.

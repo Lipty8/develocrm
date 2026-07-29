@@ -1,4 +1,4 @@
-import { createRemoteJWKSet, decodeJwt, jwtVerify } from "jose";
+import { createRemoteJWKSet, decodeJwt, jwtVerify, type JWTVerifyGetKey } from "jose";
 
 export type EntraIdentity = {
   issuer: string;
@@ -11,11 +11,13 @@ export type EntraIdentity = {
 const tenantIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export class EntraTokenVerifier {
-  private readonly jwks = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
+  private readonly jwks = new Map<string, JWTVerifyGetKey>();
 
   constructor(
     private readonly audience: string,
     private readonly allowedTenantIds: Set<string>,
+    private readonly requiredScope = "access_as_user",
+    private readonly jwkSetFactory?: (tenantId: string) => JWTVerifyGetKey,
   ) {}
 
   async verify(authorizationHeader?: string): Promise<EntraIdentity> {
@@ -31,12 +33,17 @@ export class EntraTokenVerifier {
     const issuer = `${authority}/v2.0`;
     let jwks = this.jwks.get(entraTenantId);
     if (!jwks) {
-      jwks = createRemoteJWKSet(new URL(`${authority}/discovery/v2.0/keys`));
+      jwks = this.jwkSetFactory?.(entraTenantId) ??
+        createRemoteJWKSet(new URL(`${authority}/discovery/v2.0/keys`));
       this.jwks.set(entraTenantId, jwks);
     }
     const { payload } = await jwtVerify(token, jwks, { audience: this.audience, issuer });
-    const subject = typeof payload.oid === "string" ? payload.oid : payload.sub;
-    if (!subject) throw new Error("Token neobsahuje stabilní identifikátor uživatele");
+    const scopes = typeof payload.scp === "string" ? payload.scp.split(/\s+/).filter(Boolean) : [];
+    if (!scopes.includes(this.requiredScope)) {
+      throw new Error(`Token neobsahuje delegated scope ${this.requiredScope}`);
+    }
+    const subject = typeof payload.oid === "string" ? payload.oid : "";
+    if (!subject) throw new Error("Token neobsahuje stabilní oid uživatele");
     const email = firstString(payload.preferred_username, payload.email, payload.upn);
     if (!email) throw new Error("Token neobsahuje e-mail uživatele");
     const displayName = firstString(payload.name, email) as string;

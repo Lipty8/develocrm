@@ -16,6 +16,8 @@ import { HandoverRepository } from "./handovers/repository.js";
 import { PaymentRepository } from "./payments/repository.js";
 import { PaymentService } from "./payments/service.js";
 
+const verifiedIdentities = new WeakMap<FastifyRequest, EntraIdentity>();
+
 export function buildApp(dependencies: { database: Database; verifier: EntraTokenVerifier; corsAllowedOrigins?:Set<string> }): FastifyInstance {
   const app = Fastify({ logger: true,trustProxy:true });
   const repository = new IamRepository(dependencies.database);
@@ -45,6 +47,17 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
     else if(++current.count>300)return reply.code(429).send({error:"Příliš mnoho požadavků",correlationId:request.id});
   });
   app.options("*",async(request,reply)=>reply.header("access-control-allow-methods","GET,POST,PATCH,DELETE,OPTIONS").header("access-control-allow-headers","authorization,content-type,x-tenant-id,x-correlation-id").code(204).send());
+  app.addHook("preHandler",async(request,reply)=>{
+    if(!request.url.startsWith("/v1/"))return;
+    try{
+      verifiedIdentities.set(request,await dependencies.verifier.verify(request.headers.authorization));
+    }catch(error){
+      return reply.code(401).send({
+        error:error instanceof Error?error.message:"Neplatné přihlášení",
+        correlationId:request.id,
+      });
+    }
+  });
   app.get("/health", async () => ({ status: "ok", service: "develocrm-api" }));
   app.get("/ready", async (_request,reply) => {
     try {
@@ -402,7 +415,7 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
 }
 
 async function authenticate(request: FastifyRequest, verifier: EntraTokenVerifier): Promise<EntraIdentity> {
-  return verifier.verify(request.headers.authorization);
+  return verifiedIdentities.get(request) ?? verifier.verify(request.headers.authorization);
 }
 
 function headerValue(value: string | string[] | undefined): string | undefined {
