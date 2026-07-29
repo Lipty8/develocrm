@@ -1,6 +1,7 @@
 import type { ContractHistoryEvent, ContractRecord, PriceHistoryRecord } from "../crm-data";
 import { contractStatusLabel, isValidContractTransition, recommendedContractAction } from "../../backend/src/shared/contract-workflow";
 import { recordPreviewActivity } from "./activity-repository";
+import { responseAllowsBrowserFallback } from "../lib/data-mode";
 
 export type CommercialSnapshot = {
   currentPrices: Record<string, number>;
@@ -47,7 +48,7 @@ class ApiCommercialRepository implements CommercialRepository {
     const { unitKey, actorName, ...payload } = input;
     const response = await fetch("/api/commercial/prices", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
     if (response.ok) return;
-    if (response.status === 503 && typeof window !== "undefined") {
+    if (response.status === 503 && responseAllowsBrowserFallback(response) && typeof window !== "undefined") {
       const key = unitKey ?? input.unitId;
       const author = actorName ?? "Iva Novotná";
       const proposals=JSON.parse(localStorage.getItem("develocrm.price.proposals.v32")||"[]");
@@ -63,7 +64,7 @@ class ApiCommercialRepository implements CommercialRepository {
   async decidePrice(input:{proposalId:string;decision:"approved"|"rejected";reason:string;actorName?:string}) {
     const response=await fetch(`/api/commercial/price-proposals/${input.proposalId}/decision`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});
     if(response.ok)return;
-    if(response.status===503&&typeof window!=="undefined"){
+    if(response.status===503&&responseAllowsBrowserFallback(response)&&typeof window!=="undefined"){
       const proposals=JSON.parse(localStorage.getItem("develocrm.price.proposals.v32")||"[]") as CommercialSnapshot["priceProposals"];
       const proposal=proposals?.find(item=>item.id===input.proposalId);
       if(!proposal||proposal.status!=="pending")throw new Error("Čekající návrh ceny nebyl nalezen");
@@ -85,7 +86,7 @@ class ApiCommercialRepository implements CommercialRepository {
   async transitionContract(input: { contractId: string; to: string; reason: string; actorName?: string }) {
     const response = await fetch(`/api/commercial/contracts/${input.contractId}/status`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) });
     if (response.ok) return;
-    if (response.status === 503 && typeof window !== "undefined") {
+    if (response.status === 503 && responseAllowsBrowserFallback(response) && typeof window !== "undefined") {
       const current = await this.getSnapshot().then(snapshot => snapshot.contracts.find(contract => contract.id === input.contractId));
       if (!current) throw new Error("Smlouva nebyla v preview nalezena");
       const from = current.statusCode ?? current.state;

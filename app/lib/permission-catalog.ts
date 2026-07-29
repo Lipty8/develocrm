@@ -29,6 +29,7 @@ const definitions: PermissionDefinition[] = [
 
   {key:"project.read",name:"Zobrazit projekty",description:"Uživatel uvidí projekty a jejich strukturu v povoleném rozsahu.",category:"Projekty",operation:"view",supportedScopes:project},
   {key:"projects.read",name:"Zobrazit projekty",description:"Uživatel uvidí projekty a jejich základní údaje v povoleném rozsahu.",category:"Projekty",operation:"view",supportedScopes:project},
+  {key:"projects.create",name:"Zakládat projekty",description:"Uživatel může založit nový projekt v pracovním prostoru a nastavit jeho základní údaje.",category:"Projekty",operation:"create",supportedScopes:workspace},
   {key:"project.manage",name:"Spravovat projekty",description:"Uživatel může spravovat základní údaje a strukturu projektů.",category:"Projekty",operation:"manage",supportedScopes:project},
   {key:"projects.update",name:"Upravovat projekty",description:"Uživatel může upravovat základní údaje přiřazených projektů.",category:"Projekty",operation:"update",supportedScopes:project},
   {key:"projects.change_manager",name:"Měnit vedoucího projektu",description:"Uživatel může změnit odpovědného vedoucího projektu.",category:"Projekty",operation:"update",supportedScopes:project},

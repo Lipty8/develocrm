@@ -1,5 +1,6 @@
 import type { MediaLink } from "./media-repository";
 import { mediaRepository } from "./media-repository";
+import { responseAllowsBrowserFallback } from "../lib/data-mode";
 
 export type DocumentCategory = "contract" | "floor_plan" | "project_documentation" | "client_document" | "price_document" | "reservation" | "other";
 export type DocumentStatus = "draft" | "ready" | "sent" | "negotiation" | "signed" | "archived";
@@ -55,21 +56,21 @@ class ApiDocumentRepository implements DocumentRepository {
   async create(input:NewDocumentInput){
     const response=await fetch("/api/documents",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});
     if(response.ok)return (await response.json() as {document:DocumentRecord}).document;
-    if(response.status!==503)throw await responseError(response,"Dokument se nepodařilo vytvořit");
+    if(!(response.status===503&&responseAllowsBrowserFallback(response)))throw await responseError(response,"Dokument se nepodařilo vytvořit");
     const now=new Date().toISOString();const id=`preview-doc-${Date.now()}`;
     const document:DocumentRecord={id,projectId:input.projectId,projectName:input.projectName,name:input.name,category:categoryForType(input.typeCode),typeCode:input.typeCode,typeName:input.typeName,status:input.status,note:input.note??null,mimeType:"application/octet-stream",fileSize:null,storageProvider:"preview",webUrl:null,etag:null,sensitivity:"normal",createdAt:now,updatedAt:now,author:input.author??"Iva Novotná",version:"v1",units:input.unit?[input.unit]:[],parties:input.party?[input.party]:[],contracts:input.contract?[input.contract]:[],salesCases:input.salesCase?[input.salesCase]:[],versions:[{id:`${id}-v1`,identifier:`${id}-v1`,label:"v1",status:input.status,note:input.note??null,fileSize:null,createdAt:now,author:input.author??"Iva Novotná"}],events:[{id:`${id}-e1`,type:"created",title:"Dokument vytvořen",note:input.note??null,previousStatus:null,newStatus:input.status,occurredAt:now,actor:input.author??"Iva Novotná",versionLabel:"v1"}]};
     const rows=previewCreated();rows.unshift(document);localStorage.setItem("develocrm.documents.created",JSON.stringify(rows));return document;
   }
   async update(document:DocumentRecord,input:{name:string;typeCode:string;typeName:string;status:DocumentStatus;note:string}){
     const response=await fetch(`/api/documents?documentId=${encodeURIComponent(document.id)}`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify(input)});
-    if(response.ok)return;if(response.status!==503)throw await responseError(response,"Dokument se nepodařilo upravit");
+    if(response.ok)return;if(!(response.status===503&&responseAllowsBrowserFallback(response)))throw await responseError(response,"Dokument se nepodařilo upravit");
     const edits=previewEdits();const now=new Date().toISOString();const previousStatus=edits[document.id]?.status??document.status;
     const events=[{id:`${document.id}-event-${Date.now()}`,type:previousStatus===input.status?"metadata_changed":"status_changed",title:previousStatus===input.status?"Metadata dokumentu upravena":"Stav dokumentu změněn",note:input.note,previousStatus,newStatus:input.status,occurredAt:now,actor:"Iva Novotná",versionLabel:document.version},...(edits[document.id]?.events??[])];
     edits[document.id]={...input,updatedAt:now,events};localStorage.setItem("develocrm.documents.edits",JSON.stringify(edits));
   }
   async addVersion(document:DocumentRecord,input:{label:string;status:DocumentStatus;note:string;author?:string}){
     const response=await fetch(`/api/documents?documentId=${encodeURIComponent(document.id)}&action=version`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});
-    if(response.ok)return;if(response.status!==503)throw await responseError(response,"Verzi dokumentu se nepodařilo vytvořit");
+    if(response.ok)return;if(!(response.status===503&&responseAllowsBrowserFallback(response)))throw await responseError(response,"Verzi dokumentu se nepodařilo vytvořit");
     const edits=previewEdits();const now=new Date().toISOString();const version={id:`${document.id}-${input.label}-${Date.now()}`,identifier:`${document.id}-${input.label}`,label:input.label,status:input.status,note:input.note,fileSize:null,createdAt:now,author:input.author??"Iva Novotná"};
     const event={id:`${document.id}-event-${Date.now()}`,type:"version_created",title:`Vytvořena nová verze ${input.label}`,note:input.note,previousStatus:document.status,newStatus:input.status,occurredAt:now,actor:input.author??"Iva Novotná",versionLabel:input.label};
     edits[document.id]={...(edits[document.id]??{}),status:input.status,version:input.label,updatedAt:now,versions:[version,...(edits[document.id]?.versions??[])],events:[event,...(edits[document.id]?.events??[])]};localStorage.setItem("develocrm.documents.edits",JSON.stringify(edits));

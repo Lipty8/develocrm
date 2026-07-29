@@ -248,6 +248,8 @@ export default function CRMApp() {
   const [identitySession, setIdentitySession] = useState<IdentitySession>(prototypeSession);
   const [catalogVersion, setCatalogVersion] = useState(0);
   const [catalogReloadKey, setCatalogReloadKey] = useState(0);
+  const [connectionRetryKey,setConnectionRetryKey]=useState(0);
+  const [startupError,setStartupError]=useState<string|null>(null);
   const [clientDataVersion, setClientDataVersion] = useState(0);
   const [clientReloadKey, setClientReloadKey] = useState(0);
   const [, setCommercialDataVersion] = useState(0);
@@ -281,6 +283,7 @@ export default function CRMApp() {
   const [taskScope,setTaskScope]=useState<"mine"|"all"|"completed">("mine");
   const [taskLoading,setTaskLoading]=useState(false);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
+  const [newProjectOpen,setNewProjectOpen]=useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [projectEdit, setProjectEdit] = useState<ProjectRecord | null>(null);
   const [unitEdit, setUnitEdit] = useState<UnitRecord | null>(null);
@@ -353,9 +356,9 @@ export default function CRMApp() {
 
   useEffect(() => {
     const controller = new AbortController();
-    identityRepository.getSession(controller.signal).then(session=>setIdentitySession({...session,user:profileRepository.hydrate(session.user)})).catch(() => undefined);
+    identityRepository.getSession(controller.signal).then(session=>{setIdentitySession({...session,user:profileRepository.hydrate(session.user)});setStartupError(null);}).catch(error=>{if(!controller.signal.aborted)setStartupError(error instanceof Error?error.message:"Přihlášení není dostupné");});
     return () => controller.abort();
-  }, []);
+  }, [connectionRetryKey]);
 
   useEffect(()=>{const controller=new AbortController();documentRepository.connection(controller.signal).then(setDocumentConnection).catch(()=>setDocumentConnection(previewConnection));return()=>controller.abort();},[]);
 
@@ -397,9 +400,9 @@ export default function CRMApp() {
       setUnitDetail((current) => current ? catalog.units.find((unit) => unit.id === current.id) ?? current : current);
       setUnitPreview((current) => current ? catalog.units.find((unit) => unit.id === current.id) ?? current : current);
       setCatalogVersion((version) => version + 1);
-    }).catch(() => undefined);
+    }).catch(error=>{if(!controller.signal.aborted)setStartupError(error instanceof Error?error.message:"Data aplikace nejsou dostupná");});
     return () => controller.abort();
-  }, [catalogReloadKey]);
+  }, [catalogReloadKey,connectionRetryKey]);
 
   useEffect(()=>{const controller=new AbortController();taskRepository.list(taskScope,identitySession.user.displayName,controller.signal).then(saved=>{setTaskRows(saved);if(taskScope==="mine")setTaskOpenCount(saved.filter(item=>!item.done).length);else void taskRepository.list("mine",identitySession.user.displayName,controller.signal).then(mine=>setTaskOpenCount(mine.filter(item=>!item.done).length));}).catch(()=>{const fallback=taskScope==="completed"?initialTasks.filter(item=>item.done):taskScope==="all"?initialTasks:initialTasks.filter(item=>!item.done&&item.owner==="Iva");setTaskRows(fallback);setTaskOpenCount(initialTasks.filter(item=>!item.done&&item.owner==="Iva").length);}).finally(()=>setTaskLoading(false));return()=>controller.abort();},[taskScope,identitySession.user.displayName]);
 
@@ -502,6 +505,8 @@ export default function CRMApp() {
     setTaskRows((rows) => [created, ...rows]);if(created.owner==="Iva"||created.owner===identitySession.user.displayName)setTaskOpenCount(count=>count+1);setNewTaskOpen(false);notify(`Úkol „${value.title}“ byl vytvořen`);
     if(value.objectType==="unit"){recordPreviewActivity({unitKey:value.objectId,title:"Vytvořen úkol",detail:`${identitySession.user.displayName} · ${value.title}`,action:"task.created"});setActivityReloadKey(key=>key+1);}
   };
+
+  if(startupError)return <div className="service-unavailable"><div className="card"><span className="attention-type danger"><AlertTriangle size={22}/></span><h1>DeveloCRM se nemůže připojit</h1><p>{startupError}</p><p>Vaše data nebyla nahrazena lokální kopií. Zkontrolujte připojení nebo zkuste načtení zopakovat.</p><button className="primary-button" onClick={()=>{setStartupError(null);setConnectionRetryKey(key=>key+1);}}><Activity size={16}/> Zkusit znovu</button></div></div>;
 
   return (
     <div className="crm-shell">
@@ -621,7 +626,7 @@ export default function CRMApp() {
                 </div>
                 <div className="page-actions">
                   {page === "projects" && <button className="secondary-button" onClick={() => notify("Ceník se připravuje ke stažení")}><Download size={17} /> Export ceníku</button>}
-                  {page !== "admin"&&page!=="payments"&&<button className="primary-button" onClick={() => page === "tasks" || page === "dashboard" ? setNewTaskOpen(true) : page==="contracts"&&searchParams.get("view")==="documents"?setNewDocumentOpen(true):notify(page === "clients" ? "Formulář nového klienta je připraven" : "Nový záznam lze nyní založit")}>
+                  {page !== "admin"&&page!=="payments"&&(page!=="projects"||can("projects.create"))&&<button className="primary-button" onClick={() => page === "tasks" || page === "dashboard" ? setNewTaskOpen(true) : page==="projects"?setNewProjectOpen(true):page==="contracts"&&searchParams.get("view")==="documents"?setNewDocumentOpen(true):notify(page === "clients" ? "Formulář nového klienta je připraven" : "Nový záznam lze nyní založit")}>
                     <Plus size={18} /> {page === "tasks" ? "Nový úkol" : page === "clients" ? "Nový klient" : page === "contracts" ? searchParams.get("view")==="documents"?"Nový dokument":"Nová smlouva" : page === "payments" ? "Přidat platbu" : page === "handovers" ? "Naplánovat předání" : page === "projects" ? "Nový projekt" : "Přidat úkol"}
                   </button>}
                 </div>
@@ -643,6 +648,7 @@ export default function CRMApp() {
       {unitPreview && <UnitPreview unit={unitPreview} close={() => setUnitPreview(null)} open={() => openUnit(unitPreview)} previous={() => browsePreview(-1)} next={() => browsePreview(1)} position={Math.max(1, filteredUnits.findIndex((item) => item.id === unitPreview.id) + 1)} total={filteredUnits.length} />}
       {unitPreview && <button className="panel-scrim" aria-label="Zavřít náhled" onClick={() => setUnitPreview(null)} />}
       {newTaskOpen && <TaskModal close={() => setNewTaskOpen(false)} save={saveTask} memberships={[{id:"",name:identitySession.user.displayName},...catalogMemberships.filter(item=>item.name!==identitySession.user.displayName)]} defaultUnit={unitDetail?.id} />}
+      {newProjectOpen&&<NewProjectModal memberships={catalogMemberships} close={()=>setNewProjectOpen(false)} save={async value=>{const created=await catalogRepository.createProject({...value,slug:slugifyProject(value.name)});setNewProjectOpen(false);notify(`Projekt „${value.name}“ byl založen`);refreshCatalog();router.push(projectRoute(created.id));}}/>}
       {profileOpen&&<ProfileModal session={identitySession} close={()=>setProfileOpen(false)} openSettings={()=>{setProfileOpen(false);setProfileSettingsOpen(true);}} openAdmin={()=>{setProfileOpen(false);router.push("/admin/users");}} canAdmin={can("users.manage")||identitySession.workspace.roles.includes("admin")}/>}
       {profileSettingsOpen&&<ProfileSettingsModal user={identitySession.user} close={()=>setProfileSettingsOpen(false)} save={async value=>{const user=await profileRepository.update(value);setIdentitySession(current=>({...current,user}));setProfileSettingsOpen(false);notify("Nastavení profilu bylo uloženo");}}/>}
       {issueOpen&&<IssueReportModal page={page} close={()=>setIssueOpen(false)} save={async value=>{const issues=JSON.parse(localStorage.getItem("develocrm-issues")??"[]");issues.unshift({id:crypto.randomUUID(),...value,route:pathname,createdAt:new Date().toISOString(),status:"new"});localStorage.setItem("develocrm-issues",JSON.stringify(issues));setIssueOpen(false);notify("Problém byl odeslán interní podpoře");}}/>}
@@ -704,7 +710,7 @@ function Dashboard({ navigate, openUnit, taskRows, toggleTask }: { navigate: (pa
             <button key={project.name} onClick={() => navigate("projects")} className="project-row">
               <span className={`project-avatar ${project.color}`}>{project.name.split(" ").map((part) => part[0]).join("").slice(0, 2)}</span>
               <span className="project-copy"><strong>{project.name}</strong><small>{project.location} · {project.stage}</small></span>
-              <span className="project-progress"><small>{project.sold} z {project.units} prodáno</small><span><i style={{ width: `${(project.sold / project.units) * 100}%` }} /></span></span>
+              <span className="project-progress"><small>{project.sold} z {project.units} prodáno</small><span><i style={{ width: `${project.units?project.sold/project.units*100:0}%` }} /></span></span>
               <span className="project-attention">{project.attention}<small>k řešení</small></span>
               <ChevronRight size={18} />
             </button>
@@ -768,7 +774,7 @@ function Projects({ openProject }: { openProject: (project: ProjectRecord) => vo
                 <span><i className="sold" /><strong>{project.sold}</strong><small>prodaných</small></span>
                 <span><strong>{project.units}</strong><small>celkem</small></span>
               </div>
-              <div className="large-progress"><span><small>Prodejnost projektu</small><strong>{Math.round((project.sold + project.handedOver) / project.units * 100)} %</strong></span><div><i style={{ width: `${(project.sold + project.handedOver) / project.units * 100}%` }} /></div></div>
+              <div className="large-progress"><span><small>Prodejnost projektu</small><strong>{project.units?Math.round((project.sold + project.handedOver) / project.units * 100):0} %</strong></span><div><i style={{ width: `${project.units?(project.sold + project.handedOver) / project.units * 100:0}%` }} /></div></div>
               <div className="project-card-meta"><span><small>VEDOUCÍ PROJEKTU</small><strong>{project.manager}</strong></span><span><small>PLÁNOVANÉ DOKONČENÍ</small><strong>{project.plannedHandover}</strong></span></div>
             </div>
           </article>
@@ -821,7 +827,7 @@ function ProjectDetail({ project, tab, onTab, onBack, notify, openClient,openCon
   const projectContracts = contracts.filter((contract) => projectMatchesName(project,contract.project));
   const projectPayments = payments.filter((payment) => projectMatchesName(project,payment.project));
   const projectHandovers = units.filter((unit) => unitBelongsToProject(unit,project) && unit.handover !== "Neplánováno");
-  const salePercent = Math.round((project.sold + project.handedOver) / project.units * 100);
+  const salePercent = project.units?Math.round((project.sold + project.handedOver) / project.units * 100):0;
   const soldAndHandedOver = project.sold + project.handedOver;
   const unitDistribution = [
     { label: "Volné", value: project.available, className: "available" },
@@ -836,7 +842,7 @@ function ProjectDetail({ project, tab, onTab, onBack, notify, openClient,openCon
     { id: "clients", label: "Klienti", icon: Users, count: projectClients.length },
     { id: "contracts", label: "Smlouvy", icon: FileText, count: projectContracts.length },
     { id: "payments", label: "Platby", icon: CircleDollarSign, count: projectPayments.length },
-    { id: "changes", label: "Klientské změny", icon: SlidersHorizontal, count: 4 },
+    { id: "changes", label: "Klientské změny", icon: SlidersHorizontal, count: 0 },
     { id: "handovers", label: "Předání", icon: KeyRound, count: projectHandovers.length },
     { id: "documents", label: "Dokumenty", icon: FolderOpen },
   ];
@@ -861,7 +867,7 @@ function ProjectDetail({ project, tab, onTab, onBack, notify, openClient,openCon
           </div>
           <div className="project-unit-distribution">
             <div className="project-distribution-head"><div><small>STAV JEDNOTEK</small><strong>Rozložení projektu</strong></div><span>{project.units} jednotek celkem</span></div>
-            <div className="project-distribution-bar" role="img" aria-label={`Rozložení ${project.units} jednotek`}>{unitDistribution.map((item) => <i key={item.label} className={item.className} style={{ width: `${item.value / project.units * 100}%` }} title={`${item.label}: ${item.value}`} />)}</div>
+            <div className="project-distribution-bar" role="img" aria-label={`Rozložení ${project.units} jednotek`}>{unitDistribution.map((item) => <i key={item.label} className={item.className} style={{ width: `${project.units?item.value/project.units*100:0}%` }} title={`${item.label}: ${item.value}`} />)}</div>
             <div className="project-distribution-legend">{unitDistribution.map((item) => <span key={item.label}><i className={item.className} /><span><small>{item.label}</small><strong>{item.value}</strong></span></span>)}</div>
           </div>
         </div>
@@ -880,6 +886,7 @@ function ProjectDetail({ project, tab, onTab, onBack, notify, openClient,openCon
 }
 
 function ProjectOverview({ project, onTab }: { project: ProjectRecord; onTab: (tab: ProjectTab) => void }) {
+  if(project.units===0)return <div className="project-empty-onboarding card"><span className="metric-icon green"><Building2 size={22}/></span><div><h2>Projekt je založený</h2><p>Zatím nemá strukturu ani jednotky. Souhrny se začnou počítat až ze skutečně vložených dat.</p><ol><li><CheckCircle2 size={16}/> Základní údaje projektu</li><li><Building2 size={16}/> Přidat etapy, budovy a sekce</li><li><Home size={16}/> Importovat nebo založit jednotky</li><li><KeyRound size={16}/> Doplnit příslušenství a ceny</li><li><Users size={16}/> Přiřadit uživatele projektu</li></ol><button className="primary-button" onClick={()=>onTab("units")}><Home size={16}/> Pokračovat k jednotkám</button></div></div>;
   const projectTasks = initialTasks.filter((task) => projectMatchesName(project,task.project));
   const projectPayments = payments.filter((payment) => projectMatchesName(project,payment.project));
   const projectHandovers = units.filter((unit) => unitBelongsToProject(unit,project) && unit.handover !== "Neplánováno");
@@ -951,10 +958,8 @@ function ProjectPayments({ project, openUnit }: { project: ProjectRecord; openUn
   return <PaymentContextTable title="Platby projektu" description="Splátkový kalendář a skutečné úhrady z centrálního platebního repository." filters={{project:project.name}} openUnit={openUnit} project={project}/>;
 }
 
-function ProjectClientChanges({ project, openUnit, notify }: { project: ProjectRecord; openUnit: (unit: UnitRecord) => void; notify: (message: string) => void }) {
-  const projectUnits = units.filter((unit) => unitBelongsToProject(unit,project) && unit.client).slice(0, 4);
-  const states = ["Ke schválení", "Schváleno", "V realizaci", "Uzavřeno"];
-  return <ProjectModuleFrame project={project} title="Klientské změny" description="Požadavky klientů na standardy a provedení jednotek." action="Nový požadavek" onAction={() => notify("Formulář klientské změny je připraven")}><table className="data-table"><thead><tr><th>Jednotka</th><th>Klient</th><th>Požadavek</th><th>Termín rozhodnutí</th><th>Dopad do ceny</th><th>Stav</th><th /></tr></thead><tbody>{projectUnits.map((unit, index) => <tr key={unit.id} onClick={() => openUnit(unit)}><td><strong>{unit.id}</strong></td><td>{unit.client}</td><td>{["Změna podlahy v obytných místnostech", "Doplnění elektro vývodů", "Úprava dispozice koupelny", "Příprava pro venkovní žaluzie"][index]}</td><td>{24 + index}. 7. 2026</td><td>{index === 1 ? "18 500 Kč" : index === 3 ? "42 000 Kč" : "K nacenění"}</td><td><Badge>{states[index]}</Badge></td><td><ChevronRight size={17} /></td></tr>)}</tbody></table></ProjectModuleFrame>;
+function ProjectClientChanges({ project, notify }: { project: ProjectRecord; openUnit: (unit: UnitRecord) => void; notify: (message: string) => void }) {
+  return <ProjectModuleFrame project={project} title="Klientské změny" description="Požadavky klientů na standardy a provedení jednotek." action="Nový požadavek" onAction={() => notify("Formulář klientské změny je připraven")}><div className="empty-filter-state"><SlidersHorizontal size={22}/><strong>Zatím bez klientských změn</strong><small>Nový projekt nevytváří žádné ukázkové požadavky ani finanční dopady.</small></div></ProjectModuleFrame>;
 }
 
 function ProjectHandovers({ project, openUnit, notify }: { project: ProjectRecord; openUnit: (unit: UnitRecord) => void; notify: (message: string) => void }) {
@@ -1482,10 +1487,26 @@ function SalesActionModal({action,clientRows,close,save}:{action:{unit:UnitRecor
 function ContractWorkflowModal({contract,close,save}:{contract:(typeof contracts)[number];close:()=>void;save:(value:{to:string;reason:string})=>Promise<void>}){const options=availableContractTransitions(contract.statusCode??contract.state);const [to,setTo]=useState<string>(options[0]??"");const [reason,setReason]=useState("");return <FormModal title={`Workflow ${contract.type} · ${contract.unit}`} close={close} onSave={async()=>{if(!to)throw new Error("Pro aktuální stav není dostupný ruční přechod");if(!reason.trim())throw new Error("Doplňte důvod změny");if((to==="cancelled"||to==="terminated")&&!window.confirm("Tato změna je obchodně významná. Opravdu pokračovat?"))return;await save({to,reason});}}><label><span>Aktuální stav</span><input value={contractStatusLabel(contract.statusCode??contract.state)} disabled/></label><label><span>Nový stav</span><select value={to} onChange={e=>setTo(e.target.value)}>{options.map(item=><option key={item} value={item}>{contractStatusLabel(item)}</option>)}</select></label><label><span>Důvod změny</span><textarea rows={3} value={reason} onChange={e=>setReason(e.target.value)}/></label><p className="form-help"><History size={14}/> Dostupné jsou pouze doménově povolené přechody. Podepsání vzniká dokončením podpisů.</p></FormModal>}
 function FormModal({title,close,onSave,children,saveLabel="Uložit"}:{title:string;close:()=>void;onSave:()=>Promise<void>;children:React.ReactNode;saveLabel?:string}){const [busy,setBusy]=useState(false);const [error,setError]=useState("");const submit=async()=>{setBusy(true);setError("");try{await onSave();}catch(problem){setError(problem instanceof Error?problem.message:"Změnu se nepodařilo uložit");}finally{setBusy(false);}};return <div className="modal-layer"><button className="modal-scrim" onClick={close} aria-label="Zavřít dialog" /><div className="modal"><div className="modal-head"><div><h2>{title}</h2><p>Změna se uloží přes řízenou doménovou operaci.</p></div><button className="icon-button" onClick={close}><X size={19}/></button></div><div className="modal-form">{children}{error&&<div className="form-error"><AlertTriangle size={15}/>{error}</div>}</div><div className="modal-foot"><button className="secondary-button" onClick={close} disabled={busy}>Zrušit</button><button className="primary-button" onClick={()=>void submit()} disabled={busy}>{busy?"Ukládám…":saveLabel}</button></div></div></div>}
 
+function NewProjectModal({memberships,close,save}:{memberships:MembershipOption[];close:()=>void;save:(value:{name:string;code:string;location:string;address:string;description:string;constructionStatus:string;plannedHandoverFrom:string|null;managerMembershipId:string|null;projectCompany:string;defaultCurrency:string;plannedUnitCount:number|null;note:string})=>Promise<void>}){
+  const [name,setName]=useState("");const [code,setCode]=useState("");const [location,setLocation]=useState("");const [address,setAddress]=useState("");const [description,setDescription]=useState("");const [constructionStatus,setConstructionStatus]=useState("preparation");const [plannedHandoverFrom,setPlannedHandoverFrom]=useState("");const [managerMembershipId,setManagerMembershipId]=useState("");const [projectCompany,setProjectCompany]=useState("");const [defaultCurrency,setDefaultCurrency]=useState("CZK");const [plannedUnitCount,setPlannedUnitCount]=useState("");const [note,setNote]=useState("");
+  return <FormModal title="Nový projekt" close={close} saveLabel="Založit projekt" onSave={async()=>{const normalizedCode=code.trim().toUpperCase();if(name.trim().length<2)throw new Error("Doplňte název projektu");if(!/^[A-Z0-9ČŘŠŽÝÁÍÉÚŮĚ_-]{2,16}$/.test(normalizedCode))throw new Error("Kód musí mít 2–16 velkých písmen, číslic, pomlček nebo podtržítek");if(!location.trim())throw new Error("Doplňte lokalitu projektu");await save({name:name.trim(),code:normalizedCode,location:location.trim(),address:address.trim(),description:description.trim(),constructionStatus,plannedHandoverFrom:plannedHandoverFrom||null,managerMembershipId:managerMembershipId||null,projectCompany:projectCompany.trim(),defaultCurrency,plannedUnitCount:plannedUnitCount?Number(plannedUnitCount):null,note:note.trim()});}}>
+    <div className="form-row"><label><span>Název projektu</span><input autoFocus value={name} onChange={event=>{setName(event.target.value);if(!code)setCode(projectCodeSuggestion(event.target.value));}} placeholder="Např. Rezidence Vltavská"/></label><label><span>Kód projektu</span><input maxLength={16} value={code} onChange={event=>setCode(event.target.value.toUpperCase())} placeholder="RVL"/></label></div>
+    <div className="form-row"><label><span>Lokalita</span><input value={location} onChange={event=>setLocation(event.target.value)} placeholder="Praha 6"/></label><label><span>Adresa</span><input value={address} onChange={event=>setAddress(event.target.value)} placeholder="Ulice a číslo"/></label></div>
+    <label><span>Stručný popis</span><textarea rows={3} value={description} onChange={event=>setDescription(event.target.value)}/></label>
+    <div className="form-row"><label><span>Počáteční fáze výstavby</span><select value={constructionStatus} onChange={event=>setConstructionStatus(event.target.value)}>{constructionStatusOptions.map(option=><option key={option.code} value={option.code}>{option.label}</option>)}</select></label><label><span>Plánované dokončení</span><input type="date" value={plannedHandoverFrom} onChange={event=>setPlannedHandoverFrom(event.target.value)}/></label></div>
+    <div className="form-row"><label><span>Vedoucí projektu</span><select value={managerMembershipId} onChange={event=>setManagerMembershipId(event.target.value)}><option value="">Zatím nepřiřazen</option>{memberships.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label><span>Projektová společnost</span><input value={projectCompany} onChange={event=>setProjectCompany(event.target.value)} placeholder="SPV / vlastník projektu"/></label></div>
+    <div className="form-row"><label><span>Měna</span><select value={defaultCurrency} onChange={event=>setDefaultCurrency(event.target.value)}><option value="CZK">CZK</option><option value="EUR">EUR</option></select></label><label><span>Plánovaný počet jednotek</span><input type="number" min="0" value={plannedUnitCount} onChange={event=>setPlannedUnitCount(event.target.value)}/></label></div>
+    <label><span>Interní poznámka</span><textarea rows={2} value={note} onChange={event=>setNote(event.target.value)}/></label>
+    <p className="form-help"><ShieldCheck size={14}/> Projekt vznikne prázdný. Jednotky, klienti ani jiné demo záznamy se automaticky nevytvoří.</p>
+  </FormModal>;
+}
+
 const constructionStatusOptions=[{code:"preparation",label:"Příprava"},{code:"permitting",label:"Povolování"},{code:"construction",label:"Ve výstavbě"},{code:"rough_construction",label:"Hrubá stavba"},{code:"installations",label:"Instalace"},{code:"fit_out",label:"Dokončovací práce"},{code:"completed",label:"Dokončeno"}];
 function labelToConstructionCode(label:string){return constructionStatusOptions.find(item=>item.label===label)?.code??"preparation";}
 function constructionCodeToLabel(code:string){return constructionStatusOptions.find(item=>item.code===code)?.label??code;}
 function quarterFromDate(value:string|null){if(!value)return"Neplánováno";const date=new Date(`${value}T00:00:00Z`);return `Q${Math.floor(date.getUTCMonth()/3)+1} ${date.getUTCFullYear()}`;}
+function projectCodeSuggestion(value:string){return value.normalize("NFD").replace(/[\u0300-\u036f]/g,"").split(/\s+/).filter(Boolean).map(part=>part[0]).join("").replace(/[^A-Z0-9]/gi,"").slice(0,8).toUpperCase();}
+function slugifyProject(value:string){const slug=value.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");return slug||`projekt-${Date.now()}`;}
 function numberValue(value:string){if(!value.trim())return undefined;const number=Number(value.replace(",","."));return Number.isFinite(number)?number:undefined;}
 function projectMatchesName(project:ProjectRecord,name:string){return name===project.name||name===project.sourceName;}
 function unitBelongsToProject(unit:UnitRecord,project:ProjectRecord){return Boolean((unit.projectBackendId&&project.backendId&&unit.projectBackendId===project.backendId)||(unit.projectCode&&unit.projectCode===project.code)||projectMatchesName(project,unit.project));}

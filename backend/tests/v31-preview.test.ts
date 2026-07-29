@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { rememberClientDataMode } from "../../app/lib/data-mode.js";
 
 class MemoryStorage {
   private readonly values = new Map<string, string>();
@@ -10,6 +11,7 @@ class MemoryStorage {
 }
 
 test("preview adapter ihned přepočítá smlouvu, uloží historii a přežije nové načtení", async () => {
+  rememberClientDataMode("prototype-fallback");
   const storage = new MemoryStorage();
   Object.assign(globalThis, { window: {}, localStorage: storage });
   const contract = {
@@ -59,6 +61,7 @@ test("preview adapter ihned přepočítá smlouvu, uloží historii a přežije 
 });
 
 test("preview administrace perzistentně pozve a upraví uživatele bez lokálního hesla", async () => {
+  rememberClientDataMode("prototype-fallback");
   const storage = new MemoryStorage();
   Object.assign(globalThis, { window: {}, localStorage: storage });
   globalThis.fetch = (async () => new Response(null, { status: 503 })) as typeof fetch;
@@ -83,6 +86,7 @@ test("preview administrace perzistentně pozve a upraví uživatele bez lokáln�
 });
 
 test("kalendář a seznam preview předání používají jeden dynamický zdroj", async () => {
+  rememberClientDataMode("prototype-fallback");
   Object.assign(globalThis, { window: {}, localStorage: new MemoryStorage() });
   globalThis.fetch = (async () => new Response(null, { status: 503 })) as typeof fetch;
   const { handoverRepository } = await import("../../app/repositories/handover-repository.js");

@@ -1,6 +1,7 @@
 import type { DocumentListResponse,DocumentRecord } from "../../repositories/document-repository";
 import { previewConnection } from "../../repositories/document-repository";
 import { clients,contracts } from "../../crm-data";
+import { apiUnavailable, browserFallbackResponse, serverDataMode } from "../../lib/data-mode";
 
 const previewDocuments:DocumentRecord[]=[];
 
@@ -12,12 +13,13 @@ export async function GET(request:Request){
     if(!response.ok)return Response.json(payload,{status:response.status});if(url.searchParams.get("connection")==="sharepoint")return Response.json(payload);
     const documents="document" in payload?[payload.document]:payload.documents;return Response.json({documents,connection:payload.connection??previewConnection,source:"backend-api"});
   }
+  if(serverDataMode()!=="browser")return apiUnavailable("Dokumenty nejsou dostupné bez společného backendu");
   if(url.searchParams.get("connection")==="sharepoint")return Response.json({connection:previewConnection});
   const documentId=url.searchParams.get("documentId");const projectId=url.searchParams.get("projectId");const unitId=url.searchParams.get("unitId");const typeCode=url.searchParams.get("typeCode");const status=url.searchParams.get("status");const query=(url.searchParams.get("query")??"").toLowerCase();
   const partyId=url.searchParams.get("partyId");const partyName=clients.find(client=>client.id===partyId)?.name;
   const contractId=url.searchParams.get("contractId");const contract=contracts.find(item=>item.id===contractId||item.reference===contractId);
   const documents=previewDocuments.filter(document=>(!documentId||document.id===documentId)&&(!projectId||document.projectId===projectId)&&(!unitId||document.units.includes(unitId))&&(!partyId||Boolean(partyName&&document.parties.includes(partyName)))&&(!contractId||document.contracts.includes(contractId)||Boolean(contract&&document.units.includes(contract.unit)&&document.typeName.includes(contract.type==="RS"?"Rezervační":contract.type==="SBK"?"budoucí":contract.type==="KS"?"Kupní":"Dodatek")))&&(!typeCode||document.typeCode===typeCode)&&(!status||document.status===status)&&(!query||`${document.name} ${document.typeName} ${document.projectName} ${document.units.join(" ")} ${document.parties.join(" ")}`.toLowerCase().includes(query)));
-  return Response.json({documents,connection:previewConnection,source:"preview-adapter"} satisfies DocumentListResponse);
+  return browserFallbackResponse({documents,connection:previewConnection,source:"preview-adapter"} satisfies DocumentListResponse);
 }
 
 export async function POST(request:Request){return forwardMutation(request,"POST");}
@@ -25,10 +27,13 @@ export async function PATCH(request:Request){return forwardMutation(request,"PAT
 
 async function forwardMutation(request:Request,method:"POST"|"PATCH"){
   const url=new URL(request.url);const backendUrl=process.env.DEVELOCRM_API_URL?.replace(/\/$/,"");const tenantId=process.env.DEVELOCRM_TENANT_ID;const authorization=request.headers.get("authorization");
-  if(!backendUrl||!tenantId||!authorization)return Response.json({error:"Změna je v preview uložena lokálně v prohlížeči"},{status:503});
+  if(!backendUrl||!tenantId||!authorization)return serverDataMode()==="browser"?browserFallbackResponse({error:"Změna je ve vývojovém režimu uložena lokálně"},{status:503}):apiUnavailable("Změna dokumentu vyžaduje připojený backend");
   const documentId=url.searchParams.get("documentId");const target=documentId&&url.searchParams.get("action")==="version"?`/v1/documents/${encodeURIComponent(documentId)}/versions`:documentId?`/v1/documents/${encodeURIComponent(documentId)}`:"/v1/documents";
   const body=await request.json() as Record<string,unknown>;
-  if(url.searchParams.get("action")==="version"&&documentId)body.versionIdentifier=`${documentId}-${String(body.label??Date.now())}`,body.versionLabel=body.label;
+  if(url.searchParams.get("action")==="version"&&documentId){
+    body.versionIdentifier=`${documentId}-${String(body.label??Date.now())}`;
+    body.versionLabel=body.label;
+  }
   const response=await fetch(`${backendUrl}${target}`,{method,headers:{authorization,"x-tenant-id":tenantId,"content-type":"application/json"},body:JSON.stringify(body)});
   const responseText=await response.text();
   if(response.ok&&method==="POST"&&!documentId){

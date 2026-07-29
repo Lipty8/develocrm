@@ -40,6 +40,10 @@ export class Database {
   async close(): Promise<void> {
     await this.pool.end();
   }
+
+  async ping(): Promise<void> {
+    await this.pool.query("SELECT 1");
+  }
 }
 
 async function setLocal(client: PoolClient, name: string, value?: string): Promise<void> {

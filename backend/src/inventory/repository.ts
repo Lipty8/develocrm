@@ -19,6 +19,25 @@ export type CatalogUnit = {
 export class InventoryRepository {
   constructor(private readonly database: Database) {}
 
+  async createProject(input: {
+    tenantId:string; userId:string; membershipId:string; name:string; code:string;
+    slug:string; location?:string|null; address?:string|null; description?:string|null;
+    constructionStatus:string; plannedHandoverFrom?:string|null;
+    managerMembershipId?:string|null; projectCompany?:string|null;
+    defaultCurrency:string; plannedUnitCount?:number|null; note?:string|null;
+  }): Promise<{id:string}> {
+    return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
+      const result=await client.query<{id:string}>(
+        "SELECT app.create_project($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) id",
+        [input.tenantId,input.membershipId,input.name,input.code,input.slug,input.location??null,
+          input.address??null,input.description??null,input.constructionStatus,
+          input.plannedHandoverFrom??null,input.managerMembershipId??null,
+          input.projectCompany??null,input.defaultCurrency,input.plannedUnitCount??null,input.note??null],
+      );
+      return result.rows[0];
+    });
+  }
+
   async getCatalog(input: { tenantId: string; userId: string; membershipId: string }) {
     return this.database.withContext({ tenantId: input.tenantId, userId: input.userId }, async (client) => {
       const projects = await client.query<{

@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { entityMedia, tenants, users } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
+import { apiUnavailable, serverDataMode } from "../../lib/data-mode";
 
 const TENANT_ID = "develocrm-demo";
 
@@ -13,6 +14,7 @@ export async function GET(request: Request) {
   if (!entityType || !entityId) return Response.json({ error: "Chybí identifikace objektu" }, { status: 400 });
   const backendUrl=process.env.DEVELOCRM_API_URL?.replace(/\/$/,"");const tenantId=process.env.DEVELOCRM_TENANT_ID;const authorization=request.headers.get("authorization");
   if(backendUrl&&tenantId&&authorization){const response=await fetch(`${backendUrl}/v1/${entityType==="project"?"projects":"units"}/${entityId}/media`,{headers:{authorization,"x-tenant-id":tenantId},cache:"no-store"});return new Response(await response.text(),{status:response.status,headers:{"content-type":"application/json"}});}
+  if(serverDataMode()!=="browser")return apiUnavailable("Média nejsou dostupná bez společného backendu");
   const rows = await getDb().select().from(entityMedia).where(and(
     eq(entityMedia.tenantId, TENANT_ID), eq(entityMedia.entityType, entityType), eq(entityMedia.entityId, entityId),
   ));
@@ -20,6 +22,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  if(serverDataMode()!=="browser"&&(!process.env.DEVELOCRM_API_URL||!process.env.DEVELOCRM_TENANT_ID||!request.headers.get("authorization")))return apiUnavailable("Uložení média vyžaduje připojený backend");
   const user = await getChatGPTUser();
   const form = await request.formData();
   const file = form.get("file");

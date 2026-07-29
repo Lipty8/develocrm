@@ -1,6 +1,7 @@
 import { projects as previewProjects, units as previewUnits, type UnitRecord, type UnitStatus } from "../../crm-data";
 import { previewCatalogMeta, type CatalogSnapshot } from "../../repositories/catalog-repository";
 import type { ProjectRecord } from "../../crm-data";
+import { apiUnavailable, browserFallbackResponse, serverDataMode } from "../../lib/data-mode";
 
 type BackendCatalog = {
   projects: Array<{
@@ -26,8 +27,11 @@ export async function GET(request: Request) {
   const tenantId = process.env.DEVELOCRM_TENANT_ID;
   const authorization = request.headers.get("authorization");
   if (!backendUrl || !tenantId || !authorization) {
+    if (serverDataMode() !== "browser") {
+      return apiUnavailable("Katalog není dostupný. Aplikace není připojena ke společnému backendu.");
+    }
     const units=previewUnits.map(unit=>({...unit,projectCode:previewProjects.find(project=>project.name===unit.project)?.code,accessories:previewCatalogMeta.accessories.filter(item=>item.project===unit.project&&item.assignmentId?.includes(`-${unit.id}-`))}));
-    return Response.json({ projects: previewProjects, units, ...previewCatalogMeta, source: "preview-seed" } satisfies CatalogSnapshot);
+    return browserFallbackResponse({ projects: previewProjects, units, ...previewCatalogMeta, source: "preview-seed" } satisfies CatalogSnapshot);
   }
 
   const response = await fetch(`${backendUrl}/v1/catalog`, {

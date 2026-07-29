@@ -1,5 +1,6 @@
 import { getChatGPTUser } from "../../../chatgpt-auth";
 import { prototypeSession, type IdentitySession } from "../../../repositories/identity-repository";
+import { apiUnavailable, browserFallbackResponse, serverDataMode } from "../../../lib/data-mode";
 
 export async function GET(request: Request) {
   const backendUrl = process.env.DEVELOCRM_API_URL?.replace(/\/$/, "");
@@ -18,10 +19,11 @@ export async function GET(request: Request) {
     return Response.json({ error: "Produkční identitu se nepodařilo ověřit" }, { status: response.status });
   }
 
-  // Preview zůstává vizuálně i funkčně beze změny. Po zapojení Entra proxy
-  // tato větev zmizí a stejný repository kontrakt začne vracet produkční session.
+  if (serverDataMode() !== "browser") {
+    return apiUnavailable("Přihlášení není dostupné. Aplikace není připojena ke společnému backendu.");
+  }
   const previewUser = await getChatGPTUser();
-  return Response.json({
+  return browserFallbackResponse({
     ...prototypeSession,
     user: previewUser
       ? { id: prototypeSession.user.id, email: previewUser.email, displayName: previewUser.displayName }

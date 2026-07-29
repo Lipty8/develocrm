@@ -16,8 +16,8 @@ import { HandoverRepository } from "./handovers/repository.js";
 import { PaymentRepository } from "./payments/repository.js";
 import { PaymentService } from "./payments/service.js";
 
-export function buildApp(dependencies: { database: Database; verifier: EntraTokenVerifier }): FastifyInstance {
-  const app = Fastify({ logger: true });
+export function buildApp(dependencies: { database: Database; verifier: EntraTokenVerifier; corsAllowedOrigins?:Set<string> }): FastifyInstance {
+  const app = Fastify({ logger: true,trustProxy:true });
   const repository = new IamRepository(dependencies.database);
   const inventory = new InventoryRepository(dependencies.database);
   const commercialStatus = new CommercialStatusService(dependencies.database);
@@ -32,7 +32,28 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
   const paymentRepository = new PaymentRepository(dependencies.database);
   const paymentService = new PaymentService(dependencies.database);
 
-  app.get("/health", async () => ({ status: "ok", block: "documents" }));
+  const rateWindows=new Map<string,{startedAt:number;count:number}>();
+  app.addHook("onRequest",async(request,reply)=>{
+    reply.header("x-correlation-id",request.id);
+    const origin=headerValue(request.headers.origin);
+    if(origin){
+      if(!dependencies.corsAllowedOrigins?.has(origin))return reply.code(403).send({error:"Nepovolený původ požadavku",correlationId:request.id});
+      reply.header("access-control-allow-origin",origin).header("vary","Origin");
+    }
+    const now=Date.now();const current=rateWindows.get(request.ip);
+    if(!current||now-current.startedAt>=60_000)rateWindows.set(request.ip,{startedAt:now,count:1});
+    else if(++current.count>300)return reply.code(429).send({error:"Příliš mnoho požadavků",correlationId:request.id});
+  });
+  app.options("*",async(request,reply)=>reply.header("access-control-allow-methods","GET,POST,PATCH,DELETE,OPTIONS").header("access-control-allow-headers","authorization,content-type,x-tenant-id,x-correlation-id").code(204).send());
+  app.get("/health", async () => ({ status: "ok", service: "develocrm-api" }));
+  app.get("/ready", async (_request,reply) => {
+    try {
+      await dependencies.database.ping();
+      return { status:"ready", database:"reachable" };
+    } catch {
+      return reply.code(503).send({status:"not_ready",database:"unreachable"});
+    }
+  });
 
   app.get("/v1/session/workspaces", async (request, reply) => {
     try {
@@ -114,6 +135,24 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
       return inventory.getCatalog({ tenantId, userId: user.id, membershipId: session.workspace.membershipId });
     } catch {
       return reply.code(401).send({ error: "Neplatné přihlášení" });
+    }
+  });
+
+  app.post<{Body:{
+    name:string;code:string;slug:string;location?:string|null;address?:string|null;
+    description?:string|null;constructionStatus:string;plannedHandoverFrom?:string|null;
+    managerMembershipId?:string|null;projectCompany?:string|null;defaultCurrency:string;
+    plannedUnitCount?:number|null;note?:string|null;
+  }}>("/v1/projects",async(request,reply)=>{
+    try{
+      const context=await sessionContext(request,dependencies.verifier,repository);
+      if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});
+      return reply.code(201).send(await inventory.createProject({...context,...request.body}));
+    }catch(error){
+      return reply.code(permissionError(error)?403:409).send({
+        error:error instanceof Error?error.message:"Projekt nelze založit",
+        correlationId:request.id,
+      });
     }
   });
 

@@ -3,6 +3,7 @@ import { getDb } from "../../../db";
 import { tasks, tenants, users } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { addPragueCalendarDaysKey, systemClock } from "../../lib/date-time";
+import { apiUnavailable, serverDataMode } from "../../lib/data-mode";
 
 const DEMO_TENANT_ID = "develocrm-demo";
 const FALLBACK_USER_ID = "iva-novotna";
@@ -13,6 +14,7 @@ async function actor() {
 }
 
 export async function GET(request: Request) {
+  if(serverDataMode()==="api")return forwardApiTasks(request,"GET");
   try {
     const current = await actor();
     const scope = new URL(request.url).searchParams.get("scope") || "mine";
@@ -32,6 +34,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  if(serverDataMode()==="api")return forwardApiTasks(request,"POST");
   try {
     const payload = (await request.json()) as {
       title?: string;
@@ -75,6 +78,7 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  if(serverDataMode()==="api")return forwardApiTasks(request,"PATCH");
   try {
     const payload = await request.json() as { id?: string; completed?: boolean };
     if (!payload.id) return Response.json({ error: "Chybí úkol" }, { status: 400 });
@@ -90,4 +94,26 @@ export async function PATCH(request: Request) {
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Úkol nelze aktualizovat" }, { status: 500 });
   }
+}
+
+async function forwardApiTasks(request:Request,method:"GET"|"POST"|"PATCH"){
+  const base=process.env.DEVELOCRM_API_URL?.replace(/\/$/,"");
+  const tenant=process.env.DEVELOCRM_TENANT_ID;
+  const authorization=request.headers.get("authorization");
+  if(!base||!tenant||!authorization)return apiUnavailable("Úkoly nejsou dostupné bez společného backendu");
+  if(method==="GET"){
+    const scope=new URL(request.url).searchParams.get("scope")??"mine";
+    const response=await fetch(`${base}/v1/tasks?scope=${encodeURIComponent(scope)}`,{headers:{authorization,"x-tenant-id":tenant},cache:"no-store"});
+    return new Response(await response.text(),{status:response.status,headers:{"content-type":"application/json","x-correlation-id":response.headers.get("x-correlation-id")??""}});
+  }
+  const body=await request.json() as Record<string,unknown>;
+  if(method==="PATCH"){
+    const id=String(body.id??"");
+    if(!id)return Response.json({error:"Chybí úkol"},{status:400});
+    const response=await fetch(`${base}/v1/tasks/${encodeURIComponent(id)}/completion`,{method:"PATCH",headers:{authorization,"x-tenant-id":tenant,"content-type":"application/json"},body:JSON.stringify({completed:body.completed})});
+    return new Response(await response.text(),{status:response.status,headers:{"content-type":"application/json"}});
+  }
+  const response=await fetch(`${base}/v1/tasks`,{method:"POST",headers:{authorization,"x-tenant-id":tenant,"content-type":"application/json"},body:JSON.stringify(body)});
+  const payload=await response.json().catch(()=>({}));
+  return Response.json(response.ok?{task:payload}:payload,{status:response.status});
 }
