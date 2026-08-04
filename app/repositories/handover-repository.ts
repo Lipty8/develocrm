@@ -3,14 +3,23 @@ import {units} from "../crm-data";
 import { responseAllowsBrowserFallback } from "../lib/data-mode";
 import { apiFetch } from "../lib/api-client";
 export type HandoverRecord={id:string;projectId:string;project:string;unitId:string;unit:string;scheduledAt:string;client:string;owner:string;status:string;readiness:number;attention:string|null};
-export interface HandoverRepository{list(input:{project?:string;status?:string;owner?:string;query?:string;sort?:string;direction?:"asc"|"desc"},signal?:AbortSignal):Promise<HandoverRecord[]>}
+export interface HandoverRepository{
+  list(input:{project?:string;status?:string;owner?:string;query?:string;sort?:string;direction?:"asc"|"desc"},signal?:AbortSignal):Promise<HandoverRecord[]>;
+  schedule(input:{unitId:string;scheduledAt:string;responsibleMembershipId:string}):Promise<{id:string}>;
+}
 class ApiHandoverRepository implements HandoverRepository{
   async list(input:{project?:string;status?:string;owner?:string;query?:string;sort?:string;direction?:"asc"|"desc"},signal?:AbortSignal){
-    const query=new URLSearchParams(Object.entries(input).filter((entry):entry is [string,string]=>Boolean(entry[1])));
+    const query=new URLSearchParams();if(input.project)query.set("projectId",input.project);if(input.status)query.set("status",input.status);if(input.owner)query.set("ownerId",input.owner);if(input.query)query.set("query",input.query);if(input.sort)query.set("sort",input.sort);if(input.direction)query.set("direction",input.direction);
     const response=await apiFetch(`/api/handovers?${query}`,{signal,cache:"no-store"});
     if(response.ok)return (await response.json() as {handovers:HandoverRecord[]}).handovers;
     if(!(response.status===503&&responseAllowsBrowserFallback(response)))throw new Error((await response.json().catch(()=>({} as {error?:string}))).error??"Předání nelze načíst");
     return previewHandovers();
+  }
+  async schedule(input:{unitId:string;scheduledAt:string;responsibleMembershipId:string}){
+    const response=await apiFetch("/api/handovers",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});
+    if(response.ok)return response.json() as Promise<{id:string}>;
+    const payload=await response.json().catch(()=>({})) as {error?:string};
+    throw new Error(payload.error??"Předání nelze naplánovat");
   }
 }
 function previewHandovers():HandoverRecord[]{

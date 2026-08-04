@@ -3,7 +3,7 @@ import { contractStatusLabel, recommendedContractAction } from "../shared/contra
 
 export type PriceItem={id:string;unit:string;type:string;amount:number;amountNet?:number;currency:string;validFrom:string;validTo:string|null;reason:string;author:string;approver:string|null};
 export type ContractHistoryItem={id:string;fromStatus:string|null;toStatus:string;occurredAt:string;actor:string;note:string;source:"manual"|"automation"|"signature"|"import"};
-export type ContractItem={id:string;unit:string;project:string;client:string;type:string;state:string;statusCode:string;updated:string;updatedAt:string;owner:string;action:string;title:string;reference:string;history:ContractHistoryItem[];parties:Array<{id:string;name:string;role:string;signatureStatus:string}>;versions:Array<{id:string;number:number;name:string;status:string;basedOnVersionId:string|null;source:string;createdAt:string;signedAt:string|null}>};
+export type ContractItem={id:string;salesCaseId:string;unit:string;project:string;client:string;type:string;state:string;statusCode:string;updated:string;updatedAt:string;owner:string;action:string;title:string;reference:string;history:ContractHistoryItem[];parties:Array<{id:string;name:string;role:string;signatureStatus:string}>;versions:Array<{id:string;number:number;name:string;status:string;basedOnVersionId:string|null;source:string;createdAt:string;signedAt:string|null}>};
 export type CommercialSnapshot={currentPrices:Record<string,number>;priceHistories:Record<string,PriceItem[]>;priceProposals:Array<{id:string;unit:string;priceType:string;currentAmount:number;proposedAmount:number;validFrom:string;reason:string;status:string;proposer:string;decider:string|null}>;contracts:ContractItem[];contractSummary:Record<string,number>};
 type Context={tenantId:string;userId:string;membershipId:string};
 
@@ -24,8 +24,8 @@ export class CommercialRepository {
            AND EXISTS(SELECT 1 FROM projects active_project WHERE active_project.tenant_id=price.tenant_id AND active_project.id=price.project_id AND active_project.archived_at IS NULL)
            AND app.has_project_permission(price.tenant_id,$2,price.project_id,'price.read')
          ORDER BY unit.code,price.valid_from DESC,price.recorded_at DESC`,[input.tenantId,input.membershipId]);
-      const contracts=await client.query<{id:string;unit:string;project:string;type:string;status:string;updated_at:string;title:string;reference:string;owner:string;parties:ContractItem["parties"];versions:ContractItem["versions"];history:ContractHistoryItem[]}>(
-        `SELECT contract.id,unit.code unit,project.name project,contract.contract_type type,contract.current_status status,
+      const contracts=await client.query<{id:string;sales_case_id:string;unit:string;project:string;type:string;status:string;updated_at:string;title:string;reference:string;owner:string;parties:ContractItem["parties"];versions:ContractItem["versions"];history:ContractHistoryItem[]}>(
+        `SELECT contract.id,contract.sales_case_id,unit.code unit,project.name project,contract.contract_type type,contract.current_status status,
           contract.updated_at,contract.title,contract.reference,creator.display_name owner,
           COALESCE(parties.items,'[]'::jsonb) parties,COALESCE(versions.items,'[]'::jsonb) versions,
           COALESCE(history.items,'[]'::jsonb) history
@@ -61,7 +61,7 @@ export class CommercialRepository {
         const amount=unitId?(await client.query<{amount:number}>("SELECT app.current_unit_price($1,$2)::float8 amount",[input.tenantId,unitId])).rows[0]?.amount:0;
         return [unit,amount??0];
       })));
-      const mapped=contracts.rows.map(row=>({id:row.id,unit:row.unit,project:row.project,client:row.parties.filter(p=>p.role==='buyer'||p.role==='co_buyer').map(p=>p.name).join(' a '),type:typeLabel(row.type),state:contractStatusLabel(row.status),statusCode:row.status,updated:row.updated_at,updatedAt:row.updated_at,owner:row.owner.split(' ')[0]??row.owner,action:recommendedContractAction({status:row.status,type:row.type}).label,title:row.title,reference:row.reference,history:row.history,parties:row.parties,versions:row.versions}));
+      const mapped=contracts.rows.map(row=>({id:row.id,salesCaseId:row.sales_case_id,unit:row.unit,project:row.project,client:row.parties.filter(p=>p.role==='buyer'||p.role==='co_buyer').map(p=>p.name).join(' a '),type:typeLabel(row.type),state:contractStatusLabel(row.status),statusCode:row.status,updated:row.updated_at,updatedAt:row.updated_at,owner:row.owner.split(' ')[0]??row.owner,action:recommendedContractAction({status:row.status,type:row.type}).label,title:row.title,reference:row.reference,history:row.history,parties:row.parties,versions:row.versions}));
       const contractSummary=contracts.rows.reduce<Record<string,number>>((sum,row)=>(sum[row.status]=(sum[row.status]??0)+1,sum),{});
       return {currentPrices,priceHistories,priceProposals:proposals.rows.map(row=>({id:row.id,unit:row.unit,priceType:row.price_type,currentAmount:row.current_amount,proposedAmount:row.proposed_amount,validFrom:row.valid_from,reason:row.reason,status:row.status,proposer:row.proposer,decider:row.decider})),contracts:mapped,contractSummary};
     });

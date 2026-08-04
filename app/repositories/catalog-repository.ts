@@ -1,7 +1,7 @@
 import type { AccessoryAssignmentRecord, CatalogAccessoryRecord, MembershipOption, ProjectRecord, ProjectStructureOption, UnitRecord } from "../crm-data";
 import { projects as previewProjects, units as previewUnits } from "../crm-data";
 import { recordPreviewActivity } from "./activity-repository";
-import { responseAllowsBrowserFallback } from "../lib/data-mode";
+import { clientUsesBrowserAdapter, responseAllowsBrowserFallback } from "../lib/data-mode";
 import { apiFetch } from "../lib/api-client";
 
 export type CatalogSnapshot = { projects: ProjectRecord[]; units: UnitRecord[]; accessories:CatalogAccessoryRecord[]; memberships:MembershipOption[]; structures:ProjectStructureOption[]; source: "backend-api" | "preview-seed" };
@@ -24,7 +24,7 @@ export class ApiCatalogRepository implements CatalogRepository {
     const response = await apiFetch("/api/catalog", { signal, cache: "no-store" });
     if (!response.ok){const payload=await response.json().catch(()=>({})) as {error?:string;correlationId?:string};throw new Error(`${payload.error||"Katalog projektů se nepodařilo načíst"}${payload.correlationId?` · ID chyby ${payload.correlationId}`:""}`);}
     const snapshot=await response.json() as CatalogSnapshot;
-    if(typeof window!=="undefined") applyPreviewEdits(snapshot);
+    if(typeof window!=="undefined"&&clientUsesBrowserAdapter()) applyPreviewEdits(snapshot);
     return snapshot;
   }
   async createProject(input:ProjectCreate):Promise<{id:string}>{

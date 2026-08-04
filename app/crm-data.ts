@@ -48,6 +48,7 @@ export type ClientRecord = {
   updatedAt?:string;
 };
 export type UnitCommercialContext = {
+  salesCaseId?: string | null;
   buyers: Array<{ partyId: string; name: string; email: string; role: string; share: number | null }>;
   interests: Array<{ date: string; partyId: string; name: string; type: string; result: string }>;
   stage: string | null;
@@ -55,7 +56,7 @@ export type UnitCommercialContext = {
 };
 export type PriceHistoryRecord={id:string;unit:string;type:string;amount:number;amountNet?:number;currency:string;validFrom:string;validTo:string|null;reason:string;author:string;approver:string|null};
 export type ContractHistoryEvent={id:string;fromStatus:string|null;toStatus:string;occurredAt:string;actor:string;note:string;source:"manual"|"automation"|"signature"|"import"};
-export type ContractRecord={id?:string;unit:string;client:string;project:string;type:string;state:string;statusCode?:string;updated:string;updatedAt?:string;owner:string;action:string;title?:string;reference?:string;missingData?:number;missingAttachments?:number;history?:ContractHistoryEvent[];parties?:Array<{id:string;name:string;role:string;signatureStatus:string}>;versions?:Array<{id:string;number:number;name:string;status:string;basedOnVersionId:string|null;source:string;createdAt:string;signedAt:string|null}>};
+export type ContractRecord={id?:string;salesCaseId?:string;unit:string;client:string;project:string;type:string;state:string;statusCode?:string;updated:string;updatedAt?:string;owner:string;action:string;title?:string;reference?:string;missingData?:number;missingAttachments?:number;history?:ContractHistoryEvent[];parties?:Array<{id:string;name:string;role:string;signatureStatus:string}>;versions?:Array<{id:string;number:number;name:string;status:string;basedOnVersionId:string|null;source:string;createdAt:string;signedAt:string|null}>};
 
 export const units: UnitRecord[] = [...dejviceUnits as UnitRecord[]];
 export const projects:ProjectRecord[] = [dejviceProject];

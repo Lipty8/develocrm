@@ -11,6 +11,7 @@ export type ClientDirectoryItem = {
 };
 
 export type UnitCommercialContext = {
+  salesCaseId: string | null;
   buyers: Array<{ partyId: string; name: string; email: string; role: string; share: number | null }>;
   interests: Array<{ date: string; partyId: string; name: string; type: string; result: string }>;
   stage: string | null;
@@ -98,10 +99,10 @@ export class SalesRepository {
       );
 
       const contextRows = await client.query<{
-        unit_code: string; buyers: UnitCommercialContext["buyers"]; interests: UnitCommercialContext["interests"];
+        unit_code: string;sales_case_id:string|null; buyers: UnitCommercialContext["buyers"]; interests: UnitCommercialContext["interests"];
         stage: string | null; hold: UnitCommercialContext["hold"];
       }>(
-        `SELECT unit.code unit_code,active_case.current_stage stage,
+        `SELECT unit.code unit_code,active_case.id sales_case_id,active_case.current_stage stage,
           COALESCE(buyers.items,'[]'::jsonb) buyers,COALESCE(interests.items,'[]'::jsonb) interests,hold.item hold
          FROM units unit
          LEFT JOIN LATERAL (SELECT id,current_stage FROM sales_cases WHERE tenant_id=unit.tenant_id AND unit_id=unit.id AND status='active' LIMIT 1) active_case ON true
@@ -141,9 +142,17 @@ export class SalesRepository {
             units: row.units,projects: projectNames.join(", "),projectNames,state: row.state,
             contractStatus: stageLabel(row.stage),initials: initials(row.display_name),interestHistory: row.interest_history,firstName:row.first_name??undefined,lastName:row.last_name??undefined,legalName:row.legal_name??undefined,registrationNumber:row.registration_number??undefined,vatNumber:row.vat_number??undefined,contactPerson:row.contact_person??undefined,address:row.address,updatedAt:row.updated_at };
         }),
-        unitContexts: Object.fromEntries(contextRows.rows.map((row) => [row.unit_code,{ buyers: row.buyers,interests: row.interests,stage: row.stage,hold: row.hold }])),
+        unitContexts: Object.fromEntries(contextRows.rows.map((row) => [row.unit_code,{ salesCaseId:row.sales_case_id,buyers: row.buyers,interests: row.interests,stage: row.stage,hold: row.hold }])),
       };
     });
+  }
+
+  async getPage(input:Context&{page:number;pageSize:number;query?:string;quickProject?:string;types?:string[];projects?:string[];unit?:string;relations?:string[];contracts?:string[];phone?:string;email?:string;sort?:string;direction?:"asc"|"desc"}){
+    const directory=await this.getDirectory(input);const includes=(value:string,query?:string)=>!query||value.toLocaleLowerCase("cs-CZ").includes(query.toLocaleLowerCase("cs-CZ"));
+    const filtered=directory.clients.filter(item=>includes(item.name,input.query)&&(!input.quickProject||input.quickProject==="Všichni"||item.projectNames.includes(input.quickProject))&&(!input.types?.length||input.types.includes(item.kind))&&(!input.projects?.length||input.projects.some(project=>item.projectNames.includes(project)))&&includes(item.units.join(" "),input.unit)&&(!input.relations?.length||input.relations.includes(item.state))&&(!input.contracts?.length||input.contracts.includes(item.contractStatus))&&includes(item.phone,input.phone)&&includes(item.email,input.email));
+    const value=(item:ClientDirectoryItem)=>input.sort==="updated"?item.updatedAt??"":input.sort==="relation"?item.state:input.sort==="contract"?item.contractStatus:input.sort==="project"?item.projectNames.join(" "):input.sort==="unit"?item.units.join(" "):item.name;
+    filtered.sort((left,right)=>{const compared=String(value(left)).localeCompare(String(value(right)),"cs",{numeric:true,sensitivity:"base"});return (input.direction==="desc"?-compared:compared)||left.id.localeCompare(right.id);});
+    const total=filtered.length;const page=Math.max(1,Math.min(input.page,Math.max(1,Math.ceil(total/input.pageSize))));return{clients:filtered.slice((page-1)*input.pageSize,page*input.pageSize),total,page,pageSize:input.pageSize};
   }
 
   async exportContacts(input: Context & { partyIds?: string[] }): Promise<ClientDirectoryItem[]> {

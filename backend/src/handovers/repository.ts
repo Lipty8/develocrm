@@ -15,16 +15,22 @@ export class HandoverRepository{
        JOIN tenant_memberships owner_membership ON owner_membership.tenant_id=handover.tenant_id AND owner_membership.id=handover.responsible_membership_id
        JOIN users owner ON owner.id=owner_membership.user_id
        LEFT JOIN LATERAL(SELECT string_agg(DISTINCT party.display_name,' a ' ORDER BY party.display_name) names FROM sales_cases sales_case
-         JOIN sales_case_parties participant ON participant.tenant_id=sales_case.tenant_id AND participant.sales_case_id=sales_case.id AND participant.role IN ('buyer','co_buyer')
+         JOIN sales_case_parties participant ON participant.tenant_id=sales_case.tenant_id AND participant.sales_case_id=sales_case.id AND participant.participant_role IN ('buyer','co_buyer')
          JOIN parties party ON party.tenant_id=participant.tenant_id AND party.id=participant.party_id
          WHERE sales_case.tenant_id=handover.tenant_id AND sales_case.unit_id=handover.unit_id AND sales_case.status='active') buyers ON true
        WHERE handover.tenant_id=$1 AND project.archived_at IS NULL AND unit.archived_at IS NULL
-         AND handover.status<>'cancelled' AND app.has_project_permission(handover.tenant_id,$2,handover.project_id,'handover.read')
+         AND handover.status<>'cancelled' AND app.has_project_permission(handover.tenant_id,$2,handover.project_id,'handovers.read')
          AND ($3::uuid IS NULL OR handover.project_id=$3) AND ($4::text IS NULL OR handover.status=$4)
          AND ($5::uuid IS NULL OR handover.responsible_membership_id=$5)
          AND ($6::text IS NULL OR unit.code ILIKE '%'||$6||'%' OR COALESCE(buyers.names,'') ILIKE '%'||$6||'%')
        ORDER BY ${sort} ${direction},handover.id ASC`,[input.tenantId,input.membershipId,input.projectId??null,input.status??null,input.ownerId??null,input.query??null]);
       return result.rows;
     });
+  }
+  schedule(input:Context&{unitId:string;scheduledAt:string;responsibleMembershipId:string}){
+    return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{id:string}>("SELECT app.schedule_unit_handover($1,$2,$3,$4,$5) id",[input.tenantId,input.unitId,input.scheduledAt,input.responsibleMembershipId,input.membershipId])).rows[0]);
+  }
+  update(input:Context&{handoverId:string;scheduledAt:string;responsibleMembershipId:string;status:string;readiness:number;attention?:string|null}){
+    return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{id:string}>("SELECT app.update_unit_handover($1,$2,$3,$4,$5,$6,$7,$8) id",[input.tenantId,input.handoverId,input.scheduledAt,input.responsibleMembershipId,input.status,input.readiness,input.attention??null,input.membershipId])).rows[0]);
   }
 }

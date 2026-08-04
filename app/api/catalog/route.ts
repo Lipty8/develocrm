@@ -84,17 +84,14 @@ function adaptBackendCatalog(catalog: BackendCatalog): CatalogSnapshot {
     };
   });
   const units = catalog.units.map((unit): UnitRecord => {
-    // Pole klienta, předání a ceny patří do C/D; do té doby je presentation adapter
-    // doplní pouze pro známé preview kódy, bez zápisu duplicit do produkční DB.
-    const preview = previewUnits.find((candidate) => candidate.id === unit.code);
     return {
       backendId:unit.id,projectBackendId:unit.projectId,projectCode:catalog.projects.find(project=>project.id===unit.projectId)?.code,structureId:unit.structureId,id: unit.code, project: unit.projectName, building: unit.structureName ?? "Bez zařazení",
       layout: unit.layout ?? "—", area: unit.areaM2, floor: unit.floorLabel ?? "—",
-      orientation: unit.orientation ?? "—", price: preview?.price ?? 0,
+      orientation: unit.orientation ?? "—", price: 0,
       usableArea: unit.usableAreaM2 ?? undefined, balcony: unit.balconyM2, terrace: unit.terraceM2, garden: unit.gardenM2,
       status: commercialLabel(unit.commercialStatus), construction: constructionLabel(unit.constructionStatus),
       updatedAt:unit.updatedAt,
-      handover: preview?.handover ?? "Neplánováno", client: preview?.client, attention: preview?.attention,
+      handover: "Neplánováno",
       accessory: unit.accessories.map((item) => `${item.type} ${item.code}${item.areaM2 ? ` · ${item.areaM2} m²` : ""}`).join(" · ") || "Bez příslušenství",accessories:unit.accessories,
     };
   });

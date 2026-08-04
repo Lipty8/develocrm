@@ -1,7 +1,7 @@
 import type { ContractHistoryEvent, ContractRecord, PriceHistoryRecord } from "../crm-data";
 import { contractStatusLabel, isValidContractTransition, recommendedContractAction } from "../../backend/src/shared/contract-workflow";
 import { recordPreviewActivity } from "./activity-repository";
-import { responseAllowsBrowserFallback } from "../lib/data-mode";
+import { clientUsesBrowserAdapter, responseAllowsBrowserFallback } from "../lib/data-mode";
 import { apiFetch } from "../lib/api-client";
 
 export type CommercialSnapshot = {
@@ -18,6 +18,9 @@ export interface CommercialRepository {
   recordPrice(input: { unitId: string; unitKey?: string; priceType: string; amount: number; validFrom: string; reason: string; approverMembershipId?: string; actorName?: string }): Promise<void>;
   decidePrice(input:{proposalId:string;decision:"approved"|"rejected";reason:string;actorName?:string}):Promise<void>;
   transitionContract(input: { contractId: string; to: string; reason: string; actorName?: string }): Promise<void>;
+  createContract(input:{salesCaseId:string;type:"rs"|"sbk"|"ks"|"amendment";reference:string;title:string;parentContractId?:string}):Promise<{id:string}>;
+  createContractVersion(input:{contractId:string;name:string;source?:string;basedOnVersionId?:string}):Promise<{id:string}>;
+  recordContractSignature(input:{contractPartyId:string;versionId:string;reason:string}):Promise<{completed:boolean}>;
 }
 
 type PreviewContractEdit = Pick<ContractRecord, "statusCode" | "state" | "updated" | "updatedAt" | "history">;
@@ -28,7 +31,7 @@ class ApiCommercialRepository implements CommercialRepository {
     const response = await apiFetch("/api/commercial", { signal, cache: "no-store" });
     if (!response.ok) throw new Error("Ceny a smlouvy se nepodařilo načíst");
     const snapshot = await response.json() as CommercialSnapshot;
-    if (typeof window !== "undefined") {
+    if (typeof window !== "undefined"&&clientUsesBrowserAdapter()) {
       const edits = JSON.parse(localStorage.getItem("develocrm.price.edits") || "{}");
       for (const [unit, rows] of Object.entries(edits)) {
         snapshot.priceHistories[unit] = [...(rows as PriceHistoryRecord[]), ...(snapshot.priceHistories[unit] || [])];
@@ -116,6 +119,15 @@ class ApiCommercialRepository implements CommercialRepository {
     }
     const payload = await response.json().catch(() => ({})) as { error?: string };
     throw new Error(payload.error || "Stav smlouvy se nepodařilo změnit");
+  }
+  async createContract(input:{salesCaseId:string;type:"rs"|"sbk"|"ks"|"amendment";reference:string;title:string;parentContractId?:string}){
+    const response=await apiFetch("/api/commercial/contracts",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});if(response.ok)return response.json() as Promise<{id:string}>;const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??"Smlouvu nelze vytvořit");
+  }
+  async createContractVersion(input:{contractId:string;name:string;source?:string;basedOnVersionId?:string}){
+    const response=await apiFetch(`/api/commercial/contracts/${input.contractId}/versions`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:input.name,source:input.source??"manual",basedOnVersionId:input.basedOnVersionId})});if(response.ok)return response.json() as Promise<{id:string}>;const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??"Verzi smlouvy nelze vytvořit");
+  }
+  async recordContractSignature(input:{contractPartyId:string;versionId:string;reason:string}){
+    const response=await apiFetch(`/api/commercial/contract-parties/${input.contractPartyId}/sign`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({versionId:input.versionId,reason:input.reason})});if(response.ok)return response.json() as Promise<{completed:boolean}>;const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??"Podpis smlouvy nelze zaznamenat");
   }
 }
 
