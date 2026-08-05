@@ -4,6 +4,7 @@ import { tasks, tenants, users } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { addPragueCalendarDaysKey, systemClock } from "../../lib/date-time";
 import { apiUnavailable, serverDataMode } from "../../lib/data-mode";
+import { forwardBackendMutation } from "../../lib/backend-proxy";
 
 const DEMO_TENANT_ID = "develocrm-demo";
 const FALLBACK_USER_ID = "iva-novotna";
@@ -110,10 +111,9 @@ async function forwardApiTasks(request:Request,method:"GET"|"POST"|"PATCH"){
   if(method==="PATCH"){
     const id=String(body.id??"");
     if(!id)return Response.json({error:"Chybí úkol"},{status:400});
-    const response=await fetch(`${base}/v1/tasks/${encodeURIComponent(id)}/completion`,{method:"PATCH",headers:{authorization,"x-tenant-id":tenant,"content-type":"application/json"},body:JSON.stringify({completed:body.completed})});
-    return new Response(await response.text(),{status:response.status,headers:{"content-type":"application/json"}});
+    return forwardBackendMutation(request,{method:"PATCH",target:`/v1/tasks/${encodeURIComponent(id)}/completion`,body:JSON.stringify({completed:body.completed}),unavailableMessage:"Úkoly nejsou dostupné bez společného backendu"});
   }
-  const response=await fetch(`${base}/v1/tasks`,{method:"POST",headers:{authorization,"x-tenant-id":tenant,"content-type":"application/json"},body:JSON.stringify(body)});
+  const response=await forwardBackendMutation(request,{method:"POST",target:"/v1/tasks",body:JSON.stringify(body),unavailableMessage:"Úkoly nejsou dostupné bez společného backendu"});
   const payload=await response.json().catch(()=>({}));
   return Response.json(response.ok?{task:payload}:payload,{status:response.status});
 }

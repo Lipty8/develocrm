@@ -1,5 +1,6 @@
 import {clients,unitCommercialContexts} from "../../crm-data";
 import {apiUnavailable,browserFallbackResponse,serverDataMode} from "../../lib/data-mode";
+import {forwardBackendMutation} from "../../lib/backend-proxy";
 import type {ClientSnapshot} from "../../repositories/client-repository";
 
 export async function GET(request:Request){
@@ -15,12 +16,6 @@ export async function GET(request:Request){
   return Response.json({...await response.json(),source:"backend-api"});
 }
 export async function POST(request:Request){
-  const backendUrl=process.env.DEVELOCRM_API_URL?.replace(/\/$/,"");
-  const tenantId=process.env.DEVELOCRM_TENANT_ID;
-  const authorization=request.headers.get("authorization");
-  if(!backendUrl||!tenantId||!authorization)return serverDataMode()==="browser"
-    ?browserFallbackResponse({error:"Vývojový browser adapter"},{status:503})
-    :apiUnavailable("Vytvoření klienta vyžaduje připojený backend");
-  const response=await fetch(`${backendUrl}/v1/parties`,{method:"POST",headers:{authorization,"x-tenant-id":tenantId,"content-type":"application/json"},body:await request.text()});
-  return new Response(await response.text(),{status:response.status,headers:{"content-type":"application/json"}});
+  if(serverDataMode()==="browser")return browserFallbackResponse({error:"Vývojový browser adapter"},{status:503});
+  return forwardBackendMutation(request,{method:"POST",target:"/v1/parties",unavailableMessage:"Vytvoření klienta vyžaduje připojený backend"});
 }

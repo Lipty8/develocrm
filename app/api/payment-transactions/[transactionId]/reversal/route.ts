@@ -1,6 +1,5 @@
+import {forwardBackendMutation} from "../../../../lib/backend-proxy";
+
 export async function POST(request:Request,context:{params:Promise<{transactionId:string}>}){
-  const base=process.env.DEVELOCRM_API_URL?.replace(/\/$/,"");const tenant=process.env.DEVELOCRM_TENANT_ID;const auth=request.headers.get("authorization");
-  if(!base||!tenant||!auth)return Response.json({error:"Preview adapter"},{status:503});
-  const {transactionId}=await context.params;const response=await fetch(`${base}/v1/payment-transactions/${transactionId}/reversal`,{method:"POST",headers:{authorization:auth,"x-tenant-id":tenant,"content-type":"application/json"},body:await request.text()});
-  return new Response(await response.text(),{status:response.status,headers:{"content-type":"application/json"}});
+  const {transactionId}=await context.params;return forwardBackendMutation(request,{method:"POST",target:`/v1/payment-transactions/${encodeURIComponent(transactionId)}/reversal`,unavailableMessage:"Storno platby vyžaduje připojený backend"});
 }

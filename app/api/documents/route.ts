@@ -2,6 +2,7 @@ import type { DocumentListResponse,DocumentRecord } from "../../repositories/doc
 import { previewConnection } from "../../repositories/document-repository";
 import { clients,contracts } from "../../crm-data";
 import { apiUnavailable, browserFallbackResponse, serverDataMode } from "../../lib/data-mode";
+import { forwardBackendMutation } from "../../lib/backend-proxy";
 
 const previewDocuments:DocumentRecord[]=[];
 
@@ -27,16 +28,16 @@ export async function PATCH(request:Request){return forwardMutation(request,"PAT
 
 async function forwardMutation(request:Request,method:"POST"|"PATCH"){
   const url=new URL(request.url);const backendUrl=process.env.DEVELOCRM_API_URL?.replace(/\/$/,"");const tenantId=process.env.DEVELOCRM_TENANT_ID;const authorization=request.headers.get("authorization");
-  if(!backendUrl||!tenantId||!authorization)return serverDataMode()==="browser"?browserFallbackResponse({error:"Změna je ve vývojovém režimu uložena lokálně"},{status:503}):apiUnavailable("Změna dokumentu vyžaduje připojený backend");
+  if(serverDataMode()==="browser")return browserFallbackResponse({error:"Změna je ve vývojovém režimu uložena lokálně"},{status:503});
   const documentId=url.searchParams.get("documentId");const target=documentId&&url.searchParams.get("action")==="version"?`/v1/documents/${encodeURIComponent(documentId)}/versions`:documentId?`/v1/documents/${encodeURIComponent(documentId)}`:"/v1/documents";
   const body=await request.json() as Record<string,unknown>;
   if(url.searchParams.get("action")==="version"&&documentId){
     body.versionIdentifier=`${documentId}-${String(body.label??Date.now())}`;
     body.versionLabel=body.label;
   }
-  const response=await fetch(`${backendUrl}${target}`,{method,headers:{authorization,"x-tenant-id":tenantId,"content-type":"application/json"},body:JSON.stringify(body)});
+  const response=await forwardBackendMutation(request,{method,target,body:JSON.stringify(body),unavailableMessage:"Změna dokumentu vyžaduje připojený backend"});
   const responseText=await response.text();
-  if(response.ok&&method==="POST"&&!documentId){
+  if(response.ok&&method==="POST"&&!documentId&&backendUrl&&tenantId&&authorization){
     const created=JSON.parse(responseText) as {id:string};
     const detail=await fetch(`${backendUrl}/v1/documents/${encodeURIComponent(created.id)}`,{headers:{authorization,"x-tenant-id":tenantId},cache:"no-store"});
     if(detail.ok)return new Response(await detail.text(),{status:201,headers:{"content-type":"application/json"}});

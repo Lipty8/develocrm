@@ -78,15 +78,35 @@ test("frontend MSAL obnoví účet a používá acquireTokenSilent",async()=>{
   });
   assert.equal((await controller.initialize()).authenticated,true);
   assert.equal(await controller.getAccessToken(),"api-token");
+  assert.equal(await controller.getAccessToken(),"api-token");
+  assert.equal(silentCalls,1);
+});
+
+test("frontend MSAL sloučí souběžné požadavky o access token",async()=>{
+  let silentCalls=0;
+  const account=mockAccount();
+  const controller=new EntraAuthController({
+    loadConfig:async()=>frontendConfig,
+    createClient:()=>({
+      initialize:async()=>undefined,handleRedirectPromise:async()=>null,getActiveAccount:()=>account,
+      setActiveAccount:()=>undefined,getAllAccounts:()=>[account],loginRedirect:async()=>undefined,
+      acquireTokenSilent:async()=>{silentCalls++;await new Promise(resolve=>setTimeout(resolve,10));return authResult();},
+      acquireTokenRedirect:async()=>undefined,logoutRedirect:async()=>undefined,
+    }),
+  });
+  const values=await Promise.all([controller.getAccessToken(),controller.getAccessToken(),controller.getAccessToken()]);
+  assert.deepEqual(values,["api-token","api-token","api-token"]);
   assert.equal(silentCalls,1);
 });
 
 test("centrální API klient připojí Bearer token a při chybě nepoužije fallback",async()=>{
   let called=0;
-  const transport=(async(_input:RequestInfo|URL,init?:RequestInit)=>{called++;return Response.json({authorization:new Headers(init?.headers).get("authorization")});}) as typeof fetch;
+  let correlationId="";
+  const transport=(async(_input:RequestInfo|URL,init?:RequestInit)=>{called++;const headers=new Headers(init?.headers);correlationId=headers.get("x-correlation-id")??"";return Response.json({authorization:headers.get("authorization")});}) as typeof fetch;
   const wrapped=createApiFetch({getAccessToken:async()=>"api-token"},transport,()=>false);
   const response=await wrapped("/api/catalog");
   assert.equal((await response.json()).authorization,"Bearer api-token");
+  assert.match(correlationId,/^[0-9a-f-]{36}$/);
   const failing=createApiFetch({getAccessToken:async()=>{throw new Error("token failed");}},transport,()=>false);
   await assert.rejects(failing("/api/catalog"),/token failed/);
   assert.equal(called,1);

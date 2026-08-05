@@ -49,6 +49,7 @@ export class EntraAuthController {
   private config: EntraFrontendConfig | null = null;
   private initialization: Promise<EntraAuthSnapshot> | null = null;
   private cachedToken: AuthenticationResult | null = null;
+  private tokenRequest: Promise<AuthenticationResult> | null = null;
 
   constructor(private readonly dependencies: EntraAuthDependencies = {}) {}
 
@@ -97,15 +98,17 @@ export class EntraAuthController {
     const account = client.getActiveAccount() ?? client.getAllAccounts()[0] ?? null;
     if (!account) throw new Error("AUTHENTICATION_REQUIRED");
     client.setActiveAccount(account);
+    if (this.cachedToken?.accessToken && tokenIsFresh(this.cachedToken)) return this.cachedToken.accessToken;
     const forceRefresh = Boolean(
       this.cachedToken?.expiresOn && this.cachedToken.expiresOn.getTime() - Date.now() <= 5 * 60_000,
     );
     try {
-      this.cachedToken = await client.acquireTokenSilent({
+      this.tokenRequest ??= client.acquireTokenSilent({
         account,
         scopes: [this.requireScope()],
         forceRefresh,
-      });
+      }).finally(() => { this.tokenRequest = null; });
+      this.cachedToken = await this.tokenRequest;
       if (!this.cachedToken.accessToken) throw new Error("Access token pro DeveloCRM API nebyl vydán");
       return this.cachedToken.accessToken;
     } catch (error) {
@@ -132,6 +135,7 @@ export class EntraAuthController {
     this.client = null;
     this.config = null;
     this.cachedToken = null;
+    this.tokenRequest = null;
   }
 
   private requireClient(): MsalClient {
@@ -143,6 +147,10 @@ export class EntraAuthController {
     if (!this.config?.apiScope) throw new Error("Chybí DEVELOCRM_API_SCOPE");
     return this.config.apiScope;
   }
+}
+
+function tokenIsFresh(result: AuthenticationResult): boolean {
+  return !result.expiresOn || result.expiresOn.getTime() - Date.now() > 5 * 60_000;
 }
 
 async function loadFrontendConfig(): Promise<EntraFrontendConfig> {

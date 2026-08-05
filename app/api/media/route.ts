@@ -4,6 +4,7 @@ import { getDb } from "../../../db";
 import { entityMedia, tenants, users } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { apiUnavailable, serverDataMode } from "../../lib/data-mode";
+import { forwardBackendMutation } from "../../lib/backend-proxy";
 
 const TENANT_ID = "develocrm-demo";
 
@@ -41,7 +42,7 @@ export async function POST(request: Request) {
   const objectKey = `${TENANT_ID}/${entityType}/${entityId}/${kind}/${crypto.randomUUID()}-${safeName}`;
   await env.FILES.put(objectKey, file.stream(), { httpMetadata: { contentType: file.type }, customMetadata: { entityType, entityId, kind, uploadedBy: userId } });
   const publicUrl=`/api/media/file/${encodeURIComponent(objectKey)}`;const backendUrl=process.env.DEVELOCRM_API_URL?.replace(/\/$/,"");const tenantId=process.env.DEVELOCRM_TENANT_ID;const authorization=request.headers.get("authorization");
-  if(backendUrl&&tenantId&&authorization){const response=await fetch(`${backendUrl}/v1/${entityType==="project"?"projects":"units"}/${entityId}/${kind==="cover"?"cover":"floorplan"}`,{method:"POST",headers:{authorization,"x-tenant-id":tenantId,"content-type":"application/json"},body:JSON.stringify({url:publicUrl,mimeType:file.type,source:"crm",externalId:objectKey})});if(!response.ok)return Response.json({error:"Metadata obrázku se nepodařilo uložit"},{status:response.status});return Response.json({media:{id:objectKey,entityType,entityId,kind,fileName:file.name,mimeType:file.type,url:publicUrl}},{status:201});}
+  if(backendUrl&&tenantId&&authorization){const response=await forwardBackendMutation(request,{method:"POST",target:`/v1/${entityType==="project"?"projects":"units"}/${encodeURIComponent(entityId)}/${kind==="cover"?"cover":"floorplan"}`,body:JSON.stringify({url:publicUrl,mimeType:file.type,source:"crm",externalId:objectKey}),contentType:"application/json",unavailableMessage:"Uložení média vyžaduje připojený backend"});if(!response.ok)return Response.json({error:"Metadata obrázku se nepodařilo uložit"},{status:response.status});return Response.json({media:{id:objectKey,entityType,entityId,kind,fileName:file.name,mimeType:file.type,url:publicUrl}},{status:201});}
   const id = crypto.randomUUID();
   await db.insert(entityMedia).values({ id, tenantId: TENANT_ID, entityType, entityId, kind, objectKey, fileName: file.name, mimeType: file.type, uploadedByUserId: userId }).onConflictDoUpdate({
     target: [entityMedia.tenantId, entityMedia.entityType, entityMedia.entityId, entityMedia.kind],

@@ -13,6 +13,7 @@ export function createApiFetch(
     const token=await auth.getAccessToken();
     const headers=new Headers(init.headers);
     if(token)headers.set("authorization",`Bearer ${token}`);
+    if(!headers.has("x-correlation-id"))headers.set("x-correlation-id",crypto.randomUUID());
     return transport(input,{...init,headers});
   };
 }
