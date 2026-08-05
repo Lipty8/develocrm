@@ -28,7 +28,7 @@ test("BFF proxy předá POST tělo, autorizaci, tenant a correlation ID právě 
     assert.equal(new TextDecoder().decode(init?.body as ArrayBuffer),'{"kind":"individual"}');
     return Response.json({id:"party-1"},{status:201,headers:{"x-correlation-id":"corr-backend"}});
   }) as typeof fetch;
-  const response=await forwardBackendMutation(new Request("https://crm.example.test/api/clients",{method:"POST",headers:{authorization:"Bearer test-token","content-type":"application/json","x-correlation-id":"corr-post"},body:'{"kind":"individual"}'}),{method:"POST",target:"/v1/parties",unavailableMessage:"Backend chybí"});
+  const response=await forwardBackendMutation(new Request("https://crm.example.test/api/clients",{method:"POST",headers:{authorization:"DeveloCRM test-token","content-type":"application/json","x-correlation-id":"corr-post"},body:'{"kind":"individual"}'}),{method:"POST",target:"/v1/parties",unavailableMessage:"Backend chybí"});
   assert.equal(called,1);
   assert.equal(response.status,201);
   assert.equal(response.headers.get("x-correlation-id"),"corr-backend");

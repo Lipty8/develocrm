@@ -106,10 +106,12 @@ test("centrální API klient připojí Bearer token a při chybě nepoužije fal
   const wrapped=createApiFetch({getAccessToken:async()=>"api-token"},transport,()=>false);
   const response=await wrapped("/api/catalog");
   assert.equal((await response.json()).authorization,"Bearer api-token");
+  const mutationResponse=await wrapped("/api/clients",{method:"POST",body:"{}"});
+  assert.equal((await mutationResponse.json()).authorization,"DeveloCRM api-token");
   assert.match(correlationId,/^[0-9a-f-]{36}$/);
   const failing=createApiFetch({getAccessToken:async()=>{throw new Error("token failed");}},transport,()=>false);
   await assert.rejects(failing("/api/catalog"),/token failed/);
-  assert.equal(called,1);
+  assert.equal(called,2);
 });
 
 test("frontend logout používá MSAL logoutRedirect",async()=>{

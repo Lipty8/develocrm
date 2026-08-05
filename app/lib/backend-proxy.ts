@@ -30,6 +30,13 @@ function correlationId(request: Request): string {
   return incoming || crypto.randomUUID();
 }
 
+function backendAuthorization(value: string | null): string | null {
+  const authorization=value?.trim();
+  if (!authorization) return null;
+  if (authorization.startsWith("DeveloCRM ")) return `Bearer ${authorization.slice("DeveloCRM ".length)}`;
+  return authorization;
+}
+
 function safeTarget(backendUrl: string, target: string): URL {
   if (!target.startsWith("/")) throw new Error("Backend target musí být relativní cesta");
   const backend = new URL(backendUrl);
@@ -41,7 +48,7 @@ function safeTarget(backendUrl: string, target: string): URL {
 export async function forwardBackendMutation(request: Request, options: MutationOptions): Promise<Response> {
   const backendUrl = process.env.DEVELOCRM_API_URL?.trim().replace(/\/$/, "");
   const tenantId = process.env.DEVELOCRM_TENANT_ID?.trim();
-  const authorization = request.headers.get("authorization")?.trim();
+  const authorization = backendAuthorization(request.headers.get("authorization"));
   const requestCorrelationId = correlationId(request);
 
   if (!backendUrl || !tenantId || !authorization) {
