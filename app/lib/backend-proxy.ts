@@ -30,7 +30,7 @@ function correlationId(request: Request): string {
   return incoming || crypto.randomUUID();
 }
 
-function backendAuthorization(value: string | null): string | null {
+export function backendAuthorization(value: string | null): string | null {
   const authorization=value?.trim();
   if (!authorization) return null;
   if (authorization.startsWith("DeveloCRM ")) return `Bearer ${authorization.slice("DeveloCRM ".length)}`;

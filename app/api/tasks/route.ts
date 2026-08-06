@@ -4,7 +4,7 @@ import { tasks, tenants, users } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { addPragueCalendarDaysKey, systemClock } from "../../lib/date-time";
 import { apiUnavailable, serverDataMode } from "../../lib/data-mode";
-import { forwardBackendMutation } from "../../lib/backend-proxy";
+import { backendAuthorization, forwardBackendMutation } from "../../lib/backend-proxy";
 
 const DEMO_TENANT_ID = "develocrm-demo";
 const FALLBACK_USER_ID = "iva-novotna";
@@ -44,6 +44,12 @@ export async function POST(request: Request) {
       objectId?: string;
       assignedToUserId?: string;
       assigneeName?: string;
+      projectId?:string;
+      unitId?:string;
+      partyId?:string;
+      contractId?:string;
+      objectLabel?:string;
+      assigneeMembershipId?:string;
       priority?: string;
       dueAt?: string;
     };
@@ -54,7 +60,7 @@ export async function POST(request: Request) {
     const current = await actor();
     await db.insert(tenants).values({ id: DEMO_TENANT_ID, name: "Develo Group", slug: "develo-group" }).onConflictDoNothing();
     await db.insert(users).values({ id: current.id, tenantId: DEMO_TENANT_ID, email: current.email, displayName: current.displayName, role: "admin" }).onConflictDoNothing();
-    const assigneeId=payload.assignedToUserId?.trim()||current.id;
+    const assigneeId=payload.assignedToUserId?.trim()||payload.assigneeMembershipId?.trim()||current.id;
     const assigneeName=payload.assignedToUserId?.trim()?payload.assigneeName?.trim()||"Uživatel CRM":current.displayName;
     if(assigneeId!==current.id)await db.insert(users).values({id:assigneeId,tenantId:DEMO_TENANT_ID,email:`${assigneeId.replace(/[^a-z0-9]+/gi,"-").toLowerCase()}@preview.invalid`,displayName:assigneeName,role:"member"}).onConflictDoNothing();
 
@@ -64,8 +70,8 @@ export async function POST(request: Request) {
       tenantId: DEMO_TENANT_ID,
       title,
       description: payload.description?.trim() || null,
-      objectType: payload.objectType || "unit",
-      objectId: payload.objectId || "101",
+      objectType: payload.objectType || (payload.partyId?"party":payload.contractId?"contract":payload.projectId&&!payload.unitId?"project":"unit"),
+      objectId: payload.objectId || payload.unitId || payload.partyId || payload.contractId || payload.projectId || "101",
       assignedToUserId: assigneeId,
       priority: payload.priority || "medium",
       dueAt: payload.dueAt || addPragueCalendarDaysKey(systemClock.now(), 1),
@@ -81,7 +87,7 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   if(serverDataMode()==="api")return forwardApiTasks(request,"PATCH");
   try {
-    const payload = await request.json() as { id?: string; completed?: boolean };
+    const payload = await request.json() as { id?: string; completed?: boolean;archive?:boolean };
     if (!payload.id) return Response.json({ error: "Chybí úkol" }, { status: 400 });
     const current = await actor();
     const db = getDb();
@@ -100,7 +106,7 @@ export async function PATCH(request: Request) {
 async function forwardApiTasks(request:Request,method:"GET"|"POST"|"PATCH"){
   const base=process.env.DEVELOCRM_API_URL?.replace(/\/$/,"");
   const tenant=process.env.DEVELOCRM_TENANT_ID;
-  const authorization=request.headers.get("authorization");
+  const authorization=backendAuthorization(request.headers.get("authorization"));
   if(!base||!tenant||!authorization)return apiUnavailable("Úkoly nejsou dostupné bez společného backendu");
   if(method==="GET"){
     const scope=new URL(request.url).searchParams.get("scope")??"mine";
@@ -111,9 +117,10 @@ async function forwardApiTasks(request:Request,method:"GET"|"POST"|"PATCH"){
   if(method==="PATCH"){
     const id=String(body.id??"");
     if(!id)return Response.json({error:"Chybí úkol"},{status:400});
+    if(body.archive===true)return forwardBackendMutation(request,{method:"PATCH",target:`/v1/tasks/${encodeURIComponent(id)}/archive`,body:JSON.stringify({}),unavailableMessage:"Úkoly nejsou dostupné bez společného backendu"});
     return forwardBackendMutation(request,{method:"PATCH",target:`/v1/tasks/${encodeURIComponent(id)}/completion`,body:JSON.stringify({completed:body.completed}),unavailableMessage:"Úkoly nejsou dostupné bez společného backendu"});
   }
   const response=await forwardBackendMutation(request,{method:"POST",target:"/v1/tasks",body:JSON.stringify(body),unavailableMessage:"Úkoly nejsou dostupné bez společného backendu"});
   const payload=await response.json().catch(()=>({}));
-  return Response.json(response.ok?{task:payload}:payload,{status:response.status});
+  return Response.json(response.ok?{task:payload}:payload,{status:response.status,headers:{"x-correlation-id":response.headers.get("x-correlation-id")??""}});
 }
