@@ -683,7 +683,6 @@ h1, h2, h3, p { margin: 0; }
 .primary-button:active,.secondary-button:active { transform:translateY(1px); }
 .badge.success { background:var(--success-soft);color:var(--success); }
 .done .task-check,.handover-checklist > button > span.checked { border-color:var(--success);background:var(--success); }
-.project-distribution-bar .available,.project-distribution-legend i.available { background:var(--success); }
 .data-table tbody tr,.project-row,.client-relations > button,.contract-main,.handover-list > article { transition:background .14s ease,box-shadow .14s ease; }
 .data-table tbody tr:hover { background:#f3f7fc;box-shadow:inset 3px 0 0 var(--brand-blue); }
 .topbar { background:rgba(255,255,255,.94);box-shadow:0 1px 10px rgba(11,31,58,.035); }
