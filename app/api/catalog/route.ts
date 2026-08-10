@@ -6,6 +6,7 @@ import { forwardBackendMutation, type BackendMutationMethod } from "../../lib/ba
 import { projectConstructionLabel } from "../../lib/project-construction";
 import { projectCompletionLabel } from "../../lib/project-completion";
 import { projectSalesPerformancePercent } from "../../lib/project-sales-performance";
+import { unitCommercialStatusLabel } from "../../lib/unit-commercial-status";
 
 type BackendCatalog = {
   projects: Array<{
@@ -90,17 +91,13 @@ function adaptBackendCatalog(catalog: BackendCatalog): CatalogSnapshot {
       layout: unit.layout ?? "—", area: unit.areaM2, floor: unit.floorLabel ?? "—",
       orientation: unit.orientation ?? "—", price: 0,
       usableArea: unit.usableAreaM2 ?? undefined, balcony: unit.balconyM2, terrace: unit.terraceM2, garden: unit.gardenM2,
-      status: commercialLabel(unit.commercialStatus), construction: constructionLabel(unit.constructionStatus),
+      status: unitCommercialStatusLabel(unit.commercialStatus) as UnitStatus, construction: constructionLabel(unit.constructionStatus),
       updatedAt:unit.updatedAt,
       handover: "Neplánováno",
       accessory: unit.accessories.map((item) => `${item.type} ${item.code}${item.areaM2 ? ` · ${item.areaM2} m²` : ""}`).join(" · ") || "Bez příslušenství",accessories:unit.accessories,
     };
   });
   return { projects, units, accessories:catalog.accessories.map(item=>({...item,project:item.projectName,projectBackendId:item.projectId})),memberships:catalog.memberships,structures:catalog.structures.map(item=>({id:item.id,projectId:item.projectId,project:item.projectName,name:item.name,kind:item.kind})),source: "backend-api" };
-}
-
-function commercialLabel(status: string): UnitStatus {
-  return ({ available: "Volný", pre_reserved: "Předrezervace", reserved: "RS", contracted: "SBK", sold: "KS", handed_over: "Předáno", blocked: "Blokováno" } as Record<string, UnitStatus>)[status] ?? "Volný";
 }
 
 function constructionLabel(status: string | null): string {

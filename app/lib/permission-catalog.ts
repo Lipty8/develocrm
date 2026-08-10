@@ -59,6 +59,8 @@ const definitions: PermissionDefinition[] = [
   {key:"clients.manage",name:"Spravovat klienty",description:"Uživatel může spravovat canonical záznamy klientů, kontakty a vazby.",category:"Klienti",operation:"manage",supportedScopes:clientScope},
   {key:"clients.export",name:"Exportovat kontakty klientů",description:"Uživatel může exportovat kontakty klientů v povoleném rozsahu.",category:"Exporty a audit",operation:"export",supportedScopes:clientScope},
   {key:"interests.manage",name:"Spravovat historii zájmu",description:"Uživatel může zapisovat a aktualizovat historii zájmu o jednotky.",category:"Klienti",operation:"manage",supportedScopes:project},
+  {key:"client_changes.read",name:"Zobrazit klientské změny",description:"Uživatel uvidí požadavky klientů na změny jednotek v povolených projektech.",category:"Klientské změny",operation:"view",supportedScopes:project},
+  {key:"client_changes.manage",name:"Spravovat klientské změny",description:"Uživatel může vytvářet a bezpečně archivovat klientské změny v povolených projektech.",category:"Klientské změny",operation:"manage",supportedScopes:project},
 
   {key:"sales_case.read",name:"Zobrazit obchodní případy",description:"Uživatel uvidí obchodní kontext jednotek v povoleném rozsahu.",category:"Obchodní případy",operation:"view",supportedScopes:project},
   {key:"sales_cases.read",name:"Zobrazit obchodní případy",description:"Uživatel uvidí obchodní případy v přiřazených projektech.",category:"Obchodní případy",operation:"view",supportedScopes:project},
@@ -133,6 +135,7 @@ export const permissionCategoryOrder = [
   "Projekty",
   "Jednotky a příslušenství",
   "Klienti",
+  "Klientské změny",
   "Obchodní případy",
   "Smlouvy",
   "Dokumenty",

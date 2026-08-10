@@ -25,6 +25,16 @@
   --blue-soft: var(--brand-blue-soft);
   --purple: #6b5791;
   --purple-soft: #f0ecf8;
+  --status-available: #8a6543;
+  --status-available-soft: #f3ece5;
+  --status-pre-reserved: #c96f17;
+  --status-pre-reserved-soft: #fff0df;
+  --status-reserved: #1469c8;
+  --status-reserved-soft: #eaf3fd;
+  --status-sold: #247453;
+  --status-sold-soft: #e8f5ef;
+  --status-handed-over: #6b5791;
+  --status-handed-over-soft: #f0ecf8;
   --radius-card: 14px;
   --radius-control: 9px;
   --shadow: 0 1px 2px rgba(11,31,58,.035), 0 9px 28px rgba(11,31,58,.055);
@@ -125,6 +135,7 @@ h1, h2, h3, p { margin: 0; }
 .attention-list strong, .attention-list small { display: block; }.attention-list strong { font-size: 12px; }.attention-list small { margin-top: 4px; color: var(--muted); font-size: 10.5px; }
 .badge { min-height: 22px; display: inline-flex; align-items: center; justify-content: center; padding: 0 8px; border-radius: 99px; font-size: 9.5px; line-height: 1; font-weight: 700; white-space: nowrap; }
 .badge.success { background: var(--green-soft); color: #26634e; }.badge.danger { background: var(--red-soft); color: var(--red); }.badge.warning { background: var(--amber-soft); color: var(--amber); }.badge.blue { background: var(--blue-soft); color: var(--blue); }.badge.purple { background: var(--purple-soft); color: var(--purple); }.badge.neutral { background: #eff1ef; color: #606a65; }
+.badge.available { background:var(--status-available-soft);color:var(--status-available); }.badge.pre-reserved { background:var(--status-pre-reserved-soft);color:var(--status-pre-reserved); }.badge.reserved,.badge.contracted { background:var(--status-reserved-soft);color:var(--status-reserved); }.badge.sold { background:var(--status-sold-soft);color:var(--status-sold); }.badge.handed-over { background:var(--status-handed-over-soft);color:var(--status-handed-over); }.badge.blocked { background:var(--red-soft);color:var(--red); }
 
 .today-card { padding: 17px 18px; }
 .today-date { display: flex; align-items: center; gap: 11px; margin: 17px 0 12px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
@@ -264,7 +275,11 @@ h1, h2, h3, p { margin: 0; }
 .form-modal { display:flex;flex-direction:column;max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px); }
 .form-modal>.modal-head,.form-modal>.modal-foot { flex:0 0 auto; }
 .form-modal>.modal-form { min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable; }
+.month-year-picker { display:grid;grid-template-columns:1fr 1fr;gap:11px;margin:0;padding:0;border:0; }
+.month-year-picker legend { grid-column:1/-1;margin-bottom:0;color:#55615b;font-size:9px;font-weight:650; }
+.month-year-picker label>span { font-size:8.5px;color:var(--muted); }
 @media(max-width:650px){.modal-layer{padding:10px}.form-modal{max-height:calc(100vh - 20px);max-height:calc(100dvh - 20px)}}
+@media(max-width:760px){.project-detail-hero{grid-template-columns:1fr}.month-year-picker{grid-template-columns:1fr}}
 
 /* Project hierarchy */
 .projects-page { display: flex; flex-direction: column; gap: 16px; }
@@ -276,9 +291,9 @@ h1, h2, h3, p { margin: 0; }
 .portfolio-summary small { margin-top: 6px; color: var(--muted); font-size: 9px; }
 .project-unit-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 16px 0; padding: 14px 0; border: solid var(--line); border-width: 1px 0; }
 .project-unit-stats > span { position: relative; }
-.project-unit-stats i { position: absolute; top: 4px; left: 0; width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
-.project-unit-stats i.reserved { background: var(--amber); }
-.project-unit-stats i.sold { background: var(--blue); }
+.project-unit-stats i { position: absolute; top: 4px; left: 0; width: 6px; height: 6px; border-radius: 50%; background: var(--status-available); }
+.project-unit-stats i.reserved { background: var(--status-reserved); }
+.project-unit-stats i.sold { background: var(--status-sold); }
 .project-unit-stats > span:has(i) { padding-left: 12px; }
 .project-unit-stats strong, .project-unit-stats small { display: block; }
 .project-unit-stats strong { font-size: 14px; }
@@ -289,7 +304,7 @@ h1, h2, h3, p { margin: 0; }
 .project-card-meta strong { margin-top: 4px; color: var(--ink); font-size: 9.5px; }
 .project-card-meta small { font-size: 7.5px; letter-spacing: .4px; }
 .project-detail { display: flex; flex-direction: column; gap: 15px; }
-.project-detail-hero { min-height: 126px; display: grid; grid-template-columns: 58px minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 20px; }
+.project-detail-hero { min-height: 126px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 20px; }
 .project-detail-mark { width: 58px; height: 58px; display: grid; place-items: center; border-radius: 13px; background: var(--green-soft); color: var(--green); font-size: 16px; font-weight: 800; }
 .project-detail-hero h1 { margin-top: 4px; font-size: 25px; letter-spacing: -.6px; }
 .project-detail-hero p { margin-top: 6px; color: var(--muted); font-size: 11px; }
@@ -370,11 +385,11 @@ h1, h2, h3, p { margin: 0; }
 .project-distribution-head > span { color: var(--muted); font-size: 11.5px; }
 .project-distribution-bar { height: 14px; display: flex; overflow: hidden; margin-top: 15px; border-radius: 7px; background: #edf0ee; box-shadow: inset 0 0 0 1px rgba(32, 51, 43, .04); }
 .project-distribution-bar > i { height: 100%; display: block; }
-.project-distribution-bar .available, .project-distribution-legend i.available { background: var(--green); }
-.project-distribution-bar .pre-reserved, .project-distribution-legend i.pre-reserved { background: #d5a552; }
-.project-distribution-bar .reserved, .project-distribution-legend i.reserved { background: var(--amber); }
-.project-distribution-bar .sold, .project-distribution-legend i.sold { background: var(--blue); }
-.project-distribution-bar .handed-over, .project-distribution-legend i.handed-over { background: var(--purple); }
+.project-distribution-bar .available, .project-distribution-legend i.available { background: var(--status-available); }
+.project-distribution-bar .pre-reserved, .project-distribution-legend i.pre-reserved { background: var(--status-pre-reserved); }
+.project-distribution-bar .reserved, .project-distribution-legend i.reserved { background: var(--status-reserved); }
+.project-distribution-bar .sold, .project-distribution-legend i.sold { background: var(--status-sold); }
+.project-distribution-bar .handed-over, .project-distribution-legend i.handed-over { background: var(--status-handed-over); }
 .project-distribution-legend { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 14px; }
 .project-distribution-legend > span { min-width: 0; display: grid; grid-template-columns: 9px 1fr; gap: 7px; align-items: center; }
 .project-distribution-legend > span > i { width: 9px; height: 9px; border-radius: 50%; }

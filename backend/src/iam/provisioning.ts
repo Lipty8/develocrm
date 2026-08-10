@@ -23,6 +23,13 @@ export const defaultPermissionCodes:Record<(typeof defaultRoles)[number]["code"]
   handover_complaints:["projects.read","units.read","clients.read_all","clients.read_contact_details","handovers.read","handovers.manage","complaints.read","complaints.manage","tasks.read","tasks.manage"],
   read_only:["projects.read","units.read","accessories.read","clients.read_all","sales_cases.read","contracts.read","documents.read","prices.read","payments.read","handovers.read","tasks.read"],
 };
+defaultPermissionCodes.admin.push("client_changes.read","client_changes.manage");
+defaultPermissionCodes.project_manager.push("client_changes.read","client_changes.manage");
+defaultPermissionCodes.back_office.push("client_changes.read","client_changes.manage");
+defaultPermissionCodes.executive.push("client_changes.read");
+defaultPermissionCodes.sales.push("client_changes.read");
+defaultPermissionCodes.finance.push("client_changes.read");
+defaultPermissionCodes.read_only.push("client_changes.read");
 
 export class TenantProvisioningService {
   constructor(private readonly database: Database) {}
