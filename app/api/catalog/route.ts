@@ -3,6 +3,9 @@ import { previewCatalogMeta, type CatalogSnapshot } from "../../repositories/cat
 import type { ProjectRecord } from "../../crm-data";
 import { apiUnavailable, browserFallbackResponse, serverDataMode } from "../../lib/data-mode";
 import { forwardBackendMutation, type BackendMutationMethod } from "../../lib/backend-proxy";
+import { projectConstructionLabel } from "../../lib/project-construction";
+import { projectCompletionLabel } from "../../lib/project-completion";
+import { projectSalesPerformancePercent } from "../../lib/project-sales-performance";
 
 type BackendCatalog = {
   projects: Array<{
@@ -74,11 +77,11 @@ function adaptBackendCatalog(catalog: BackendCatalog): CatalogSnapshot {
     const unitCount = Object.values(project.counts).reduce((sum, count) => sum + count, 0);
     return {
       backendId:project.id,name: project.name,sourceName:project.name, code: project.code, location: project.location ?? "",
-      progress: Math.round(((reserved + sold + handedOver) / Math.max(unitCount, 1)) * 100), units: unitCount,
+      progress: projectSalesPerformancePercent({units:unitCount,reserved,sold,handedOver}), units: unitCount,
       available, preReserved, reserved, sold, handedOver, attention: 0,
-      color: (["sage", "sand", "slate"] as const)[index % 3], stage: constructionLabel(project.constructionStatus),
+      color: (["sage", "sand", "slate"] as const)[index % 3], stage: projectConstructionLabel(project.constructionStatus),stageCode:project.constructionStatus,
       revenue: "—", buildings: [...(projectStructures.get(project.name) ?? [])],
-      lifecycleStatus:project.lifecycleStatus,manager: project.manager ?? "—",managerMembershipId:project.managerMembershipId, plannedHandover: quarterLabel(project.plannedHandoverFrom),plannedCompletionFrom:project.plannedHandoverFrom,plannedCompletionTo:project.plannedHandoverTo,
+      lifecycleStatus:project.lifecycleStatus,manager: project.manager ?? "—",managerMembershipId:project.managerMembershipId, plannedHandover: projectCompletionLabel(project.plannedHandoverFrom??project.plannedHandoverTo),plannedCompletionFrom:project.plannedHandoverFrom,plannedCompletionTo:project.plannedHandoverTo,
     };
   });
   const units = catalog.units.map((unit): UnitRecord => {
@@ -103,10 +106,4 @@ function commercialLabel(status: string): UnitStatus {
 function constructionLabel(status: string | null): string {
   return ({ preparation: "Příprava", permitting: "Povolování", construction: "Ve výstavbě",
     rough_construction: "Hrubá stavba", installations: "Instalace", fit_out: "Dokončovací práce", completed: "Dokončeno" } as Record<string, string>)[status ?? ""] ?? "Bez stavebního stavu";
-}
-
-function quarterLabel(date: string | null): string {
-  if (!date) return "Neplánováno";
-  const parsed = new Date(`${date}T00:00:00Z`);
-  return `Q${Math.floor(parsed.getUTCMonth() / 3) + 1} ${parsed.getUTCFullYear()}`;
 }

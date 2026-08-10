@@ -14,5 +14,9 @@ export async function forwardCatalogMutation(
     :kind==="unit"?`/v1/units/${p.unitId}`
     :kind==="unit-accessory"?`/v1/units/${p.unitId}/accessories`
     :`/v1/accessory-assignments/${p.assignmentId}`;
+  if(kind==="project-construction"){
+    const payload=await request.json() as {statusCode:string;note:string};
+    return forwardBackendMutation(request,{method,target,unavailableMessage:"Editace vyžaduje připojený backend",body:JSON.stringify({...payload,effectiveAt:new Date().toISOString()}),contentType:"application/json"});
+  }
   return forwardBackendMutation(request,{method,target,unavailableMessage:"Editace vyžaduje připojený backend"});
 }
