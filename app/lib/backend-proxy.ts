@@ -11,7 +11,7 @@ type MutationOptions = {
 };
 
 type ProxyLog = {
-  event: "bff.mutation.start" | "bff.mutation.complete" | "bff.mutation.transport_error" | "bff.mutation.unavailable";
+  event: "bff.mutation.start" | "bff.mutation.complete" | "bff.mutation.transport_error" | "bff.mutation.unavailable" | "bff.mutation.redirect_rejected";
   correlationId: string;
   method: BackendMutationMethod;
   target: string;
@@ -110,9 +110,26 @@ export async function forwardBackendMutation(request: Request, options: Mutation
       headers,
       body: options.method === "DELETE" ? undefined : body,
       cache: "no-store",
-      redirect: "error",
+      // Cloudflare Workers do not implement redirect:"error". Keep redirects
+      // manual and reject them explicitly so authorization is never forwarded
+      // to a different origin.
+      redirect: "manual",
     });
     const responseCorrelationId = response.headers.get("x-correlation-id") || requestCorrelationId;
+    if (response.status >= 300 && response.status < 400) {
+      writeLog("error", {
+        event: "bff.mutation.redirect_rejected",
+        correlationId: responseCorrelationId,
+        method: options.method,
+        target: target.toString(),
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+      });
+      return Response.json(
+        { error: "Backend vrátil neočekávané přesměrování", correlationId: responseCorrelationId, retryable: false },
+        { status: 502, headers: { "x-correlation-id": responseCorrelationId, "cache-control": "no-store" } },
+      );
+    }
     const responseHeaders = new Headers({
       "content-type": response.headers.get("content-type") || "application/json",
       "cache-control": "no-store",
