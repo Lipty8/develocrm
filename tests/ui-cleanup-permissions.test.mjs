@@ -84,4 +84,7 @@ test("efektivní oprávnění a detail role jsou seskupené, čitelné a responz
   assert.match(css, /overflow-wrap:anywhere/);
   assert.match(css, /@media\(max-width:650px\)[^{]*\{[^}]*\.effective-permissions-head/s);
   assert.match(css, /\.permission-editor\.grouped\{max-height:520px/);
+  assert.match(app, /className="modal form-modal"/);
+  assert.match(css, /\.form-modal\s*\{[^}]*max-height:calc\(100dvh - 40px\)/s);
+  assert.match(css, /\.form-modal>\.modal-form\s*\{[^}]*overflow-y:auto/s);
 });
