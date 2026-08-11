@@ -12,4 +12,7 @@ test("detail smlouvy nabízí řízené označení aktuální verze jako podepsa
   assert.match(app,/contract\.versions\?\.\[0\]/);
   assert.match(repository,/signContract/);
   assert.match(proxy,/forwardBackendMutation/);
+  assert.match(app,/refreshCommercial\(\);refreshCatalog\(\);refreshClients\(\)/);
+  assert.match(app,/Čeká se na úhradu rezervačního poplatku/);
+  assert.match(app,/Smlouva byla podepsána a jednotka rezervována/);
 });
