@@ -861,11 +861,11 @@ function ProjectDetail({ project, tab, onTab, onBack, notify, openClient,openCon
   const salePercent = projectSalesPerformancePercent(project);
   const salesPerformance = projectSalesPerformanceCount(project);
   const unitDistribution = [
-    { label: "Volné", value: project.available, className: "available" },
-    { label: "Předrezervované", value: project.preReserved, className: "pre-reserved" },
-    { label: "Rezervované", value: project.reserved, className: "reserved" },
-    { label: "Prodané", value: project.sold, className: "sold" },
     { label: "Předané", value: project.handedOver, className: "handed-over" },
+    { label: "Prodané", value: project.sold, className: "sold" },
+    { label: "Rezervované", value: project.reserved, className: "reserved" },
+    { label: "Předrezervované", value: project.preReserved, className: "pre-reserved" },
+    { label: "Volné", value: project.available, className: "available" },
   ];
   const tabs: { id: ProjectTab; label: string; icon: typeof Home; count?: number }[] = [
     { id: "overview", label: "Přehled", icon: LayoutDashboard },

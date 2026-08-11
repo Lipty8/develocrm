@@ -39,6 +39,12 @@ test("barvy obchodních stavů používají jednu sémantickou mapu",async()=>{
   assert.match(styles,/project-distribution-bar \.available[^\n]+var\(--status-available\)/);
 });
 
+test("graf a legenda řadí jednotky od nejpokročilejšího stavu",()=>{
+  assert.match(crm,/const unitDistribution = \[\s*\{ label: "Předané"[^\n]+\n\s*\{ label: "Prodané"[^\n]+\n\s*\{ label: "Rezervované"[^\n]+\n\s*\{ label: "Předrezervované"[^\n]+\n\s*\{ label: "Volné"/);
+  assert.match(crm,/project-distribution-bar[^\n]+unitDistribution\.map/);
+  assert.match(crm,/project-distribution-legend[^\n]+unitDistribution\.map/);
+});
+
 test("okamžitá změna fáze používá čas backendu", () => {
   assert.match(backend, /effectiveAt:new Date\(\)\.toISOString\(\)/);
   assert.match(catalogMutation, /effectiveAt:new Date\(\)\.toISOString\(\)/);
