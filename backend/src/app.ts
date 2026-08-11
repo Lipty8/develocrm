@@ -254,7 +254,7 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
     catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Návrh ceny nelze rozhodnout"});}
   });
 
-  app.post<{Body:{salesCaseId:string;type:string;reference:string;title:string;parentContractId?:string}}>("/v1/contracts",async(request,reply)=>{
+  app.post<{Body:{salesCaseId:string;type:string;reference:string;title:string;parentContractId?:string;idempotencyKey:string;paymentCalculationType?:"percentage"|"fixed";paymentInputValue?:number;paymentDueAt?:string}}>("/v1/contracts",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await commercialCommands.createContract({...context,...request.body}));}
     catch(error){return reply.code(409).send({error:error instanceof Error?error.message:"Smlouvu nelze vytvořit"});}
   });
