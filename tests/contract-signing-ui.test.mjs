@@ -16,3 +16,12 @@ test("detail smlouvy nabízí řízené označení aktuální verze jako podepsa
   assert.match(app,/Čeká se na úhradu rezervačního poplatku/);
   assert.match(app,/Smlouva byla podepsána a jednotka rezervována/);
 });
+
+test("rezervace jednotky je v UI oddělená od smluvní etapy RS",async()=>{
+  const app=await readFile(new URL("../app/CRMApp.tsx",import.meta.url),"utf8");
+  const statuses=await readFile(new URL("../app/lib/unit-commercial-status.ts",import.meta.url),"utf8");
+  assert.match(statuses,/reserved: \{ label: "Rezervovaná"/);
+  assert.match(app,/\["Zájem", "Předrezervace", "Rezervace", "RS", "SBK", "KS", "Předání"\]/);
+  assert.match(app,/reservation:2,rs:3,sbk:4,ks:5,handover:6/);
+  assert.doesNotMatch(app,/<Badge>\{unit\.status\}<\/Badge> Ve vyjednávání/);
+});

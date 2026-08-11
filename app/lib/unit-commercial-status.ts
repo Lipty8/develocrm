@@ -1,7 +1,7 @@
 export const unitCommercialStatuses = {
   available: { label: "Volný", className: "available" },
   pre_reserved: { label: "Předrezervace", className: "pre-reserved" },
-  reserved: { label: "RS", className: "reserved" },
+  reserved: { label: "Rezervovaná", className: "reserved" },
   contracted: { label: "SBK", className: "contracted" },
   sold: { label: "KS", className: "sold" },
   handed_over: { label: "Předáno", className: "handed-over" },
@@ -13,7 +13,7 @@ export type UnitCommercialStatusCode = keyof typeof unitCommercialStatuses;
 const aliases: Record<string, UnitCommercialStatusCode> = {
   "volný": "available", "volné": "available", "k dispozici": "available",
   "předrezervace": "pre_reserved", "předrezervováno": "pre_reserved", "předrezervované": "pre_reserved",
-  "rezervováno": "reserved", "rezervované": "reserved", "rs": "reserved",
+  "rezervováno": "reserved", "rezervovaná": "reserved", "rezervované": "reserved", "rs": "reserved",
   "smluvně zajištěno": "contracted", "sbk": "contracted", "ks": "contracted",
   "prodáno": "sold", "prodané": "sold", "předáno": "handed_over", "předané": "handed_over",
   "blokováno": "blocked",
