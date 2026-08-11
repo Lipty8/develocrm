@@ -270,6 +270,10 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return await commercialCommands.sign({...context,contractPartyId:request.params.contractPartyId,...request.body});}
     catch(error){return reply.code(409).send({error:error instanceof Error?error.message:"Podpis nelze zaznamenat"});}
   });
+  app.post<{Params:{contractId:string};Body:{versionId:string;signedAt:string;note?:string}}>("/v1/contracts/:contractId/sign",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return await commercialCommands.signContract({...context,contractId:request.params.contractId,...request.body});}
+    catch(error){const message=error instanceof Error?error.message:"Podpis nelze zaznamenat";const friendly=message.includes("logical version")||message.includes("contract version")?"Smlouvu nelze podepsat, protože nemá platnou aktuální verzi.":message.includes("approved or in signing")?"Smlouvu lze označit jako podepsanou až po jejím schválení.":message.includes("signing party")?"Smlouvu nelze podepsat, protože nemá evidovaného účastníka podpisu.":message.includes("permission")?"K zaznamenání podpisu nemáte oprávnění.":message.includes("future")?"Datum podpisu nesmí být v budoucnosti.":"Podpis smlouvy se nepodařilo zaznamenat.";return reply.code(message.includes("permission")?403:409).send({error:friendly});}
+  });
 
   app.post<{ Body:{ partyIds?:string[];format?:"json"|"bcc"|"csv"} }>("/v1/clients/export", async (request,reply) => {
     try {

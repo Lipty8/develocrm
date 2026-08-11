@@ -21,6 +21,7 @@ export interface CommercialRepository {
   createContract(input:{salesCaseId:string;type:"rs"|"sbk"|"ks"|"amendment";reference:string;title:string;parentContractId?:string;idempotencyKey:string;paymentCalculationType?:"percentage"|"fixed";paymentInputValue?:number;paymentDueAt?:string}):Promise<{id:string;versionId:string;paymentObligationId:string|null;paymentAmount:number|null}>;
   createContractVersion(input:{contractId:string;name:string;source?:string;basedOnVersionId?:string}):Promise<{id:string}>;
   recordContractSignature(input:{contractPartyId:string;versionId:string;reason:string}):Promise<{completed:boolean}>;
+  signContract(input:{contractId:string;versionId:string;signedAt:string;note?:string}):Promise<{completed:boolean;alreadySigned:boolean;versionId:string}>;
 }
 
 type PreviewContractEdit = Pick<ContractRecord, "statusCode" | "state" | "updated" | "updatedAt" | "history">;
@@ -128,6 +129,9 @@ class ApiCommercialRepository implements CommercialRepository {
   }
   async recordContractSignature(input:{contractPartyId:string;versionId:string;reason:string}){
     const response=await apiFetch(`/api/commercial/contract-parties/${input.contractPartyId}/sign`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({versionId:input.versionId,reason:input.reason})});if(response.ok)return response.json() as Promise<{completed:boolean}>;const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??"Podpis smlouvy nelze zaznamenat");
+  }
+  async signContract(input:{contractId:string;versionId:string;signedAt:string;note?:string}){
+    const response=await apiFetch(`/api/commercial/contracts/${input.contractId}/sign`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});if(response.ok)return response.json() as Promise<{completed:boolean;alreadySigned:boolean;versionId:string}>;const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??"Podpis smlouvy nelze zaznamenat");
   }
 }
 
