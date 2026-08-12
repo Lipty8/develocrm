@@ -1,5 +1,22 @@
 BEGIN;
 
+-- A partial payment remains visible as partially paid even after its due date.
+-- The due date is still available to the application for a separate overdue warning.
+CREATE OR REPLACE FUNCTION app.payment_obligation_status(p_tenant uuid,p_obligation uuid,p_now timestamptz DEFAULT now())
+RETURNS text LANGUAGE sql STABLE AS $$
+  SELECT CASE
+    WHEN obligation.cancelled_at IS NOT NULL THEN 'cancelled'
+    WHEN app.payment_obligation_paid(p_tenant,p_obligation)>obligation.amount THEN 'overpaid'
+    WHEN app.payment_obligation_paid(p_tenant,p_obligation)=obligation.amount THEN 'paid'
+    WHEN app.payment_obligation_paid(p_tenant,p_obligation)>0 THEN 'partially_paid'
+    WHEN obligation.due_at<p_now THEN 'overdue'
+    ELSE 'pending'
+  END
+  FROM payment_obligations obligation WHERE obligation.tenant_id=p_tenant AND obligation.id=p_obligation
+$$;
+
+GRANT EXECUTE ON FUNCTION app.payment_obligation_status(uuid,uuid,timestamptz) TO develocrm_app;
+
 CREATE OR REPLACE FUNCTION app.record_payment(
   p_tenant uuid,p_obligation uuid,p_amount numeric,p_paid_at timestamptz,p_variable_symbol text,p_account text,
   p_bank_transaction_id text,p_note text,p_actor_membership uuid

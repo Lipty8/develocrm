@@ -65,6 +65,7 @@ test("částečné a vícečetné úhrady odvozují stav, přeplatek aktivuje re
   const obligation=(await db.query<{id:string}>("SELECT id FROM payment_obligations WHERE contract_id=$1",[contract])).rows[0].id;
   const first=(await db.query<{id:string}>("SELECT app.record_payment($1,$2,100000,now(),'305','123','bank-1','První část',$3) id",[tenant,obligation,member])).rows[0].id;
   assert.equal((await db.query<{status:string}>("SELECT app.payment_obligation_status($1,$2,now()) status",[tenant,obligation])).rows[0].status,"partially_paid");
+  assert.equal((await db.query<{status:string}>("SELECT app.payment_obligation_status($1,$2,now()+interval '40 days') status",[tenant,obligation])).rows[0].status,"partially_paid");
   await db.query("SELECT app.record_payment($1,$2,160000,now(),'305','123','bank-2','Druhá část',$3)",[tenant,obligation,member]);
   assert.equal((await db.query<{status:string}>("SELECT app.payment_obligation_status($1,$2,now()) status",[tenant,obligation])).rows[0].status,"overpaid");
   assert.equal((await db.query<{commercial_status:string}>("SELECT commercial_status FROM units WHERE id=$1",[unit])).rows[0].commercial_status,"reserved");
