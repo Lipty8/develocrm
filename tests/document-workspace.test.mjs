@@ -24,8 +24,8 @@ test("Contracts use a compact hybrid list and a real tabbed detail",async()=>{
   assert.match(app,/function ContractWorkspace/);
   assert.match(app,/function ContractDetail/);
   assert.match(app,/contract-hybrid-list/);
-  assert.match(app,/DOPORUČENÁ AKCE/);
-  for(const tab of ["Přehled","Historie","Verze","Dokumenty","Aktivita","Poznámky"])assert.match(app,new RegExp(`"${tab}"`));
+  assert.doesNotMatch(app,/DOPORUČENÁ AKCE/);
+  for(const tab of ["Přehled","Historie","Verze","Dokumenty","Poznámky"])assert.match(app,new RegExp(`"${tab}"`));
   assert.match(app,/documentRepository\.listContract/);
   assert.match(app,/Samostatný workflow dokumentu, nikoli obchodní stav jednotky/);
 });

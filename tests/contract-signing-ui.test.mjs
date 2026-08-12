@@ -25,3 +25,13 @@ test("rezervace jednotky je v UI oddělená od smluvní etapy RS",async()=>{
   assert.match(app,/reservation:2,rs:3,sbk:4,ks:5,handover:6/);
   assert.doesNotMatch(app,/<Badge>\{unit\.status\}<\/Badge> Ve vyjednávání/);
 });
+
+test("smlouvy používají filtry v hlavičkách a jedinou sjednocenou historii",async()=>{
+  const app=await readFile(new URL("../app/CRMApp.tsx",import.meta.url),"utf8");
+  assert.match(app,/contract-table-head[\s\S]+ListColumnFilter label="Smlouva a kontext"/);
+  assert.doesNotMatch(app,/contract-filter-bar[^\n]+MultiSelectFilter/);
+  assert.doesNotMatch(app,/<span>Doporučená akce<\/span>/);
+  assert.doesNotMatch(app,/contract-next-action/);
+  assert.doesNotMatch(app,/\["activity","Aktivita",Activity\]/);
+  assert.match(app,/Stavy, logické verze, podpisy a relevantní auditní události/);
+});

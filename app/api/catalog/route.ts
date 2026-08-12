@@ -78,7 +78,7 @@ function adaptBackendCatalog(catalog: BackendCatalog): CatalogSnapshot {
     const unitCount = Object.values(project.counts).reduce((sum, count) => sum + count, 0);
     return {
       backendId:project.id,name: project.name,sourceName:project.name, code: project.code, location: project.location ?? "",
-      progress: projectSalesPerformancePercent({units:unitCount,reserved,sold,handedOver}), units: unitCount,
+      progress: projectSalesPerformancePercent({units:unitCount,available,preReserved,reserved,sold,handedOver}), units: unitCount,
       available, preReserved, reserved, sold, handedOver, attention: 0,
       color: (["sage", "sand", "slate"] as const)[index % 3], stage: projectConstructionLabel(project.constructionStatus),stageCode:project.constructionStatus,
       revenue: "—", buildings: [...(projectStructures.get(project.name) ?? [])],

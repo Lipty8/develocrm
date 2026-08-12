@@ -12,7 +12,7 @@ test("dashboard i detail používají stejný sdílený výpočet prodejního v�
   assert.match(crm, /projectSalesPerformancePercent\(project\)/);
   assert.doesNotMatch(crm, /project\.sold\/project\.units/);
   assert.doesNotMatch(crm, /z \{project\.units\} prodáno/);
-  assert.match(catalog, /projectSalesPerformancePercent\(\{units:unitCount,reserved,sold,handedOver\}\)/);
+  assert.match(catalog, /projectSalesPerformancePercent\(\{units:unitCount,available,preReserved,reserved,sold,handedOver\}\)/);
 });
 
 test("katalog přenáší skutečný kód fáze a český měsíc dokončení", () => {
@@ -32,15 +32,16 @@ test("detail projektu nemá redundantní kód ani tlačítko jednotek",()=>{
 
 test("barvy obchodních stavů používají jednu sémantickou mapu",async()=>{
   const styles=await readFile(new URL("../app/globals.css",import.meta.url),"utf8");
-  assert.match(styles,/--status-available: #8a6543/);
+  assert.match(styles,/--status-available: #bd3e3e/);
   assert.match(styles,/--status-pre-reserved: #c96f17/);
   assert.match(styles,/--status-reserved: #1469c8/);
   assert.match(styles,/--status-sold: #247453/);
   assert.match(styles,/project-distribution-bar \.available[^\n]+var\(--status-available\)/);
 });
 
-test("graf a legenda řadí jednotky od nejpokročilejšího stavu",()=>{
-  assert.match(crm,/const unitDistribution = \[\s*\{ label: "Předané"[^\n]+\n\s*\{ label: "Prodané"[^\n]+\n\s*\{ label: "Rezervované"[^\n]+\n\s*\{ label: "Předrezervované"[^\n]+\n\s*\{ label: "Volné"/);
+test("graf a legenda používají tři sdílené agregované stavy",()=>{
+  assert.match(crm,/const salesAggregation = projectSalesAggregation\(project\)/);
+  assert.match(crm,/const unitDistribution = \[\s*\{ label: "Prodané"[^\n]+\n\s*\{ label: "Předrezervace"[^\n]+\n\s*\{ label: "Volné"/);
   assert.match(crm,/project-distribution-bar[^\n]+unitDistribution\.map/);
   assert.match(crm,/project-distribution-legend[^\n]+unitDistribution\.map/);
 });
