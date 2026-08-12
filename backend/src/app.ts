@@ -236,8 +236,8 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
       return sales.getDirectory({ tenantId,userId:user.id,membershipId:session.workspace.membershipId });
     } catch { return reply.code(401).send({ error:"Neplatné přihlášení" }); }
   });
-  app.post<{Body:{projectId:string;kind:"individual"|"organization";firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;email?:string;phone?:string}}>("/v1/parties",async(request,reply)=>{
-    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await sales.createParty({...context,...request.body}));}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Klienta nelze vytvořit"});}
+  app.post<{Body:{projectId:string;kind:"individual"|"organization";salutation?:string;firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;email?:string;phone?:string}}>("/v1/parties",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await sales.createParty({...context,...request.body}));}catch(error){request.log.warn({err:error,correlationId:request.id},"party creation failed");return reply.code(permissionError(error)?403:409).send({error:partyCreationError(error),correlationId:request.id});}
   });
 
   app.get("/v1/commercial", async(request,reply)=>{
@@ -293,14 +293,16 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
     } catch { return reply.code(403).send({ error:"Export není v tomto rozsahu povolen" }); }
   });
 
-  app.post<{ Params:{ unitId:string }; Body:{ type:"pre_reservation"|"reservation";partyIds:string[];expiresAt:string;interestId?:string;idempotencyKey:string;reason:string } }>("/v1/units/:unitId/holds", async (request,reply) => {
+  app.post<{ Params:{ unitId:string }; Body:{ type:"pre_reservation"|"reservation";partyIds?:string[];newParty?:{kind:"individual"|"organization";salutation?:string;firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;email?:string;phone?:string};expiresAt:string;interestId?:string;idempotencyKey:string;reason:string } }>("/v1/units/:unitId/holds", async (request,reply) => {
     try {
       const identity=await authenticate(request,dependencies.verifier); const tenantId=headerValue(request.headers["x-tenant-id"]);
       if (!tenantId) return reply.code(400).send({error:"Chybí x-tenant-id"}); const user=await repository.resolveUser(identity); const session=await repository.getSession(user,identity,tenantId);
       const permission=request.body.type==="reservation"?"holds.confirm":"holds.create";
       if (!session || !await inventory.hasUnitPermission({tenantId,userId:user.id,membershipId:session.workspace.membershipId,unitId:request.params.unitId,permission})) return reply.code(403).send({error:`Chybí oprávnění ${permission}`});
-      return reply.code(201).send(await holds.create({tenantId,userId:user.id,unitId:request.params.unitId,membershipId:session.workspace.membershipId,...request.body}));
-    } catch(error) { return reply.code(409).send({error:error instanceof Error?error.message:"Rezervaci nelze vytvořit"}); }
+      if(request.body.newParty)return reply.code(201).send(await holds.createWithParty({tenantId,userId:user.id,unitId:request.params.unitId,membershipId:session.workspace.membershipId,type:request.body.type,expiresAt:request.body.expiresAt,idempotencyKey:request.body.idempotencyKey,reason:request.body.reason,newParty:request.body.newParty}));
+      if(!request.body.partyIds?.length)return reply.code(400).send({error:"Vyberte klienta nebo založte nového.",correlationId:request.id});
+      return reply.code(201).send(await holds.create({tenantId,userId:user.id,unitId:request.params.unitId,membershipId:session.workspace.membershipId,type:request.body.type,partyIds:request.body.partyIds,expiresAt:request.body.expiresAt,interestId:request.body.interestId,idempotencyKey:request.body.idempotencyKey,reason:request.body.reason}));
+    } catch(error) { request.log.warn({err:error,correlationId:request.id},"hold creation failed");return reply.code(permissionError(error)?403:409).send({error:partyCreationError(error),correlationId:request.id}); }
   });
 
   app.post<{ Params:{ holdId:string }; Body:{ expiresAt:string;idempotencyKey:string;reason:string } }>("/v1/holds/:holdId/convert", async (request,reply) => {
@@ -436,6 +438,7 @@ function headerValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 function permissionError(error:unknown){return error instanceof Error&&/permission|required|oprávnění/i.test(error.message);}
+function partyCreationError(error:unknown){const message=error instanceof Error?error.message:"";if(/clients\.create|clients\.update|party scope|permission/i.test(message))return "Nemáte oprávnění založit klienta.";if(/first name and last name|required|party name/i.test(message))return "Doplňte jméno a příjmení klienta.";if(/registration number already exists/i.test(message))return "Klient se stejným IČO už existuje.";return message||"Klienta nebo předrezervaci nelze vytvořit.";}
 
 function csvCell(value:string):string { return `"${value.replaceAll('"','""')}"`; }
 

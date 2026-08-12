@@ -9,6 +9,14 @@ export class HoldService {
       [input.tenantId,input.unitId,input.type,input.partyIds,input.expiresAt,input.membershipId,input.interestId ?? null,input.idempotencyKey,reason],
     )).rows[0]);
   }
+  createWithParty(input:{tenantId:string;userId:string;unitId:string;type:"pre_reservation"|"reservation";expiresAt:string;membershipId:string;idempotencyKey:string;reason:string;newParty:{kind:"individual"|"organization";salutation?:string;firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;email?:string;phone?:string}}){
+    const reason=input.reason.trim()||(input.type==="pre_reservation"?"Vytvořena předrezervace":"Vytvořena rezervace");
+    const party=input.newParty;
+    return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async(client)=>(await client.query<{party_id:string;sales_case_id:string;hold_id:string}>(
+      "SELECT * FROM app.create_party_and_unit_hold($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)",
+      [input.tenantId,input.unitId,input.type,input.expiresAt,input.membershipId,input.idempotencyKey,reason,party.kind,party.salutation??null,party.firstName??null,party.lastName??null,party.legalName??null,party.registrationNumber??null,party.email??null,party.phone??null],
+    )).rows[0]);
+  }
   convert(input: { tenantId:string;userId:string;holdId:string;expiresAt:string;membershipId:string;idempotencyKey:string;reason:string }) {
     const reason=input.reason.trim()||"Předrezervace převedena na rezervaci";
     return this.database.withContext({ tenantId:input.tenantId,userId:input.userId }, async (client) => (await client.query<{ hold_id:string }>(
