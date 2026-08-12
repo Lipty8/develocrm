@@ -21,6 +21,7 @@ async function database(){
     await db.exec(await readFile(new URL(`../seeds/${name}`,import.meta.url),"utf8"));
   }
   await db.exec(await readFile(new URL("../migrations/0014_payments_and_reservation_activation.sql",import.meta.url),"utf8"));
+  await db.exec(await readFile(new URL("../migrations/0024_unit_payment_and_contract_workflow.sql",import.meta.url),"utf8"));
   await db.exec(`DELETE FROM role_assignments WHERE tenant_id='${tenant}' AND membership_id='${member}';
     INSERT INTO role_assignments(tenant_id,membership_id,role_id,assigned_by_user_id)
     VALUES('${tenant}','${member}','d4000000-0000-4000-8000-000000000001','${user}')`);

@@ -3,6 +3,11 @@ import { contractStatusLabel, isValidContractTransition, recommendedContractActi
 import { recordPreviewActivity } from "./activity-repository";
 import { clientUsesBrowserAdapter, responseAllowsBrowserFallback } from "../lib/data-mode";
 import { apiFetch } from "../lib/api-client";
+import type {NextContractAction} from "../../backend/src/shared/next-contract-action";
+
+export type UnitNextContractAction=NextContractAction&{unitId:string;unitCode:string;salesCaseId:string|null;buyerNames:string[]};
+export type ContractCreateResult={id:string;versionId:string;paymentObligationId:string|null;paymentAmount:number|null;type?:"rs"|"sbk"|"ks";reference?:string;title?:string};
+export type ContextualContractInput={unitId:string;idempotencyKey:string;paymentCalculationType?:"percentage"|"fixed";paymentInputValue?:number;paymentDueAt?:string};
 
 export type CommercialSnapshot = {
   currentPrices: Record<string, number>;
@@ -18,7 +23,9 @@ export interface CommercialRepository {
   recordPrice(input: { unitId: string; unitKey?: string; priceType: string; amount: number; validFrom: string; reason: string; approverMembershipId?: string; actorName?: string }): Promise<void>;
   decidePrice(input:{proposalId:string;decision:"approved"|"rejected";reason:string;actorName?:string}):Promise<void>;
   transitionContract(input: { contractId: string; to: string; reason: string; actorName?: string }): Promise<void>;
-  createContract(input:{salesCaseId:string;type:"rs"|"sbk"|"ks"|"amendment";reference:string;title:string;parentContractId?:string;idempotencyKey:string;paymentCalculationType?:"percentage"|"fixed";paymentInputValue?:number;paymentDueAt?:string}):Promise<{id:string;versionId:string;paymentObligationId:string|null;paymentAmount:number|null}>;
+  createContract(input:{salesCaseId:string;type:"rs"|"sbk"|"ks"|"amendment";reference:string;title:string;parentContractId?:string;idempotencyKey:string;paymentCalculationType?:"percentage"|"fixed";paymentInputValue?:number;paymentDueAt?:string}):Promise<ContractCreateResult>;
+  getNextContractAction(unitId:string,signal?:AbortSignal):Promise<UnitNextContractAction>;
+  createNextContract(input:ContextualContractInput):Promise<ContractCreateResult>;
   createContractVersion(input:{contractId:string;name:string;source?:string;basedOnVersionId?:string}):Promise<{id:string}>;
   recordContractSignature(input:{contractPartyId:string;versionId:string;reason:string}):Promise<{completed:boolean}>;
   signContract(input:{contractId:string;versionId:string;signedAt:string;note?:string}):Promise<{completed:boolean;alreadySigned:boolean;versionId:string}>;
@@ -123,6 +130,16 @@ class ApiCommercialRepository implements CommercialRepository {
   }
   async createContract(input:{salesCaseId:string;type:"rs"|"sbk"|"ks"|"amendment";reference:string;title:string;parentContractId?:string;idempotencyKey:string;paymentCalculationType?:"percentage"|"fixed";paymentInputValue?:number;paymentDueAt?:string}){
     const response=await apiFetch("/api/commercial/contracts",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});if(response.ok)return response.json() as Promise<{id:string;versionId:string;paymentObligationId:string|null;paymentAmount:number|null}>;const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??"Smlouvu nelze vytvořit");
+  }
+  async getNextContractAction(unitId:string,signal?:AbortSignal){
+    const response=await apiFetch(`/api/commercial/units/${encodeURIComponent(unitId)}/next-contract-action`,{signal,cache:"no-store"});
+    if(response.ok)return response.json() as Promise<UnitNextContractAction>;
+    const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??"Další smluvní krok nelze určit");
+  }
+  async createNextContract(input:ContextualContractInput){
+    const response=await apiFetch(`/api/commercial/units/${encodeURIComponent(input.unitId)}/next-contract`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});
+    if(response.ok)return response.json() as Promise<ContractCreateResult>;
+    const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??"Smlouvu nelze vytvořit");
   }
   async createContractVersion(input:{contractId:string;name:string;source?:string;basedOnVersionId?:string}){
     const response=await apiFetch(`/api/commercial/contracts/${input.contractId}/versions`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:input.name,source:input.source??"manual",basedOnVersionId:input.basedOnVersionId})});if(response.ok)return response.json() as Promise<{id:string}>;const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??"Verzi smlouvy nelze vytvořit");

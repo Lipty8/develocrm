@@ -258,6 +258,14 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await commercialCommands.createContract({...context,...request.body}));}
     catch(error){return reply.code(409).send({error:error instanceof Error?error.message:"Smlouvu nelze vytvořit"});}
   });
+  app.get<{Params:{unitId:string}}>("/v1/units/:unitId/next-contract-action",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return commercialCommands.nextContractAction({...context,unitId:request.params.unitId});}
+    catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Další smluvní krok nelze určit"});}
+  });
+  app.post<{Params:{unitId:string};Body:{idempotencyKey:string;paymentCalculationType?:"percentage"|"fixed";paymentInputValue?:number;paymentDueAt?:string}}>("/v1/units/:unitId/next-contract",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await commercialCommands.createNextContract({...context,unitId:request.params.unitId,...request.body}));}
+    catch(error){const message=error instanceof Error?error.message:"Smlouvu nelze vytvořit";const friendly=message.includes("active sales case")?"Jednotka nemá aktivní obchodní proces s přiřazeným klientem.":message.includes("payment terms")?"Doplňte výši a splatnost platby.":message.includes("permission")?"Nemáte oprávnění vytvořit smlouvu.":message;return reply.code(message.includes("permission")?403:409).send({error:friendly});}
+  });
   app.post<{Params:{contractId:string};Body:{name:string;source?:string;basedOnVersionId?:string;generationPayload?:unknown}}>("/v1/contracts/:contractId/versions",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await commercialCommands.createVersion({...context,contractId:request.params.contractId,...request.body,source:request.body.source??"manual"}));}
     catch(error){return reply.code(409).send({error:error instanceof Error?error.message:"Verzi nelze vytvořit"});}

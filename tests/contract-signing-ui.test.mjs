@@ -5,6 +5,7 @@ import test from "node:test";
 test("detail smlouvy nabízí řízené označení aktuální verze jako podepsané",async()=>{
   const app=await readFile(new URL("../app/CRMApp.tsx",import.meta.url),"utf8");
   const repository=await readFile(new URL("../app/repositories/commercial-repository.ts",import.meta.url),"utf8");
+  const nextAction=await readFile(new URL("../backend/src/shared/next-contract-action.ts",import.meta.url),"utf8");
   const proxy=await readFile(new URL("../app/api/commercial/contracts/[contractId]/sign/route.ts",import.meta.url),"utf8");
   assert.match(app,/Označit jako podepsané/);
   assert.match(app,/Datum podpisu/);
@@ -13,7 +14,7 @@ test("detail smlouvy nabízí řízené označení aktuální verze jako podepsa
   assert.match(repository,/signContract/);
   assert.match(proxy,/forwardBackendMutation/);
   assert.match(app,/refreshCommercial\(\);refreshCatalog\(\);refreshClients\(\)/);
-  assert.match(app,/Čeká se na úhradu rezervačního poplatku/);
+  assert.match(nextAction,/Čeká na úhradu rezervačního poplatku/);
   assert.match(app,/Smlouva byla podepsána a jednotka rezervována/);
 });
 
