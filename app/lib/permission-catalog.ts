@@ -56,6 +56,7 @@ const definitions: PermissionDefinition[] = [
   {key:"clients.read_contact_details",name:"Zobrazit kontaktní údaje klientů",description:"Uživatel uvidí telefon, e-mail a adresní údaje dostupných klientů.",category:"Klienti",operation:"view",supportedScopes:clientScope},
   {key:"clients.create",name:"Přidávat klienty",description:"Uživatel může založit nového klienta nebo zájemce.",category:"Klienti",operation:"create",supportedScopes:clientScope},
   {key:"clients.update",name:"Upravovat klienty",description:"Uživatel může upravovat údaje dostupných klientů a jejich kontakty.",category:"Klienti",operation:"update",supportedScopes:clientScope},
+  {key:"clients.archive",name:"Archivovat klienty",description:"Uživatel může skrýt klienta z aktivních seznamů při zachování obchodní a auditní historie.",category:"Klienti",operation:"archive",supportedScopes:clientScope},
   {key:"clients.manage",name:"Spravovat klienty",description:"Uživatel může spravovat canonical záznamy klientů, kontakty a vazby.",category:"Klienti",operation:"manage",supportedScopes:clientScope},
   {key:"clients.export",name:"Exportovat kontakty klientů",description:"Uživatel může exportovat kontakty klientů v povoleném rozsahu.",category:"Exporty a audit",operation:"export",supportedScopes:clientScope},
   {key:"interests.manage",name:"Spravovat historii zájmu",description:"Uživatel může zapisovat a aktualizovat historii zájmu o jednotky.",category:"Klienti",operation:"manage",supportedScopes:project},

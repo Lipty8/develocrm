@@ -3,7 +3,7 @@ import { apiFetch } from "../lib/api-client";
 
 export interface SalesCommandRepository{
   addInterest(input:{unitId:string;unitKey?:string;partyId:string;eventType:string;note:string}):Promise<void>;
-  createHold(input:{unitId:string;unitKey?:string;type:"pre_reservation"|"reservation";partyIds?:string[];newParty?:{kind:"individual"|"organization";salutation?:string;firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;email?:string;phone?:string};expiresAt:string;reason:string}):Promise<{partyId?:string}>;
+  createHold(input:{unitId:string;unitKey?:string;type:"pre_reservation"|"reservation";partyIds?:string[];newParty?:{kind:"individual"|"organization";salutation?:string;firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;email?:string;phone?:string;duplicateOverride?:boolean};expiresAt:string;reason:string}):Promise<{partyId?:string}>;
   convertHold(input:{holdId:string;unitKey?:string;expiresAt:string;reason:string}):Promise<void>;
   cancelHold(input:{holdId:string;unitKey?:string;reason:string}):Promise<void>;
 }

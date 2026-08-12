@@ -5,7 +5,7 @@ import type { Database } from "./database.js";
 import { IamRepository } from "./iam/repository.js";
 import { InventoryRepository } from "./inventory/repository.js";
 import { CommercialStatusService } from "./inventory/commercial-status-service.js";
-import { SalesRepository } from "./sales/repository.js";
+import { PartyDuplicateError, SalesRepository } from "./sales/repository.js";
 import { HoldService } from "./sales/hold-service.js";
 import { CommercialRepository } from "./commercial/repository.js";
 import { CommercialService } from "./commercial/service.js";
@@ -224,7 +224,7 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await sales.addInterest({...context,unitId:request.params.unitId,...request.body}));}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Zájem nelze uložit"});}
   });
 
-  app.get<{Querystring:{page?:string;pageSize?:string;q?:string;quickProject?:string;types?:string;projects?:string;unit?:string;relations?:string;contracts?:string;phone?:string;email?:string;sort?:string;direction?:"asc"|"desc"}}>("/v1/clients", async (request, reply) => {
+  app.get<{Querystring:{page?:string;pageSize?:string;q?:string;quickProject?:string;types?:string;projects?:string;unit?:string;relations?:string;contracts?:string;phone?:string;email?:string;sort?:string;direction?:"asc"|"desc";includeArchived?:string}}>("/v1/clients", async (request, reply) => {
     try {
       const identity = await authenticate(request,dependencies.verifier);
       const tenantId = headerValue(request.headers["x-tenant-id"]);
@@ -232,13 +232,18 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
       const user = await repository.resolveUser(identity);
       const session = await repository.getSession(user,identity,tenantId);
       if (!session) return reply.code(403).send({ error:"Workspace není uživateli přístupný" });
-      if(request.query.page)return sales.getPage({tenantId,userId:user.id,membershipId:session.workspace.membershipId,page:Number(request.query.page)||1,pageSize:Math.min(100,Math.max(1,Number(request.query.pageSize)||25)),query:request.query.q,quickProject:request.query.quickProject,types:request.query.types?.split(",").filter(Boolean),projects:request.query.projects?.split(",").filter(Boolean),unit:request.query.unit,relations:request.query.relations?.split(",").filter(Boolean),contracts:request.query.contracts?.split(",").filter(Boolean),phone:request.query.phone,email:request.query.email,sort:request.query.sort,direction:request.query.direction});
-      return sales.getDirectory({ tenantId,userId:user.id,membershipId:session.workspace.membershipId });
+      const includeArchived=request.query.includeArchived==="true";
+      if(request.query.page)return sales.getPage({tenantId,userId:user.id,membershipId:session.workspace.membershipId,page:Number(request.query.page)||1,pageSize:Math.min(100,Math.max(1,Number(request.query.pageSize)||25)),query:request.query.q,quickProject:request.query.quickProject,types:request.query.types?.split(",").filter(Boolean),projects:request.query.projects?.split(",").filter(Boolean),unit:request.query.unit,relations:request.query.relations?.split(",").filter(Boolean),contracts:request.query.contracts?.split(",").filter(Boolean),phone:request.query.phone,email:request.query.email,sort:request.query.sort,direction:request.query.direction,includeArchived});
+      return sales.getDirectory({ tenantId,userId:user.id,membershipId:session.workspace.membershipId,includeArchived });
     } catch { return reply.code(401).send({ error:"Neplatné přihlášení" }); }
   });
-  app.post<{Body:{projectId:string;kind:"individual"|"organization";salutation?:string;firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;email?:string;phone?:string}}>("/v1/parties",async(request,reply)=>{
-    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await sales.createParty({...context,...request.body}));}catch(error){request.log.warn({err:error,correlationId:request.id},"party creation failed");return reply.code(permissionError(error)?403:409).send({error:partyCreationError(error),correlationId:request.id});}
+  app.post<{Body:{projectId:string;kind:"individual"|"organization";salutation?:string;firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;email?:string;phone?:string;duplicateOverride?:boolean}}>("/v1/parties",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await sales.createParty({...context,...request.body}));}catch(error){request.log.warn({err:error,correlationId:request.id},"party creation failed");if(error instanceof PartyDuplicateError)return reply.code(409).send({error:"Klient s těmito údaji už pravděpodobně existuje.",code:"party_duplicate",matches:error.matches,correlationId:request.id});return reply.code(permissionError(error)?403:409).send({error:partyCreationError(error),correlationId:request.id});}
   });
+  app.post<{Body:{kind:"individual"|"organization";firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;email?:string;phone?:string}}>("/v1/parties/duplicates",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return{matches:await sales.findDuplicates({...context,...request.body})};}catch(error){return reply.code(permissionError(error)?403:409).send({error:"Kontrolu podobných klientů nelze dokončit"});}});
+  app.post<{Params:{partyId:string};Body:{projectId:string}}>("/v1/parties/:partyId/projects",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await sales.linkPartyToProject({...context,partyId:request.params.partyId,projectId:request.body.projectId}));}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Klienta nelze propojit s projektem"});}});
+  app.get<{Params:{partyId:string}}>("/v1/parties/:partyId/archive-impact",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return{impact:await sales.archiveImpact({...context,partyId:request.params.partyId})};}catch(error){return reply.code(permissionError(error)?403:409).send({error:"Vazby klienta nelze ověřit"});}});
+  app.post<{Params:{partyId:string};Body:{reason:string}}>("/v1/parties/:partyId/archive",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return{impact:await sales.archiveParty({...context,partyId:request.params.partyId,reason:request.body.reason})};}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Klienta nelze archivovat"});}});
 
   app.get("/v1/commercial", async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return commercial.getSnapshot(context);}
@@ -301,7 +306,7 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
     } catch { return reply.code(403).send({ error:"Export není v tomto rozsahu povolen" }); }
   });
 
-  app.post<{ Params:{ unitId:string }; Body:{ type:"pre_reservation"|"reservation";partyIds?:string[];newParty?:{kind:"individual"|"organization";salutation?:string;firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;email?:string;phone?:string};expiresAt:string;interestId?:string;idempotencyKey:string;reason:string } }>("/v1/units/:unitId/holds", async (request,reply) => {
+  app.post<{ Params:{ unitId:string }; Body:{ type:"pre_reservation"|"reservation";partyIds?:string[];newParty?:{kind:"individual"|"organization";salutation?:string;firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;email?:string;phone?:string;duplicateOverride?:boolean};expiresAt:string;interestId?:string;idempotencyKey:string;reason:string } }>("/v1/units/:unitId/holds", async (request,reply) => {
     try {
       const identity=await authenticate(request,dependencies.verifier); const tenantId=headerValue(request.headers["x-tenant-id"]);
       if (!tenantId) return reply.code(400).send({error:"Chybí x-tenant-id"}); const user=await repository.resolveUser(identity); const session=await repository.getSession(user,identity,tenantId);
@@ -446,7 +451,7 @@ function headerValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 function permissionError(error:unknown){return error instanceof Error&&/permission|required|oprávnění/i.test(error.message);}
-function partyCreationError(error:unknown){const message=error instanceof Error?error.message:"";if(/clients\.create|clients\.update|party scope|permission/i.test(message))return "Nemáte oprávnění založit klienta.";if(/first name and last name|required|party name/i.test(message))return "Doplňte jméno a příjmení klienta.";if(/registration number already exists/i.test(message))return "Klient se stejným IČO už existuje.";return message||"Klienta nebo předrezervaci nelze vytvořit.";}
+function partyCreationError(error:unknown){const message=error instanceof Error?error.message:"";if(/party duplicate confirmation required/i.test(message))return "Klient s těmito údaji už pravděpodobně existuje. Použijte existujícího klienta nebo potvrďte vytvoření nového.";if(/clients\.create|clients\.update|party scope|permission/i.test(message))return "Nemáte oprávnění založit klienta.";if(/first name and last name|required|party name/i.test(message))return "Doplňte jméno a příjmení klienta.";if(/registration number already exists/i.test(message))return "Klient se stejným IČO už existuje.";return message||"Klienta nebo předrezervaci nelze vytvořit.";}
 
 function csvCell(value:string):string { return `"${value.replaceAll('"','""')}"`; }
 

@@ -46,6 +46,8 @@ export type ClientRecord = {
   firstName?:string; lastName?:string; legalName?:string; registrationNumber?:string; vatNumber?:string; contactPerson?:string;
   address?:{line1:string;line2?:string;city:string;postalCode?:string;countryCode:string;addressType:string}|null;
   updatedAt?:string;
+  lifecycleStatus?:"active"|"inactive"|"merged"|"archived";
+  unitRelations?:Array<{unitId:string;code:string;projectId:string;project:string;contractType?:"RS"|"SBK"|"KS";contractStatus?:string}>;
 };
 export type UnitCommercialContext = {
   salesCaseId?: string | null;
