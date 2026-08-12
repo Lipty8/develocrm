@@ -9,13 +9,14 @@ export const unitCommercialStatuses = {
 } as const;
 
 export type UnitCommercialStatusCode = keyof typeof unitCommercialStatuses;
+export type CommercialSalesBucket = "available" | "preReservation" | "sold" | "unavailable";
 
 const aliases: Record<string, UnitCommercialStatusCode> = {
   "volný": "available", "volné": "available", "k dispozici": "available",
-  "předrezervace": "pre_reserved", "předrezervováno": "pre_reserved", "předrezervované": "pre_reserved",
+  "předrezervace": "pre_reserved", "předrezervováno": "pre_reserved", "předrezervovaná": "pre_reserved", "předrezervované": "pre_reserved",
   "rezervováno": "reserved", "rezervovaná": "reserved", "rezervované": "reserved", "rs": "reserved",
   "smluvně zajištěno": "contracted", "sbk": "contracted", "ks": "contracted",
-  "prodáno": "sold", "prodané": "sold", "předáno": "handed_over", "předané": "handed_over",
+  "prodáno": "sold", "prodaná": "sold", "prodané": "sold", "předáno": "handed_over", "předaná": "handed_over", "předané": "handed_over",
   "blokováno": "blocked",
 };
 
@@ -32,4 +33,17 @@ export function unitCommercialStatusLabel(value: string): string {
 export function unitCommercialStatusClass(value: string): string | null {
   const code = normalizeUnitCommercialStatus(value);
   return code ? unitCommercialStatuses[code].className : null;
+}
+
+/** Jednotná obchodní interpretace detailního workflow stavu pro KPI, reporty a dostupnost. */
+export function getCommercialSalesBucket(value: string): CommercialSalesBucket {
+  const code = normalizeUnitCommercialStatus(value);
+  if (code === "available") return "available";
+  if (code === "pre_reserved") return "preReservation";
+  if (code === "reserved" || code === "contracted" || code === "sold" || code === "handed_over") return "sold";
+  return "unavailable";
+}
+
+export function isUnitCommerciallyAvailable(value: string): boolean {
+  return getCommercialSalesBucket(value) === "available";
 }

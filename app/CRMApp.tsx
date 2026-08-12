@@ -97,7 +97,7 @@ import { paymentRepository, paymentStatusLabel, type ImportPreviewRow, type Paym
 import { projectSalesAggregation, projectSalesPerformanceCount, projectSalesPerformancePercent } from "./lib/project-sales-performance";
 import { PROJECT_CONSTRUCTION_PHASES, projectConstructionCode, projectConstructionLabel, projectConstructionStepIndex } from "./lib/project-construction";
 import { projectCompletionLabel, projectCompletionMonthValue, projectCompletionStorageDate } from "./lib/project-completion";
-import { unitCommercialStatusClass } from "./lib/unit-commercial-status";
+import { isUnitCommerciallyAvailable, unitCommercialStatusClass } from "./lib/unit-commercial-status";
 import {
   getPermissionDefinition,
   permissionCategoryOrder,
@@ -749,7 +749,7 @@ function Dashboard({ navigate, openUnit, taskRows, toggleTask }: { navigate: (pa
             <button key={project.name} onClick={() => navigate("projects")} className="project-row">
               <span className={`project-avatar ${project.color}`}>{project.name.split(" ").map((part) => part[0]).join("").slice(0, 2)}</span>
               <span className="project-copy"><strong>{project.name}</strong><small>{project.location} · {project.stage}</small></span>
-              <span className="project-progress" title="Předrezervace + prodané"><small>{projectSalesPerformanceCount(project)} z {project.units}</small><span><i className="sold" style={{width:`${project.units?aggregation.sold/project.units*100:0}%`}}/><i className="pre-reserved" style={{width:`${project.units?aggregation.preReservation/project.units*100:0}%`}}/><i className="available" style={{width:`${project.units?aggregation.available/project.units*100:0}%`}}/></span></span>
+              <span className="project-progress" title="Prodané včetně rezervovaných"><small>{projectSalesPerformanceCount(project)} z {project.units}</small><span><i className="sold" style={{width:`${project.units?aggregation.sold/project.units*100:0}%`}}/><i className="pre-reserved" style={{width:`${project.units?aggregation.preReservation/project.units*100:0}%`}}/><i className="available" style={{width:`${project.units?aggregation.available/project.units*100:0}%`}}/></span></span>
               <span className="project-attention">{project.attention}<small>k řešení</small></span>
               <ChevronRight size={18} />
             </button>
@@ -788,11 +788,11 @@ function Dashboard({ navigate, openUnit, taskRows, toggleTask }: { navigate: (pa
 }
 
 function Projects({ openProject }: { openProject: (project: ProjectRecord) => void }) {
-  const totals = projects.reduce((sum, project) => ({
+  const totals = projects.reduce((sum, project) => { const aggregation=projectSalesAggregation(project); return ({
     units: sum.units + project.units,
-    preReservation: sum.preReservation + project.preReserved + project.reserved,
-    sold: sum.sold + project.sold + project.handedOver,
-  }), { units: 0, preReservation: 0, sold: 0 });
+    preReservation: sum.preReservation + aggregation.preReservation,
+    sold: sum.sold + aggregation.sold,
+  }); }, { units: 0, preReservation: 0, sold: 0 });
   return (
     <div className="projects-page">
       <div className="portfolio-summary card">
@@ -902,7 +902,7 @@ function ProjectDetail({ project, tab, onTab, onBack, notify, openClient,openCon
         <div className="project-context-visual">
           <div className="project-sale-rate-card">
             <div className="project-sale-ring" style={{ background: `conic-gradient(var(--status-sold) 0 ${soldPercent}%, var(--status-pre-reserved) ${soldPercent}% ${soldPercent+preReservationPercent}%, var(--status-available) ${soldPercent+preReservationPercent}% 100%)` }}><span><strong>{salePercent} %</strong><small>prodejnost</small></span></div>
-            <div><small>PRODEJNÍ VÝKON</small><strong>{salesPerformance} z {project.units} jednotek</strong><p>je v předrezervaci nebo prodaných</p></div>
+            <div><small>PRODEJNÍ VÝKON</small><strong>{salesPerformance} z {project.units} jednotek</strong><p>je prodaných včetně rezervovaných</p></div>
           </div>
           <div className="project-unit-distribution">
             <div className="project-distribution-head"><div><small>STAV JEDNOTEK</small><strong>Rozložení projektu</strong></div><span>{project.units} jednotek celkem</span></div>
@@ -1361,7 +1361,7 @@ function UnitOverview({ unit, notify, openClient,openContract,openTab, onEditPri
           <SectionTitle title="Prodejní proces" />
           <div className="sales-progress">{["Zájem", "Předrezervace", "Rezervace", "RS", "SBK", "KS", "Předání"].map((stage, index) => <div key={stage} className={index < stageIndex ? "complete" : index === stageIndex ? "current" : ""}><span>{index < stageIndex ? <Check size={14} /> : index + 1}</span><strong>{stage}</strong><small>{index === stageIndex ? (commercial?.hold ? `Platí do ${new Date(commercial.hold.expiresAt).toLocaleDateString("cs-CZ")}` : "Aktuální etapa") : index < stageIndex ? "Hotovo" : "Čeká"}</small></div>)}</div>
           <div className="next-action"><span className="next-action-icon"><Sparkles size={19} /></span><div><small>DOPORUČENÝ DALŠÍ KROK</small><strong>{unit.attention?"Ověřit vazbu importovanou ze zdroje":nextStep}</strong><p>{unit.attention??(reservationFee&&!reservationFeePaid?`${reservationFee.label} · ${paymentStatusLabel[reservationFee.status]}`:"Navazuje na aktuální stav obchodního procesu.")}</p></div><button className="primary-button" onClick={() => setContextOpen(true)}>Zobrazit kontext <ArrowRight size={16} /></button></div>
-          {onSalesAction&&<div className="sales-action-strip"><span><small>OBCHODNÍ AKCE</small><strong>Stav se mění pouze řízenou operací</strong></span><div>{!commercial?.hold&&<>{canCreateHold&&<button className="secondary-button compact" onClick={()=>onSalesAction("pre_reservation")}>Předrezervace</button>}{canConfirmHold&&<button className="secondary-button compact" onClick={()=>onSalesAction("reservation")}>Rezervace</button>}</>}{commercial?.hold?.type==="pre_reservation"&&canConfirmHold&&<button className="primary-button compact" onClick={()=>onSalesAction("convert")}>Převést na rezervaci</button>}{commercial?.hold&&canCancelHold&&<button className="secondary-button compact danger-text" onClick={()=>onSalesAction("cancel")}>Zrušit / uvolnit</button>}</div></div>}
+          {onSalesAction&&<div className="sales-action-strip"><span><small>OBCHODNÍ AKCE</small><strong>Stav se mění pouze řízenou operací</strong></span><div>{!commercial?.hold&&isUnitCommerciallyAvailable(unit.status)&&<>{canCreateHold&&<button className="secondary-button compact" onClick={()=>onSalesAction("pre_reservation")}>Předrezervace</button>}{canConfirmHold&&<button className="secondary-button compact" onClick={()=>onSalesAction("reservation")}>Rezervace</button>}</>}{commercial?.hold?.type==="pre_reservation"&&canConfirmHold&&<button className="primary-button compact" onClick={()=>onSalesAction("convert")}>Převést na rezervaci</button>}{commercial?.hold&&canCancelHold&&<button className="secondary-button compact danger-text" onClick={()=>onSalesAction("cancel")}>Zrušit / uvolnit</button>}</div></div>}
         </section>
         <section className="card client-detail-card">
           <SectionTitle title="Klient" action="Otevřít kartu klienta" onAction={() => buyers[0] ? openClient(buyers[0].name) : notify("Jednotka zatím nemá přiřazeného klienta")} />

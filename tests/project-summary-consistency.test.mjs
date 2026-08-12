@@ -15,6 +15,12 @@ test("dashboard i detail používají stejný sdílený výpočet prodejního v�
   assert.match(catalog, /projectSalesPerformancePercent\(\{units:unitCount,available,preReserved,reserved,sold,handedOver\}\)/);
 });
 
+test("rezervace se vykazuje jako prodaná, předrezervace nikoliv",()=>{
+  assert.match(crm,/title="Prodané včetně rezervovaných"/);
+  assert.match(crm,/je prodaných včetně rezervovaných/);
+  assert.match(crm,/isUnitCommerciallyAvailable\(unit\.status\)/);
+});
+
 test("katalog přenáší skutečný kód fáze a český měsíc dokončení", () => {
   assert.match(catalog, /stageCode:project\.constructionStatus/);
   assert.match(catalog, /projectCompletionLabel\(project\.plannedHandoverFrom\?\?project\.plannedHandoverTo\)/);
