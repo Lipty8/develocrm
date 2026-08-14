@@ -19,6 +19,7 @@ export function formatPragueTime(value: Date | string): string {
     timeZone: PRAGUE_TIME_ZONE,
     hour: "2-digit",
     minute: "2-digit",
+    second: "2-digit",
   }).format(typeof value === "string" ? new Date(value) : value);
 }
 
