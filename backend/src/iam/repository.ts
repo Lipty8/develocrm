@@ -3,6 +3,7 @@ import type { Database } from "../database.js";
 import type { EntraIdentity } from "../auth/entra.js";
 import type { Session, UserIdentity, WorkspaceMembership } from "./types.js";
 import type { PoolClient } from "pg";
+import { roleDisplayName } from "../shared/role-catalog.js";
 
 type UserRow = { id: string; email: string; display_name: string; job_title?:string|null;work_phone?:string|null;profile_initials?:string|null;avatar_url?:string|null;preferred_language?:string;profile_timezone?:string;notification_settings?:{email:boolean;inApp:boolean};profile_name_overridden?:boolean };
 
@@ -41,16 +42,16 @@ export class IamRepository {
 
   private mapUser(row:UserRow,override?:{email:string;displayName:string}):UserIdentity{return{id:row.id,email:override?.email??row.email,displayName:override?.displayName??row.display_name,jobTitle:row.job_title??"",phone:row.work_phone??"",initials:row.profile_initials??undefined,avatarUrl:row.avatar_url??undefined,language:(row.preferred_language==="en"?"en":"cs"),timezone:row.profile_timezone??"Europe/Prague",notifications:row.notification_settings??{email:true,inApp:true}};}
 
-  async updateOwnProfile(input:{tenantId:string;userId:string;membershipId:string;displayName:string;jobTitle:string;phone:string;initials:string;language:"cs"|"en";timezone:string;notifications:{email:boolean;inApp:boolean}}){
+  async updateOwnProfile(input:{tenantId:string;userId:string;membershipId:string;identityEmail:string;displayName:string;jobTitle:string;phone:string;initials:string;language:"cs"|"en";timezone:string;notifications:{email:boolean;inApp:boolean}}){
     if(input.displayName.trim().length<2||input.displayName.trim().length>160)throw new Error("Jméno musí mít 2–160 znaků");
     if(!/^[A-Za-z_]+(?:\/[A-Za-z_]+)*$/.test(input.timezone))throw new Error("Neplatné časové pásmo");
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
-      const before=(await client.query<{data:unknown}>("SELECT to_jsonb(user_account) data FROM users user_account JOIN tenant_memberships membership ON membership.user_id=user_account.id WHERE membership.tenant_id=$1 AND membership.id=$2 AND user_account.id=$3",[input.tenantId,input.membershipId,input.userId])).rows[0];
+      const before=(await client.query<{data:unknown}>("SELECT to_jsonb(user_account) data FROM users user_account JOIN tenant_memberships membership ON membership.user_id=user_account.id WHERE membership.tenant_id=$1::uuid AND membership.id=$2::uuid AND user_account.id=$3::uuid",[input.tenantId,input.membershipId,input.userId])).rows[0];
       if(!before)throw new Error("Aktivní profil nebyl nalezen");
-      const result=await client.query<UserRow>(`UPDATE users SET display_name=$1,job_title=$2,work_phone=$3,profile_initials=NULLIF($4,''),preferred_language=$5,profile_timezone=$6,notification_settings=$7::jsonb,profile_name_overridden=true
-        WHERE id=$8 RETURNING id,email,display_name,job_title,work_phone,profile_initials,avatar_url,preferred_language,profile_timezone,notification_settings`,[input.displayName.trim(),input.jobTitle.trim()||null,input.phone.trim()||null,input.initials.trim().slice(0,4).toUpperCase(),input.language,input.timezone,JSON.stringify(input.notifications),input.userId]);
-      await client.query("INSERT INTO audit_log(tenant_id,actor_user_id,action,entity_type,entity_id,before_data,after_data) VALUES($1,$2,'profile.updated','user',$2,$3::jsonb,to_jsonb($4::json))",[input.tenantId,input.userId,JSON.stringify(before.data),JSON.stringify({displayName:input.displayName,jobTitle:input.jobTitle,phone:input.phone,language:input.language,timezone:input.timezone,notifications:input.notifications})]);
-      await client.query("INSERT INTO outbox_events(tenant_id,aggregate_type,aggregate_id,event_type,payload) VALUES($1,'user',$2,'profile.updated.v1',jsonb_build_object('userId',$2))",[input.tenantId,input.userId]);
+      const result=await client.query<UserRow>(`UPDATE users SET email=$1::text,display_name=$2::text,job_title=$3::text,work_phone=$4::text,profile_initials=NULLIF($5::text,''),preferred_language=$6::text,profile_timezone=$7::text,notification_settings=$8::jsonb,profile_name_overridden=true
+        WHERE id=$9::uuid RETURNING id,email,display_name,job_title,work_phone,profile_initials,avatar_url,preferred_language,profile_timezone,notification_settings`,[input.identityEmail.trim().toLowerCase(),input.displayName.trim(),input.jobTitle.trim()||null,input.phone.trim()||null,input.initials.trim().slice(0,4).toUpperCase(),input.language,input.timezone,JSON.stringify(input.notifications),input.userId]);
+      await client.query("INSERT INTO audit_log(tenant_id,actor_user_id,action,entity_type,entity_id,before_data,after_data) VALUES($1::uuid,$2::uuid,'profile.updated','user',$2::uuid,$3::jsonb,$4::jsonb)",[input.tenantId,input.userId,JSON.stringify(before.data),JSON.stringify({displayName:input.displayName,jobTitle:input.jobTitle,phone:input.phone,language:input.language,timezone:input.timezone,notifications:input.notifications})]);
+      await client.query("INSERT INTO outbox_events(tenant_id,aggregate_type,aggregate_id,event_type,payload) VALUES($1::uuid,'user',$2::uuid,'profile.updated.v1',jsonb_build_object('userId',$2::uuid))",[input.tenantId,input.userId]);
       return this.mapUser(result.rows[0]);
     });
   }
@@ -157,7 +158,7 @@ export class IamRepository {
          ORDER BY audit.occurred_at DESC LIMIT 100`,[input.tenantId]);
       return {
         users:users.rows.map(row=>({membershipId:row.membership_id,userId:row.user_id,name:row.name,email:row.email,jobTitle:row.job_title??"",workPhone:row.work_phone??"",status:row.status,lastLoginAt:row.last_login_at,roleIds:row.role_ids,projectIds:row.project_ids})),
-        roles:roles.rows.map(row=>({id:row.id,code:row.code,name:row.name,description:row.description??"",isSystem:row.is_system,permissionCodes:row.permission_codes,permissionGrants:row.permission_grants,assignedUserCount:row.assigned_user_count,restrictions:roleRestrictions(row.code),history:roleHistory.rows.filter(item=>item.entity_id===row.id).slice(0,5).map(item=>({occurredAt:item.occurred_at,actor:item.actor??"Systém"}))})),
+        roles:roles.rows.map(row=>({id:row.id,code:row.code,name:roleDisplayName(row.code,row.name),description:row.description??"",isSystem:row.is_system,permissionCodes:row.permission_codes,permissionGrants:row.permission_grants,assignedUserCount:row.assigned_user_count,restrictions:roleRestrictions(row.code),history:roleHistory.rows.filter(item=>item.entity_id===row.id).slice(0,5).map(item=>({occurredAt:item.occurred_at,actor:item.actor??"Systém"}))})),
         projects:projects.rows,
         permissions:permissions.rows,
       };
@@ -185,7 +186,7 @@ export class IamRepository {
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
         const permitted=await client.query("SELECT 1 FROM role_assignments assignment JOIN role_permissions role_permission ON role_permission.tenant_id=assignment.tenant_id AND role_permission.role_id=assignment.role_id JOIN permissions permission ON permission.id=role_permission.permission_id WHERE assignment.tenant_id=$1 AND assignment.membership_id=$2 AND permission.code='users.manage'",[input.tenantId,input.membershipId]);
         if(!permitted.rowCount)throw new Error("users.manage permission required");
-        const before=(await client.query<{user_id:string;data:unknown}>("SELECT membership.user_id,to_jsonb(membership) data FROM tenant_memberships membership WHERE membership.tenant_id=$1 AND membership.id=$2 FOR UPDATE",[input.tenantId,input.targetMembershipId])).rows[0];
+        const before=(await client.query<{user_id:string;data:unknown;entra_issuer:string;email:string}>("SELECT membership.user_id,to_jsonb(membership) data,user_account.entra_issuer,user_account.email FROM tenant_memberships membership JOIN users user_account ON user_account.id=membership.user_id WHERE membership.tenant_id=$1 AND membership.id=$2 FOR UPDATE",[input.tenantId,input.targetMembershipId])).rows[0];
         if(!before)throw new Error("membership not found");
         if(input.targetMembershipId===input.membershipId&&input.status!=="active")throw new Error("Vlastní administrátorský přístup nelze deaktivovat");
         const adminRole=(await client.query<{id:string}>("SELECT id FROM roles WHERE tenant_id=$1 AND code='admin' AND status='active'",[input.tenantId])).rows[0];
@@ -197,7 +198,8 @@ export class IamRepository {
             WHERE assignment.tenant_id=$1 AND assignment.role_id=$2 AND assignment.membership_id<>$3 AND membership.status='active' LIMIT 1`,[input.tenantId,adminRole.id,input.targetMembershipId]);
           if(!otherAdmins.rowCount)throw new Error("Workspace musí mít alespoň jednoho aktivního administrátora");
         }
-        await client.query("UPDATE users SET display_name=$1,email=$2,job_title=$3,work_phone=$4 WHERE id=$5",[input.name,input.email,input.jobTitle??null,input.workPhone??null,before.user_id]);
+        const managedByEntra=!before.entra_issuer.startsWith("pending:");
+        await client.query("UPDATE users SET display_name=$1,email=$2,job_title=$3,work_phone=$4 WHERE id=$5",[input.name,managedByEntra?before.email:input.email,input.jobTitle??null,input.workPhone??null,before.user_id]);
         await client.query("UPDATE tenant_memberships SET status=$1,accepted_at=CASE WHEN $1='active' THEN COALESCE(accepted_at,now()) ELSE accepted_at END,archived_at=CASE WHEN $1='archived' THEN now() ELSE NULL END WHERE tenant_id=$2 AND id=$3",[input.status,input.tenantId,input.targetMembershipId]);
         await this.replaceAssignments(client,{...input,targetMembershipId:input.targetMembershipId});
         await client.query(`INSERT INTO audit_log(tenant_id,actor_user_id,action,entity_type,entity_id,before_data,after_data) VALUES($1,$2,'membership.updated','tenant_membership',$3,$4::jsonb,$5::jsonb)`,[input.tenantId,input.userId,input.targetMembershipId,JSON.stringify(before.data),JSON.stringify({status:input.status,roleIds:input.roleIds,projectIds:input.projectIds,name:input.name})]);

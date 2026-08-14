@@ -96,7 +96,7 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
 
   app.patch<{Body:{displayName:string;jobTitle:string;phone:string;initials:string;language:"cs"|"en";timezone:string;notifications:{email:boolean;inApp:boolean}}}>("/v1/profile",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není přístupný"});return{user:await repository.updateOwnProfile({...context,...request.body})};}
-    catch(error){return reply.code(409).send({error:error instanceof Error?error.message:"Profil nelze uložit"});}
+    catch(error){request.log.error({err:error,correlationId:request.id,operation:"profile.update"},"profile update failed");const message=error instanceof Error&&/Jméno|časové pásmo|profil nebyl nalezen/i.test(error.message)?error.message:"Profil se nepodařilo uložit. Zkuste to prosím znovu.";return reply.code(409).send({error:message,correlationId:request.id});}
   });
 
   app.get("/v1/roles", async (request, reply) => {
@@ -458,5 +458,5 @@ function csvCell(value:string):string { return `"${value.replaceAll('"','""')}"`
 async function sessionContext(request:FastifyRequest,verifier:EntraTokenVerifier,repository:IamRepository){
   const identity=await authenticate(request,verifier);const tenantId=headerValue(request.headers["x-tenant-id"]);if(!tenantId)return null;
   const user=await repository.resolveUser(identity);const session=await repository.getSession(user,identity,tenantId);if(!session)return null;
-  return {tenantId,userId:user.id,membershipId:session.workspace.membershipId};
+  return {tenantId,userId:user.id,membershipId:session.workspace.membershipId,identityEmail:user.email};
 }
