@@ -6,6 +6,7 @@ const crm=await readFile(new URL("../app/CRMApp.tsx",import.meta.url),"utf8");
 const repository=await readFile(new URL("../backend/src/sales/repository.ts",import.meta.url),"utf8");
 const migration=await readFile(new URL("../backend/migrations/0025_client_directory_integrity.sql",import.meta.url),"utf8");
 const migration26=await readFile(new URL("../backend/migrations/0026_party_removal_and_duplicate_check.sql",import.meta.url),"utf8");
+const migration27=await readFile(new URL("../backend/migrations/0027_party_removal_runtime_privileges.sql",import.meta.url),"utf8");
 const clientRepository=await readFile(new URL("../app/repositories/client-repository.ts",import.meta.url),"utf8");
 const formatter=await readFile(new URL("../app/lib/date-time.ts",import.meta.url),"utf8");
 
@@ -48,6 +49,8 @@ test("klient bez historie se smaže a klient s historií se archivuje",()=>{
   assert.match(migration26,/removalMode/);
   assert.match(migration26,/party\.deleted/);
   assert.match(migration26,/party\.archived/);
+  assert.match(migration27,/SECURITY DEFINER/);
+  assert.match(migration27,/REVOKE ALL .* FROM PUBLIC/);
   assert.match(crm,/Klient bude trvale smazán/);
   assert.match(crm,/Klient bude bezpečně archivován/);
 });
