@@ -18,12 +18,17 @@ test("detail smlouvy nabízí řízené označení aktuální verze jako podepsa
   assert.match(app,/Smlouva byla podepsána a jednotka rezervována/);
 });
 
-test("rezervace jednotky je v UI oddělená od smluvní etapy RS",async()=>{
+test("vizuální prodejní proces používá smlouvy a nemá duplicitní krok rezervace",async()=>{
   const app=await readFile(new URL("../app/CRMApp.tsx",import.meta.url),"utf8");
   const statuses=await readFile(new URL("../app/lib/unit-commercial-status.ts",import.meta.url),"utf8");
+  const workflow=await readFile(new URL("../app/lib/unit-sales-workflow.ts",import.meta.url),"utf8");
   assert.match(statuses,/reserved: \{ label: "Rezervovaná"/);
-  assert.match(app,/\["Zájem", "Předrezervace", "Rezervace", "RS", "SBK", "KS", "Předání"\]/);
-  assert.match(app,/reservation:2,rs:3,sbk:4,ks:5,handover:6/);
+  assert.match(workflow,/\["Zájem", "Předrezervace", "RS", "SBK", "KS", "Předání"\]/);
+  assert.doesNotMatch(workflow,/"Předrezervace", "Rezervace"/);
+  assert.match(workflow,/signed\("RS"\).*completedThrough: 2, activeIndex: 3/s);
+  assert.match(workflow,/signed\("SBK"\).*completedThrough: 3, activeIndex: 4/s);
+  assert.match(workflow,/signed\("KS"\).*completedThrough: 4, activeIndex: 5/s);
+  assert.match(app,/projectUnitSalesWorkflow/);
   assert.doesNotMatch(app,/<Badge>\{unit\.status\}<\/Badge> Ve vyjednávání/);
 });
 

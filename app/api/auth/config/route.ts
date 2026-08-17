@@ -2,7 +2,8 @@ import { serverDataMode } from "../../../lib/data-mode";
 
 export async function GET(request: Request) {
   const mode = serverDataMode();
-  if (mode === "browser") return Response.json({ mode });
+  const buildVersion = process.env.DEVELOCRM_BUILD_VERSION?.trim() || process.env.CF_PAGES_COMMIT_SHA?.trim() || "0.1.0";
+  if (mode === "browser") return Response.json({ mode, buildVersion }, { headers: { "cache-control": "no-store" } });
   const clientId = process.env.DEVELOCRM_ENTRA_CLIENT_ID?.trim();
   const tenantId = process.env.DEVELOCRM_ENTRA_TENANT_ID?.trim();
   const authority = process.env.DEVELOCRM_ENTRA_AUTHORITY?.trim();
@@ -28,5 +29,6 @@ export async function GET(request: Request) {
     apiScope,
     redirectUri,
     postLogoutRedirectUri,
+    buildVersion,
   }, { headers: { "cache-control": "no-store" } });
 }

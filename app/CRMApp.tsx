@@ -98,6 +98,7 @@ import { projectSalesAggregation, projectSalesPerformanceCount, projectSalesPerf
 import { PROJECT_CONSTRUCTION_PHASES, projectConstructionCode, projectConstructionLabel, projectConstructionStepIndex } from "./lib/project-construction";
 import { projectCompletionLabel, projectCompletionMonthValue, projectCompletionStorageDate } from "./lib/project-completion";
 import { isUnitCommerciallyAvailable, unitCommercialStatusClass } from "./lib/unit-commercial-status";
+import { projectUnitSalesWorkflow, unitSalesWorkflowSteps } from "./lib/unit-sales-workflow";
 import { roleDisplayName } from "../backend/src/shared/role-catalog";
 import {
   getPermissionDefinition,
@@ -385,7 +386,22 @@ export default function CRMApp() {
     return () => controller.abort();
   }, [connectionRetryKey]);
 
-  useEffect(()=>{const controller=new AbortController();documentRepository.connection(controller.signal).then(setDocumentConnection).catch(()=>setDocumentConnection(previewConnection));return()=>controller.abort();},[]);
+  useEffect(()=>{
+    const restore=()=>{
+      setStartupError(null);
+      setConnectionRetryKey(key=>key+1);
+      setCatalogReloadKey(key=>key+1);
+      setClientReloadKey(key=>key+1);
+      setCommercialReloadKey(key=>key+1);
+      setActivityReloadKey(key=>key+1);
+      setDocumentReloadKey(key=>key+1);
+      setHandoverReloadKey(key=>key+1);
+    };
+    window.addEventListener("develocrm:session-restored",restore);
+    return()=>window.removeEventListener("develocrm:session-restored",restore);
+  },[]);
+
+  useEffect(()=>{const controller=new AbortController();documentRepository.connection(controller.signal).then(setDocumentConnection).catch(()=>setDocumentConnection(previewConnection));return()=>controller.abort();},[connectionRetryKey]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -685,7 +701,7 @@ export default function CRMApp() {
       {newHandoverOpen&&<HandoverScheduleModal units={units.filter(unit=>Boolean(unit.backendId))} memberships={catalogMemberships} close={()=>setNewHandoverOpen(false)} save={async value=>{await handoverRepository.schedule(value);setNewHandoverOpen(false);setHandoverReloadKey(key=>key+1);notify("Předání bylo naplánováno");}}/>}
       {newContractOpen&&<NewContractModal units={units} context={newContractContext??undefined} close={()=>{setNewContractOpen(false);setNewContractContext(null);}} save={async value=>{const created="unitId" in value?await commercialRepository.createNextContract(value):await commercialRepository.createContract(value);setNewContractOpen(false);setNewContractContext(null);refreshCommercial();setActivityReloadKey(key=>key+1);notify(created.paymentObligationId?`Smlouva a platební povinnost ${formatMoney(created.paymentAmount??0)} byly vytvořeny`:"Smlouva byla vytvořena");router.push(contractRoute(created.id));}}/>}
       {contractVersionEdit&&<ContractVersionModal contract={contractVersionEdit} close={()=>setContractVersionEdit(null)} save={async value=>{if(!contractVersionEdit.id)throw new Error("Smlouva nemá backendový identifikátor");await commercialRepository.createContractVersion({contractId:contractVersionEdit.id,...value});setContractVersionEdit(null);refreshCommercial();notify("Nová logická verze smlouvy byla vytvořena");}}/>}
-      {contractSignatureEdit&&<ContractSignatureModal value={contractSignatureEdit} close={()=>setContractSignatureEdit(null)} save={async reason=>{const result=await commercialRepository.recordContractSignature({contractPartyId:contractSignatureEdit.partyId,versionId:contractSignatureEdit.versionId,reason});setContractSignatureEdit(null);refreshCommercial();notify(result.completed?"Smlouva byla podepsána všemi účastníky a vznikl platební předpis":"Podpis účastníka byl zaznamenán");}}/>}
+      {contractSignatureEdit&&<ContractSignatureModal value={contractSignatureEdit} close={()=>setContractSignatureEdit(null)} save={async reason=>{const result=await commercialRepository.recordContractSignature({contractPartyId:contractSignatureEdit.partyId,versionId:contractSignatureEdit.versionId,reason});setContractSignatureEdit(null);refreshCommercial();refreshCatalog();refreshClients();setActivityReloadKey(key=>key+1);notify(result.completed?"Smlouva byla podepsána všemi účastníky a obchodní proces byl aktualizován":"Podpis účastníka byl zaznamenán");}}/>}
       {contractSignEdit&&<ContractSignedModal contract={contractSignEdit} close={()=>setContractSignEdit(null)} save={async value=>{if(!contractSignEdit.id)throw new Error("Smlouva nemá backendový identifikátor");const version=contractSignEdit.versions?.[0];if(!version)throw new Error("Smlouvu nelze podepsat, protože nemá platnou aktuální verzi.");const result=await commercialRepository.signContract({contractId:contractSignEdit.id,versionId:version.id,...value});setContractSignEdit(null);refreshCommercial();refreshCatalog();refreshClients();setActivityReloadKey(key=>key+1);notify(result.alreadySigned?"Smlouva již byla podepsána a obchodní proces je synchronizovaný":"Smlouva byla podepsána a jednotka rezervována");}}/>}
       {profileOpen&&<ProfileModal session={identitySession} close={()=>setProfileOpen(false)} openSettings={()=>{setProfileOpen(false);setProfileSettingsOpen(true);}} openAdmin={()=>{setProfileOpen(false);router.push("/admin/users");}} canAdmin={can("users.manage")||identitySession.workspace.roles.includes("admin")}/>}
       {profileSettingsOpen&&<ProfileSettingsModal user={identitySession.user} close={()=>setProfileSettingsOpen(false)} save={async value=>{const user=await profileRepository.update(value);setIdentitySession(current=>({...current,user}));setProfileSettingsOpen(false);notify("Nastavení profilu bylo uloženo");}}/>}
@@ -825,7 +841,7 @@ function Projects({ openProject }: { openProject: (project: ProjectRecord) => vo
   );
 }
 
-function ProjectCover({project}:{project:ProjectRecord}){const [url,setUrl]=useState(project.coverImageUrl??null);useEffect(()=>{const projectId=backendEntityId(project.backendId);if(url||!projectId)return;const controller=new AbortController();mediaRepository.get("project",projectId,controller.signal).then(media=>{if(media)setUrl(media.url);}).catch(()=>undefined);return()=>controller.abort();},[project.backendId,url]);return <div className={`project-cover ${project.color} ${url?"has-image":""}`} style={url?{backgroundImage:`linear-gradient(180deg,rgba(10,28,22,.03),rgba(10,28,22,.24)),url(${JSON.stringify(url).slice(1,-1)})`}:undefined}>{!url&&<span className="project-cover-placeholder"><Building2 size={30}/><small>Developerský projekt</small></span>}</div>}
+function ProjectCover({project}:{project:ProjectRecord}){const [url,setUrl]=useState(project.coverImageUrl??null);const [revision,setRevision]=useState(0);useEffect(()=>{const refresh=()=>{setUrl(null);setRevision(value=>value+1);};window.addEventListener("develocrm:session-restored",refresh);return()=>window.removeEventListener("develocrm:session-restored",refresh);},[]);useEffect(()=>{const projectId=backendEntityId(project.backendId);if(url||!projectId)return;const controller=new AbortController();mediaRepository.get("project",projectId,controller.signal).then(media=>{if(media)setUrl(media.url);}).catch(()=>undefined);return()=>controller.abort();},[project.backendId,url,revision]);return <div className={`project-cover ${project.color} ${url?"has-image":""}`} style={url?{backgroundImage:`linear-gradient(180deg,rgba(10,28,22,.03),rgba(10,28,22,.24)),url(${JSON.stringify(url).slice(1,-1)})`}:undefined}>{!url&&<span className="project-cover-placeholder"><Building2 size={30}/><small>Developerský projekt</small></span>}</div>}
 
 function ConstructionProgress({project}:{project:ProjectRecord}){
   const [open,setOpen]=useState(false);const stageCode=project.stageCode??projectConstructionCode(project.stage);const index=projectConstructionStepIndex(stageCode);const current=PROJECT_CONSTRUCTION_PHASES[index];
@@ -1306,7 +1322,7 @@ function UnitPreview({ unit, close, open, previous, next, position, total }: { u
       <div className="mini-floorplan"><div className="room living"><span>Obývací pokoj + kk</span></div><div className="room bed"><span>Ložnice</span></div><div className="room bath"><span>Koupelna</span></div><div className="room hall"><span>Chodba</span></div><div className="room bed2"><span>Pokoj</span></div><div className="balcony">Lodžie 8,2 m²</div></div>
       <div className="preview-grid"><span><small>Aktuální cena</small><strong>{formatMoney(unit.price)}</strong></span><span><small>Obchodní stav</small><strong><Badge>{unit.status}</Badge></strong></span><span><small>Stavební stav</small><strong>{unit.construction}</strong></span><span><small>Klient</small><strong>{unit.client || "Bez klienta"}</strong></span></div>
       <div className="preview-section"><h3>Příslušenství</h3><p>{unit.accessory}</p></div>
-      <div className="preview-flow"><h3>Prodejní proces</h3><div>{["Zájem", "Předrezervace", "Rezervace", "RS", "SBK", "KS", "Předání"].map((stage, index) => { const currentIndex = ({ Volný: 0, Předrezervace: 1, Rezervovaná: 2, SBK: 4, KS: 5, Předáno: 6, Blokováno: -1 } as Record<UnitStatus, number>)[unit.status]; return <span className={index < currentIndex ? "complete" : index === currentIndex ? "current" : ""} key={stage}><i>{index + 1}</i><small>{stage}</small></span>; })}</div></div>
+      <div className="preview-flow"><h3>Prodejní proces</h3><div>{unitSalesWorkflowSteps.map((stage,index)=>{const projection=projectUnitSalesWorkflow({unit,context:unitCommercialContexts[unit.id],contracts});return <span className={index<=projection.completedThrough?"complete":index===projection.activeIndex?"current":""} key={stage}><i>{index+1}</i><small>{stage}</small></span>;})}</div></div>
       <div className="preview-footer"><button className="secondary-button" onClick={close}>Zavřít</button><button className="primary-button" onClick={open}>Otevřít celý detail <ArrowRight size={17} /></button></div>
     </aside>
   );
@@ -1354,14 +1370,14 @@ function UnitOverview({ unit, notify, openClient,openTab, onEditPrice,pricePropo
   const interestRows=commercial?.interests ?? [];
   const isDejvice=isDejviceUnit(unit);
   const accessoryItems=unit.accessories?.length?unit.accessories.map(item=>`${item.type} ${item.code}${item.areaM2?` (${item.areaM2} m²)`:""}`):unit.accessory.split(" · ").filter(Boolean);
-  const stageIndex=({interest:0,pre_reservation:1,reservation:2,rs:3,sbk:4,ks:5,handover:6} as Record<string,number>)[commercial?.stage ?? ""] ?? -1;
+  const workflow=projectUnitSalesWorkflow({unit,context:commercial,contracts});
   return (
     <>
     <div className="unit-overview-grid">
       <div className="unit-main-column">
         <section className="card sales-process-card">
           <SectionTitle title="Prodejní proces" />
-          <div className="sales-progress">{["Zájem", "Předrezervace", "Rezervace", "RS", "SBK", "KS", "Předání"].map((stage, index) => <div key={stage} className={index < stageIndex ? "complete" : index === stageIndex ? "current" : ""}><span>{index < stageIndex ? <Check size={14} /> : index + 1}</span><strong>{stage}</strong><small>{index === stageIndex ? (commercial?.hold ? `Platí do ${new Date(commercial.hold.expiresAt).toLocaleDateString("cs-CZ")}` : "Aktuální etapa") : index < stageIndex ? "Hotovo" : "Čeká"}</small></div>)}</div>
+          <div className="sales-progress">{unitSalesWorkflowSteps.map((stage,index)=>{const complete=index<=workflow.completedThrough;const current=index===workflow.activeIndex&&!complete;return <div key={stage} className={complete?"complete":current?"current":""}><span>{complete?<Check size={14}/>:index+1}</span><strong>{stage}</strong><small>{current?(stage==="Předrezervace"&&commercial?.hold?`Platí do ${new Date(commercial.hold.expiresAt).toLocaleDateString("cs-CZ")}`:"Aktuální etapa"):complete?"Hotovo":"Čeká"}</small></div>;})}</div>
           {onSalesAction&&<div className="sales-action-strip"><span><small>OBCHODNÍ AKCE</small><strong>Stav se mění pouze řízenou operací</strong></span><div>{!commercial?.hold&&isUnitCommerciallyAvailable(unit.status)&&<>{canCreateHold&&<button className="secondary-button compact" onClick={()=>onSalesAction("pre_reservation")}>Předrezervace</button>}{canConfirmHold&&<button className="secondary-button compact" onClick={()=>onSalesAction("reservation")}>Rezervace</button>}</>}{commercial?.hold?.type==="pre_reservation"&&canConfirmHold&&<button className="primary-button compact" onClick={()=>onSalesAction("convert")}>Převést na rezervaci</button>}{commercial?.hold&&canCancelHold&&<button className="secondary-button compact danger-text" onClick={()=>onSalesAction("cancel")}>Zrušit / uvolnit</button>}</div></div>}
         </section>
         <section className="card client-detail-card">

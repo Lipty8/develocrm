@@ -114,6 +114,20 @@ test("centrální API klient připojí Bearer token a při chybě nepoužije fal
   assert.equal(called,2);
 });
 
+test("centrální API klient po 401 jednou tiše obnoví token a zopakuje požadavek",async()=>{
+  let calls=0;let refreshes=0;
+  const transport=(async(_input:RequestInfo|URL,init?:RequestInit)=>{
+    calls++;
+    if(calls===1)return Response.json({error:"expired"},{status:401});
+    return Response.json({authorization:new Headers(init?.headers).get("authorization")});
+  }) as typeof fetch;
+  const wrapped=createApiFetch({getAccessToken:async()=>"old-token",refreshAccessToken:async()=>{refreshes++;return "new-token";}},transport,()=>false);
+  const response=await wrapped("/api/catalog");
+  assert.equal(response.status,200);
+  assert.equal((await response.json()).authorization,"Bearer new-token");
+  assert.equal(calls,2);assert.equal(refreshes,1);
+});
+
 test("frontend logout používá MSAL logoutRedirect",async()=>{
   let loggedOut=false;
   const account=mockAccount();

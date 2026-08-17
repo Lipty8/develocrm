@@ -19,6 +19,7 @@ export type EntraFrontendConfig = {
   apiScope?: string;
   redirectUri?: string;
   postLogoutRedirectUri?: string;
+  buildVersion?: string;
 };
 
 type MsalClient = {
@@ -37,6 +38,7 @@ export type EntraAuthSnapshot = {
   mode: "api" | "browser";
   authenticated: boolean;
   account: AccountInfo | null;
+  buildVersion?: string;
 };
 
 export type EntraAuthDependencies = {
@@ -62,7 +64,7 @@ export class EntraAuthController {
     this.config = await (this.dependencies.loadConfig ?? loadFrontendConfig)();
     if (this.config.mode === "browser") {
       rememberClientDataMode("prototype-fallback");
-      return { mode: "browser", authenticated: true, account: null };
+      return { mode: "browser", authenticated: true, account: null, buildVersion: this.config.buildVersion };
     }
     rememberClientDataMode("production-api");
     validateConfig(this.config);
@@ -82,7 +84,7 @@ export class EntraAuthController {
     const redirectResult = await this.client.handleRedirectPromise();
     const account = redirectResult?.account ?? this.client.getActiveAccount() ?? this.client.getAllAccounts()[0] ?? null;
     if (account) this.client.setActiveAccount(account);
-    return { mode: "api", authenticated: Boolean(account), account };
+    return { mode: "api", authenticated: Boolean(account), account, buildVersion: this.config.buildVersion };
   }
 
   async login(): Promise<void> {
@@ -92,6 +94,15 @@ export class EntraAuthController {
   }
 
   async getAccessToken(): Promise<string | null> {
+    return this.acquireAccessToken(false);
+  }
+
+  async refreshAccessToken(): Promise<string | null> {
+    this.cachedToken = null;
+    return this.acquireAccessToken(true);
+  }
+
+  private async acquireAccessToken(forceRefreshRequested: boolean): Promise<string | null> {
     const snapshot = await this.initialize();
     if (snapshot.mode === "browser") return null;
     const client = this.requireClient();
@@ -99,7 +110,7 @@ export class EntraAuthController {
     if (!account) throw new Error("AUTHENTICATION_REQUIRED");
     client.setActiveAccount(account);
     if (this.cachedToken?.accessToken && tokenIsFresh(this.cachedToken)) return this.cachedToken.accessToken;
-    const forceRefresh = Boolean(
+    const forceRefresh = forceRefreshRequested || Boolean(
       this.cachedToken?.expiresOn && this.cachedToken.expiresOn.getTime() - Date.now() <= 5 * 60_000,
     );
     try {

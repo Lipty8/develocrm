@@ -4,7 +4,7 @@ import { entraAuth } from "./entra-auth";
 import { clientUsesBrowserAdapter } from "./data-mode";
 
 export function createApiFetch(
-  auth:{getAccessToken():Promise<string|null>},
+  auth:{getAccessToken():Promise<string|null>;refreshAccessToken?():Promise<string|null>},
   transport:typeof fetch,
   browserMode:()=>boolean=clientUsesBrowserAdapter,
 ):typeof fetch {
@@ -28,7 +28,16 @@ export function createApiFetch(
       headers.set("authorization",`${mutation?"DeveloCRM":"Bearer"} ${token}`);
     }
     try{
-      const response=await transport(input,{...init,headers});
+      let response=await transport(input,{...init,headers});
+      if(response.status===401&&auth.refreshAccessToken){
+        const refreshed=await auth.refreshAccessToken();
+        if(refreshed){
+          headers.set("authorization",`${mutation?"DeveloCRM":"Bearer"} ${refreshed}`);
+          response=await transport(input,{...init,headers});
+          if(response.ok&&typeof window!=="undefined")window.dispatchEvent(new CustomEvent("develocrm:session-restored"));
+        }
+      }
+      if(response.status===401&&typeof window!=="undefined")window.dispatchEvent(new CustomEvent("develocrm:authentication-required"));
       if(mutation)console.info(JSON.stringify({event:"frontend.mutation.complete",correlationId:requestCorrelationId,method,target:targetPath,status:response.status}));
       return response;
     }catch(error){
