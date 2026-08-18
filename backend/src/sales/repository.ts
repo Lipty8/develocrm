@@ -18,6 +18,7 @@ export type PartyDuplicateMatch={id:string;name:string;kind:"FO"|"PO";strength:"
 export type UnitCommercialContext = {
   salesCaseId: string | null;
   buyers: Array<{ partyId: string; name: string; email: string; role: string; share: number | null }>;
+  buyerHistory: Array<{ id:string; occurredAt:string; previousBuyers:Array<{partyId:string;name:string;role:string}>; currentBuyers:Array<{partyId:string;name:string;role:string}>; reason:string; actor:string }>;
   interests: Array<{ date: string; partyId: string; name: string; type: string; result: string }>;
   stage: string | null;
   hold: { id: string; type: string; expiresAt: string } | null;
@@ -54,7 +55,7 @@ export class SalesRepository {
   async archiveImpact(input:{tenantId:string;userId:string;partyId:string;membershipId:string}){return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{impact:Record<string,number|string>}>("SELECT app.party_archive_impact($1,$2,$3) impact",[input.tenantId,input.partyId,input.membershipId])).rows[0]?.impact??{});}
   async archiveParty(input:{tenantId:string;userId:string;partyId:string;membershipId:string;reason:string}){return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{outcome:{mode:"delete"|"archive";impact:Record<string,number>}}>("SELECT app.remove_or_archive_party($1,$2,$3,$4) outcome",[input.tenantId,input.partyId,input.membershipId,input.reason])).rows[0]?.outcome);}
   async addActivity(input:{tenantId:string;userId:string;partyId:string;membershipId:string;activityType:string;note:string}){return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{id:string}>("SELECT app.add_party_activity($1,$2,$3,$4,$5) id",[input.tenantId,input.partyId,input.activityType,input.note,input.membershipId])).rows[0]);}
-  async changeBuyer(input:{tenantId:string;userId:string;salesCaseId:string;newPartyId?:string|null;membershipId:string;reason:string}){return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{id:string}>("SELECT app.change_sales_case_buyer($1,$2,$3,$4,$5) id",[input.tenantId,input.salesCaseId,input.newPartyId??null,input.membershipId,input.reason])).rows[0]);}
+  async changeBuyer(input:{tenantId:string;userId:string;salesCaseId:string;buyers:Array<{partyId:string;role:"buyer"|"co_buyer";isPrimary:boolean;share?:number|null}>;membershipId:string;reason:string;idempotencyKey:string}){return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{id:string}>("SELECT app.assign_sales_case_buyers($1,$2,$3::jsonb,$4,$5,$6) id",[input.tenantId,input.salesCaseId,JSON.stringify(input.buyers),input.membershipId,input.reason,input.idempotencyKey])).rows[0]);}
 
   private async findDuplicatesWithClient(client:SqlClient,input:{tenantId:string;membershipId:string;projectId:string;kind:string;firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;email?:string;phone?:string}):Promise<PartyDuplicateMatch[]>{
     const permission=await client.query<{allowed:boolean}>("SELECT app.has_project_permission($1,$2,$3,'clients.create') allowed",[input.tenantId,input.membershipId,input.projectId]);
@@ -147,6 +148,7 @@ export class SalesRepository {
       );
 
       const hasContracts=Boolean((await client.query<{present:boolean}>("SELECT to_regclass('public.contracts') IS NOT NULL present")).rows[0]?.present);
+      const hasBuyerAssignments=Boolean((await client.query<{present:boolean}>("SELECT to_regclass('public.buyer_assignment_events') IS NOT NULL present")).rows[0]?.present);
       const contractColumns=hasContracts?"relevant_contract.contract_type,relevant_contract.current_status contract_status":"NULL::text contract_type,NULL::text contract_status";
       const contractJoin=hasContracts?`LEFT JOIN LATERAL (
            SELECT contract.contract_type,contract.current_status
@@ -191,12 +193,23 @@ export class SalesRepository {
       const activitiesByParty=new Map<string,ClientDirectoryItem["activityHistory"]>();
       for(const activity of activityRows.rows){const list=activitiesByParty.get(activity.party_id)??[];list.push({id:activity.id,type:activity.activity_type,note:activity.note,occurredAt:activity.occurred_at,author:activity.author});activitiesByParty.set(activity.party_id,list);}
 
+      const buyerHistorySelect=hasBuyerAssignments?"COALESCE(buyer_history.items,'[]'::jsonb) buyer_history":"'[]'::jsonb buyer_history";
+      const buyerHistoryJoin=hasBuyerAssignments?`LEFT JOIN LATERAL (
+           SELECT jsonb_agg(jsonb_build_object('id',event.id,'occurredAt',event.effective_at,'reason',event.reason,'actor',actor.display_name,
+             'previousBuyers',(SELECT COALESCE(jsonb_agg(jsonb_build_object('partyId',item->>'partyId','name',party.display_name,'role',item->>'role')),'[]'::jsonb) FROM jsonb_array_elements(event.previous_buyers) item LEFT JOIN parties party ON party.tenant_id=event.tenant_id AND party.id=(item->>'partyId')::uuid),
+             'currentBuyers',(SELECT COALESCE(jsonb_agg(jsonb_build_object('partyId',item->>'partyId','name',party.display_name,'role',item->>'role')),'[]'::jsonb) FROM jsonb_array_elements(event.current_buyers) item LEFT JOIN parties party ON party.tenant_id=event.tenant_id AND party.id=(item->>'partyId')::uuid)
+           ) ORDER BY event.effective_at DESC,event.id DESC) items
+           FROM buyer_assignment_events event
+           JOIN tenant_memberships event_membership ON event_membership.tenant_id=event.tenant_id AND event_membership.id=event.recorded_by_membership_id
+           JOIN users actor ON actor.id=event_membership.user_id
+           WHERE event.tenant_id=unit.tenant_id AND event.sales_case_id=active_case.id
+         ) buyer_history ON true`:"";
       const contextRows = await client.query<{
-        unit_code: string;sales_case_id:string|null; buyers: UnitCommercialContext["buyers"]; interests: UnitCommercialContext["interests"];
+        unit_code: string;sales_case_id:string|null; buyers: UnitCommercialContext["buyers"]; buyer_history:UnitCommercialContext["buyerHistory"]; interests: UnitCommercialContext["interests"];
         stage: string | null; hold: UnitCommercialContext["hold"];
       }>(
         `SELECT unit.code unit_code,active_case.id sales_case_id,active_case.current_stage stage,
-          COALESCE(buyers.items,'[]'::jsonb) buyers,COALESCE(interests.items,'[]'::jsonb) interests,hold.item hold
+          COALESCE(buyers.items,'[]'::jsonb) buyers,${buyerHistorySelect},COALESCE(interests.items,'[]'::jsonb) interests,hold.item hold
          FROM units unit
          LEFT JOIN LATERAL (SELECT id,current_stage FROM sales_cases WHERE tenant_id=unit.tenant_id AND unit_id=unit.id AND status='active' LIMIT 1) active_case ON true
          LEFT JOIN LATERAL (
@@ -206,8 +219,10 @@ export class SalesRepository {
            LEFT JOIN LATERAL (SELECT value FROM party_contacts WHERE tenant_id=party.tenant_id AND party_id=party.id AND contact_type='email' AND archived_at IS NULL
              AND ${partyContactAccess} ORDER BY is_primary DESC LIMIT 1) email ON true
            WHERE participant.tenant_id=unit.tenant_id AND participant.sales_case_id=active_case.id AND participant.left_at IS NULL
+             AND participant.participant_role IN ('buyer','co_buyer')
              AND ${partyAccess}
          ) buyers ON true
+         ${buyerHistoryJoin}
          LEFT JOIN LATERAL (
            SELECT jsonb_agg(jsonb_build_object('date',COALESCE(to_char(interest.first_interest_at,'DD. MM. YYYY'),'Datum neuvedeno'),'partyId',party.id,'name',party.display_name,
              'type',COALESCE(highest.label,CASE interest.status WHEN 'converted' THEN 'Obchodní proces' WHEN 'active' THEN 'Aktivní zájem' ELSE 'Ukončený zájem' END),
@@ -237,7 +252,7 @@ export class SalesRepository {
             units: unitRelations.map(item=>item.code),unitRelations,projects: projectNames.join(", "),projectNames,state: row.state,
             contractStatus: bestContract?.contractType ? `${bestContract.contractType}${bestContract.contractStatus?` · ${contractStatusLabel(bestContract.contractStatus)}`:""}` : "Bez smlouvy",initials: initials(row.display_name),interestHistory: row.interest_history,activityHistory:activitiesByParty.get(row.id)??[],firstName:row.first_name??undefined,lastName:row.last_name??undefined,legalName:row.legal_name??undefined,registrationNumber:row.registration_number??undefined,vatNumber:row.vat_number??undefined,contactPerson:row.contact_person??undefined,address:row.address,updatedAt:row.updated_at,lifecycleStatus:row.lifecycle_status };
         }),
-        unitContexts: Object.fromEntries(contextRows.rows.map((row) => [row.unit_code,{ salesCaseId:row.sales_case_id,buyers: row.buyers,interests: row.interests,stage: row.stage,hold: row.hold }])),
+        unitContexts: Object.fromEntries(contextRows.rows.map((row) => [row.unit_code,{ salesCaseId:row.sales_case_id,buyers: row.buyers,buyerHistory:row.buyer_history,interests: row.interests,stage: row.stage,hold: row.hold }])),
       };
     });
   }

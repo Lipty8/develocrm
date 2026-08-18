@@ -39,6 +39,7 @@ function mapTimeline(row:{id:string;occurred_at:string;action:string;before_data
  "unit.updated":["Upraveny údaje jednotky","history"],"unit.floorplan_changed":["Změněn půdorys jednotky","document"],"unit.commercial_status_changed":["Změněn obchodní stav","contract"],
  "unit.interest_recorded":["Zaznamenán zájem o jednotku","history"],"hold.created":["Vytvořena předrezervace nebo rezervace","contract"],"hold.converted":["Předrezervace převedena na rezervaci","contract"],"hold.cancelled":["Rezervace byla zrušena","contract"],
  "hold.created_by_rs_signature":["Podpisem RS vznikla rezervace","contract"],"hold.converted_by_rs_signature":["Podpisem RS byla potvrzena rezervace","contract"],"rs.signature_reservation_activated":["Obchodní proces přešel do rezervace","contract"],
+ "buyer_assignment.transferred":["Postoupena smlouva / změněn kupující","contract"],
  "contract.created":["Vytvořena smlouva","contract"],"contract.version_created":["Vytvořena nová verze smlouvy","document"],"contract.status_changed":["Změněn stav smlouvy","contract"],"contract.party_signed":["Zaznamenán podpis smlouvy","contract"],"contract.signed":["Smlouva byla podepsána","contract"],
  "payment.obligation_created":["Vznikla platební povinnost","payment"],"payment.recorded":["Zaznamenána úhrada","payment"],"payment.reversed":["Úhrada byla stornována","payment"],
  "task.created":["Vytvořen úkol","history"],"task.completed":["Úkol byl dokončen","history"],"task.reopened":["Úkol byl znovu otevřen","history"],"task.archived":["Úkol byl archivován","history"],
