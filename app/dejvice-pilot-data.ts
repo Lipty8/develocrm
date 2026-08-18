@@ -1187,7 +1187,7 @@ export const dejviceContracts=[
     "client": "Šárka Hodslavská",
     "project": "Rezidence Dejvice",
     "type": "RS",
-    "state": "Podepsána",
+    "state": "Podepsaná",
     "updated": "29. 12. 2025",
     "owner": "Iva",
     "action": "Bez akce",

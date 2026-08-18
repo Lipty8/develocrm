@@ -15,7 +15,7 @@ test("centrální workflow vrací pouze validní přechody a vždy čerstvou dop
   assert.equal(recommendedContractAction({status:"draft",type:"SBK"}).label,"Odeslat SBK");
   assert.equal(recommendedContractAction({status:"negotiation",type:"SBK"}).label,"Zapracovat připomínky");
   assert.equal(recommendedContractAction({status:"signed",type:"SBK"}).tone,"neutral");
-  assert.equal(contractStatusLabel("approved"),"Schválena");
+  assert.equal(contractStatusLabel("approved"),"Schválená");
 });
 
 test("stabilní řazení zachová deterministický sekundární klíč i po filtrování",async()=>{

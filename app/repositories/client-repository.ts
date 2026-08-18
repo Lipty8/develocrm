@@ -21,6 +21,8 @@ export interface ClientRepository {
   getArchiveImpact(partyId:string):Promise<ArchiveImpact>;
   archiveParty(partyId:string,reason:string):Promise<RemovalOutcome>;
   upsertContact(input:{partyId:string;contactType:string;value:string;label?:string;isPrimary?:boolean}):Promise<void>;
+  addActivity(input:{partyId:string;activityType:"note"|"call"|"email"|"meeting"|"other";note:string}):Promise<{id:string}>;
+  changeBuyer(input:{salesCaseId:string;newPartyId?:string|null;reason:string}):Promise<{id:string}>;
 }
 export class ApiClientRepository implements ClientRepository {
   async getDirectory(signal?:AbortSignal):Promise<ClientSnapshot> {
@@ -43,6 +45,8 @@ export class ApiClientRepository implements ClientRepository {
   async getArchiveImpact(partyId:string){const response=await apiFetch(`/api/clients/${partyId}/archive-impact`,{cache:"no-store"});if(!response.ok)throw new Error("Vazby klienta nelze ověřit");return((await response.json()) as {impact:ArchiveImpact}).impact;}
   async archiveParty(partyId:string,reason:string){const response=await apiFetch(`/api/clients/${partyId}/archive`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({reason})});if(!response.ok){const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error||"Klienta nelze odstranit");}return((await response.json()) as {outcome:RemovalOutcome}).outcome;}
   async upsertContact(input:{partyId:string;contactType:string;value:string;label?:string;isPrimary?:boolean}){const preview=await mutate(`/api/clients/${input.partyId}/contacts`,"POST",input,true);if(preview&&typeof window!=="undefined"){const e=JSON.parse(localStorage.getItem("develocrm.client.edits")||"{}");e[input.partyId]??={};if(input.contactType==="email")e[input.partyId].email=input.value;if(input.contactType==="phone")e[input.partyId].phone=input.value;localStorage.setItem("develocrm.client.edits",JSON.stringify(e));}}
+  async addActivity(input:{partyId:string;activityType:"note"|"call"|"email"|"meeting"|"other";note:string}){const response=await apiFetch(`/api/clients/${input.partyId}/activities`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});if(response.ok)return response.json() as Promise<{id:string}>;const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error||"Aktivitu se nepodařilo uložit");}
+  async changeBuyer(input:{salesCaseId:string;newPartyId?:string|null;reason:string}){const response=await apiFetch(`/api/sales/cases/${input.salesCaseId}/buyer`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});if(response.ok)return response.json() as Promise<{id:string}>;const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error||"Kupujícího se nepodařilo změnit");}
 }
 async function mutate(url:string,method:string,body:unknown,allowPreview=false){const response=await apiFetch(url,{method,headers:{"content-type":"application/json"},body:JSON.stringify(body)});if(response.ok)return false;if(allowPreview&&response.status===503&&responseAllowsBrowserFallback(response))return true;const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error||"Změnu klienta se nepodařilo uložit");}
 type PreviewSalesCommand={kind:"interest"|"hold"|"convert"|"cancel";id?:string;partyId?:string;partyIds?:string[];type?:"pre_reservation"|"reservation";expiresAt?:string;recordedAt?:string};

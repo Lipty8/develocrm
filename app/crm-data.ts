@@ -39,10 +39,12 @@ export type ProjectRecord = { backendId?:string; name:string; sourceName?:string
 export type TaskRecord = { id:string|number; title:string; description?:string; object:string; objectType?:string; objectId?:string; project:string; due:string; dueAt?:string|null; priority:string; owner:string; assigneeId?:string|null; done:boolean; updatedAt?:string };
 
 export type InterestHistoryRecord = { date: string; project: string; unit: string; type: string; result: string };
+export type ClientActivityRecord = { id:string;type:string;note:string;occurredAt:string;author:string };
 export type ClientRecord = {
   id: string; name: string; type: string; kind: "FO" | "PO"; email: string; phone: string; contact: string;
   units: string[]; projects: string; projectNames: string[]; state: string; contractStatus: string; initials: string;
   interestHistory?: InterestHistoryRecord[];
+  activityHistory?: ClientActivityRecord[];
   firstName?:string; lastName?:string; legalName?:string; registrationNumber?:string; vatNumber?:string; contactPerson?:string;
   address?:{line1:string;line2?:string;city:string;postalCode?:string;countryCode:string;addressType:string}|null;
   updatedAt?:string;

@@ -27,7 +27,6 @@ export interface CommercialRepository {
   getNextContractAction(unitId:string,signal?:AbortSignal):Promise<UnitNextContractAction>;
   createNextContract(input:ContextualContractInput):Promise<ContractCreateResult>;
   createContractVersion(input:{contractId:string;name:string;source?:string;basedOnVersionId?:string}):Promise<{id:string}>;
-  recordContractSignature(input:{contractPartyId:string;versionId:string;reason:string}):Promise<{completed:boolean}>;
   signContract(input:{contractId:string;versionId:string;signedAt:string;note?:string}):Promise<{completed:boolean;alreadySigned:boolean;versionId:string}>;
 }
 
@@ -142,10 +141,7 @@ class ApiCommercialRepository implements CommercialRepository {
     const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??"Smlouvu nelze vytvořit");
   }
   async createContractVersion(input:{contractId:string;name:string;source?:string;basedOnVersionId?:string}){
-    const response=await apiFetch(`/api/commercial/contracts/${input.contractId}/versions`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:input.name,source:input.source??"manual",basedOnVersionId:input.basedOnVersionId})});if(response.ok)return response.json() as Promise<{id:string}>;const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??"Verzi smlouvy nelze vytvořit");
-  }
-  async recordContractSignature(input:{contractPartyId:string;versionId:string;reason:string}){
-    const response=await apiFetch(`/api/commercial/contract-parties/${input.contractPartyId}/sign`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({versionId:input.versionId,reason:input.reason})});if(response.ok)return response.json() as Promise<{completed:boolean}>;const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??"Podpis smlouvy nelze zaznamenat");
+    const source=input.source&&["manual","generated","imported"].includes(input.source)?input.source:"manual";const response=await apiFetch(`/api/commercial/contracts/${input.contractId}/versions`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:input.name,source,basedOnVersionId:input.basedOnVersionId})});if(response.ok)return response.json() as Promise<{id:string}>;const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??"Verzi smlouvy nelze vytvořit");
   }
   async signContract(input:{contractId:string;versionId:string;signedAt:string;note?:string}){
     const response=await apiFetch(`/api/commercial/contracts/${input.contractId}/sign`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});if(response.ok)return response.json() as Promise<{completed:boolean;alreadySigned:boolean;versionId:string}>;const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??"Podpis smlouvy nelze zaznamenat");

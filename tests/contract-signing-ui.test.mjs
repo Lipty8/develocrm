@@ -15,7 +15,8 @@ test("detail smlouvy nabízí řízené označení aktuální verze jako podepsa
   assert.match(proxy,/forwardBackendMutation/);
   assert.match(app,/refreshCommercial\(\);refreshCatalog\(\);refreshClients\(\)/);
   assert.match(nextAction,/Čeká na úhradu rezervačního poplatku/);
-  assert.match(app,/Smlouva byla podepsána a jednotka rezervována/);
+  assert.match(app,/Smlouva byla označena jako podepsaná a obchodní proces byl aktualizován/);
+  assert.doesNotMatch(app,/ContractSignatureModal/);
 });
 
 test("vizuální prodejní proces používá smlouvy a nemá duplicitní krok rezervace",async()=>{

@@ -5,6 +5,7 @@ export type ClientDirectoryItem = {
   contact: string; units: string[]; projects: string; projectNames: string[]; state: string;
   contractStatus: string; initials: string;
   interestHistory: Array<{ date: string; project: string; unit: string; type: string; result: string }>;
+  activityHistory:Array<{id:string;type:string;note:string;occurredAt:string;author:string}>;
   firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;vatNumber?:string;contactPerson?:string;
   address?:{line1:string;line2?:string;city:string;postalCode?:string;countryCode:string;addressType:string}|null;
   updatedAt?:string;
@@ -52,6 +53,8 @@ export class SalesRepository {
   async linkPartyToProject(input:{tenantId:string;userId:string;partyId:string;projectId:string;membershipId:string}){return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{id:string}>("SELECT app.link_party_to_project($1,$2,$3,$4) id",[input.tenantId,input.partyId,input.projectId,input.membershipId])).rows[0]);}
   async archiveImpact(input:{tenantId:string;userId:string;partyId:string;membershipId:string}){return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{impact:Record<string,number|string>}>("SELECT app.party_archive_impact($1,$2,$3) impact",[input.tenantId,input.partyId,input.membershipId])).rows[0]?.impact??{});}
   async archiveParty(input:{tenantId:string;userId:string;partyId:string;membershipId:string;reason:string}){return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{outcome:{mode:"delete"|"archive";impact:Record<string,number>}}>("SELECT app.remove_or_archive_party($1,$2,$3,$4) outcome",[input.tenantId,input.partyId,input.membershipId,input.reason])).rows[0]?.outcome);}
+  async addActivity(input:{tenantId:string;userId:string;partyId:string;membershipId:string;activityType:string;note:string}){return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{id:string}>("SELECT app.add_party_activity($1,$2,$3,$4,$5) id",[input.tenantId,input.partyId,input.activityType,input.note,input.membershipId])).rows[0]);}
+  async changeBuyer(input:{tenantId:string;userId:string;salesCaseId:string;newPartyId?:string|null;membershipId:string;reason:string}){return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{id:string}>("SELECT app.change_sales_case_buyer($1,$2,$3,$4,$5) id",[input.tenantId,input.salesCaseId,input.newPartyId??null,input.membershipId,input.reason])).rows[0]);}
 
   private async findDuplicatesWithClient(client:SqlClient,input:{tenantId:string;membershipId:string;projectId:string;kind:string;firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;email?:string;phone?:string}):Promise<PartyDuplicateMatch[]>{
     const permission=await client.query<{allowed:boolean}>("SELECT app.has_project_permission($1,$2,$3,'clients.create') allowed",[input.tenantId,input.membershipId,input.projectId]);
@@ -178,6 +181,16 @@ export class SalesRepository {
       const relationsByParty=new Map<string,ClientDirectoryItem["unitRelations"]>();
       for(const relation of relationRows.rows){const list=relationsByParty.get(relation.party_id)??[];list.push({unitId:relation.unit_id,code:relation.unit_code,projectId:relation.project_id,project:relation.project_name,contractType:relation.contract_type?.toUpperCase() as "RS"|"SBK"|"KS"|undefined,contractStatus:relation.contract_status??undefined});relationsByParty.set(relation.party_id,list);}
 
+      const hasActivityFunction=Boolean((await client.query<{present:boolean}>("SELECT to_regprocedure('app.list_party_activities(uuid,uuid)') IS NOT NULL present")).rows[0]?.present);
+      const activityRows=hasActivityFunction
+        ?await client.query<{id:string;party_id:string;activity_type:string;note:string;occurred_at:string;author:string}>(
+          `SELECT id,party_id,activity_type,note,occurred_at,author FROM app.list_party_activities($1,$2)`,
+          [input.tenantId,input.membershipId],
+        )
+        :{rows:[] as Array<{id:string;party_id:string;activity_type:string;note:string;occurred_at:string;author:string}>};
+      const activitiesByParty=new Map<string,ClientDirectoryItem["activityHistory"]>();
+      for(const activity of activityRows.rows){const list=activitiesByParty.get(activity.party_id)??[];list.push({id:activity.id,type:activity.activity_type,note:activity.note,occurredAt:activity.occurred_at,author:activity.author});activitiesByParty.set(activity.party_id,list);}
+
       const contextRows = await client.query<{
         unit_code: string;sales_case_id:string|null; buyers: UnitCommercialContext["buyers"]; interests: UnitCommercialContext["interests"];
         stage: string | null; hold: UnitCommercialContext["hold"];
@@ -222,7 +235,7 @@ export class SalesRepository {
           return { id: row.id,name: row.display_name,type: row.party_type === "individual" ? "Fyzická osoba" : "Právnická osoba",
             kind: row.party_type === "individual" ? "FO" : "PO",email,phone,contact: [email,phone].filter(Boolean).join(" · "),
             units: unitRelations.map(item=>item.code),unitRelations,projects: projectNames.join(", "),projectNames,state: row.state,
-            contractStatus: bestContract?.contractType ? `${bestContract.contractType}${bestContract.contractStatus?` · ${contractStatusLabel(bestContract.contractStatus)}`:""}` : "Bez smlouvy",initials: initials(row.display_name),interestHistory: row.interest_history,firstName:row.first_name??undefined,lastName:row.last_name??undefined,legalName:row.legal_name??undefined,registrationNumber:row.registration_number??undefined,vatNumber:row.vat_number??undefined,contactPerson:row.contact_person??undefined,address:row.address,updatedAt:row.updated_at,lifecycleStatus:row.lifecycle_status };
+            contractStatus: bestContract?.contractType ? `${bestContract.contractType}${bestContract.contractStatus?` · ${contractStatusLabel(bestContract.contractStatus)}`:""}` : "Bez smlouvy",initials: initials(row.display_name),interestHistory: row.interest_history,activityHistory:activitiesByParty.get(row.id)??[],firstName:row.first_name??undefined,lastName:row.last_name??undefined,legalName:row.legal_name??undefined,registrationNumber:row.registration_number??undefined,vatNumber:row.vat_number??undefined,contactPerson:row.contact_person??undefined,address:row.address,updatedAt:row.updated_at,lifecycleStatus:row.lifecycle_status };
         }),
         unitContexts: Object.fromEntries(contextRows.rows.map((row) => [row.unit_code,{ salesCaseId:row.sales_case_id,buyers: row.buyers,interests: row.interests,stage: row.stage,hold: row.hold }])),
       };
@@ -270,7 +283,7 @@ export class SalesRepository {
 function initials(name: string): string { return name.split(/\s+/).filter(Boolean).slice(0,2).map((part) => part[0]?.toUpperCase()).join(""); }
 function contractTypeRank(type?:"RS"|"SBK"|"KS"){return type==="KS"?3:type==="SBK"?2:type==="RS"?1:0;}
 function contractStatusRank(status?:string){return ({signed:7,signing:6,approved:5,negotiation:4,sent:3,draft:2} as Record<string,number>)[status??""]??0;}
-function contractStatusLabel(status:string){return ({signed:"Podepsána",signing:"K podpisu",approved:"Schválena",negotiation:"Ve vyjednávání",sent:"Odeslána",draft:"V přípravě"} as Record<string,string>)[status]??"";}
+function contractStatusLabel(status:string){return ({signed:"Podepsaná",signing:"Schválená",approved:"Schválená",negotiation:"Ve vyjednávání",sent:"Odeslána",draft:"V přípravě"} as Record<string,string>)[status]??"";}
 function normalizeText(value?:string|null){return (value??"").trim().replace(/\s+/g," ").toLocaleLowerCase("cs-CZ");}
 function normalizeEmail(value?:string|null){return (value??"").trim().toLowerCase();}
 function normalizePhone(value?:string|null){const digits=(value??"").replace(/\D/g,"");return digits.startsWith("00")?digits.slice(2):digits.startsWith("420")?digits:digits.length===9?`420${digits}`:digits;}

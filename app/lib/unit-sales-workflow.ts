@@ -9,7 +9,7 @@ export function projectUnitSalesWorkflow(input: {
 }): { completedThrough: number; activeIndex: number } {
   const relevant = input.contracts.filter(contract => contract.unit === input.unit.id);
   const signed = (type: "RS" | "SBK" | "KS") => relevant.some(contract =>
-    contract.type.toUpperCase() === type && (contract.statusCode === "signed" || contract.state === "Podepsána"),
+    contract.type.toUpperCase() === type && (contract.statusCode === "signed" || ["Podepsána","Podepsaná"].includes(contract.state)),
   );
   if (/předáno|dokončeno/i.test(input.unit.handover)) return { completedThrough: 5, activeIndex: 5 };
   if (signed("KS")) return { completedThrough: 4, activeIndex: 5 };

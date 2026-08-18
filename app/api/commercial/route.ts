@@ -20,4 +20,4 @@ export async function GET(request:Request){
   return Response.json({...await response.json(),source:"backend-api"});
 }
 function slug(value:string){return value.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");}
-function statusCode(label:string){return ({"V přípravě":"draft","Odeslána":"sent","Ve vyjednávání":"negotiation","Schválena":"approved","K podpisu":"signing","Podepsána":"signed","Zrušena":"cancelled","Ukončena":"terminated","Ke kontrole":"negotiation"} as Record<string,string>)[label]??"draft";}
+function statusCode(label:string){return ({"V přípravě":"draft","Odeslána":"sent","Ve vyjednávání":"negotiation","Schválena":"approved","Schválená":"approved","K podpisu":"signing","Podepsána":"signed","Podepsaná":"signed","Zrušena":"cancelled","Ukončena":"terminated","Ke kontrole":"negotiation"} as Record<string,string>)[label]??"draft";}
