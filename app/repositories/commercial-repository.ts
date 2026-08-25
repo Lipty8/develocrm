@@ -3,9 +3,9 @@ import { contractStatusLabel, isValidContractTransition, recommendedContractActi
 import { recordPreviewActivity } from "./activity-repository";
 import { clientUsesBrowserAdapter, responseAllowsBrowserFallback } from "../lib/data-mode";
 import { apiFetch } from "../lib/api-client";
-import type {NextContractAction} from "../../backend/src/shared/next-contract-action";
+import type {NextContractAction,SalesProcessProjection} from "../../backend/src/shared/next-contract-action";
 
-export type UnitNextContractAction=NextContractAction&{unitId:string;unitCode:string;salesCaseId:string|null;buyerNames:string[]};
+export type UnitNextContractAction=NextContractAction&{unitId:string;unitCode:string;salesCaseId:string|null;buyerNames:string[];salesProcess:SalesProcessProjection};
 export type ContractCreateResult={id:string;versionId:string;paymentObligationId:string|null;paymentAmount:number|null;type?:"rs"|"sbk"|"ks";reference?:string;title?:string};
 export type ContextualContractInput={unitId:string;idempotencyKey:string;paymentCalculationType?:"percentage"|"fixed";paymentInputValue?:number;paymentDueAt?:string};
 

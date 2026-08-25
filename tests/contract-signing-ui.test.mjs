@@ -13,7 +13,7 @@ test("detail smlouvy nabízí řízené označení aktuální verze jako podepsa
   assert.match(app,/contract\.versions\?\.\[0\]/);
   assert.match(repository,/signContract/);
   assert.match(proxy,/forwardBackendMutation/);
-  assert.match(app,/refreshCommercial\(\);refreshCatalog\(\);refreshClients\(\)/);
+  assert.match(app,/refreshUnitWorkflow\(\)/);
   assert.match(nextAction,/return\{kind:"create_contract",contractType:"sbk",label:"Vytvořit SBK"\}/);
   assert.doesNotMatch(nextAction,/Čeká na úhradu rezervačního poplatku/);
   assert.match(app,/Smlouva byla označena jako podepsaná a obchodní proces byl aktualizován/);
@@ -27,11 +27,21 @@ test("vizuální prodejní proces používá smlouvy a nemá duplicitní krok re
   assert.match(statuses,/reserved: \{ label: "Rezervovaná"/);
   assert.match(workflow,/\["Zájem", "Předrezervace", "RS", "SBK", "KS", "Předání"\]/);
   assert.doesNotMatch(workflow,/"Předrezervace", "Rezervace"/);
-  assert.match(workflow,/signed\("RS"\).*completedThrough: 2, activeIndex: 3/s);
-  assert.match(workflow,/signed\("SBK"\).*completedThrough: 3, activeIndex: 4/s);
-  assert.match(workflow,/signed\("KS"\).*completedThrough: 4, activeIndex: 5/s);
+  assert.match(workflow,/getSalesProcessState/);
+  assert.match(workflow,/contract\.salesCaseId===input\.context\.salesCaseId/);
   assert.match(app,/projectUnitSalesWorkflow/);
+  assert.match(app,/nextContractAction\?\.salesProcess\?\?projectUnitSalesWorkflow/);
   assert.doesNotMatch(app,/<Badge>\{unit\.status\}<\/Badge> Ve vyjednávání/);
+});
+
+test("timeline a hlavní smluvní CTA používají stejnou projekci aktivního obchodního případu",async()=>{
+  const app=await readFile(new URL("../app/CRMApp.tsx",import.meta.url),"utf8");
+  const service=await readFile(new URL("../backend/src/commercial/service.ts",import.meta.url),"utf8");
+  assert.match(service,/getSalesProcessState\(\{hasActiveSalesCase:Boolean\(unit\.sales_case_id\),contracts,salesStage:unit\.sales_stage,holdType:unit\.hold_type,hasInterest:unit\.has_interest,handoverCompleted:unit\.handover_completed\}\)/);
+  assert.match(service,/sales_case_id=\$2 AND contract_type IN \('rs','sbk','ks'\)/);
+  assert.match(app,/workflow=\{salesProcess\}/);
+  assert.match(app,/nextContractAction\?\.kind==="create_contract"/);
+  assert.match(app,/const refreshUnitWorkflow = \(\) => \{ refreshCommercial\(\); refreshCatalog\(\); refreshClients\(\);/);
 });
 
 test("smlouvy používají filtry v hlavičkách a jedinou sjednocenou historii",async()=>{
