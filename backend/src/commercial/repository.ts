@@ -3,7 +3,7 @@ import { contractStatusLabel, recommendedContractAction } from "../shared/contra
 
 export type PriceItem={id:string;unit:string;type:string;amount:number;amountNet?:number;currency:string;validFrom:string;validTo:string|null;reason:string;author:string;approver:string|null};
 export type ContractHistoryItem={id:string;fromStatus:string|null;toStatus:string;occurredAt:string;actor:string;note:string;source:"manual"|"automation"|"signature"|"import"};
-export type ContractItem={id:string;salesCaseId:string;unit:string;project:string;client:string;type:string;state:string;statusCode:string;updated:string;updatedAt:string;owner:string;action:string;title:string;reference:string;history:ContractHistoryItem[];parties:Array<{id:string;partyId:string;name:string;role:string;signatureStatus:string;isCurrent:boolean;effectiveFrom:string;effectiveTo:string|null;assignmentReason:string|null}>;versions:Array<{id:string;number:number;name:string;status:string;basedOnVersionId:string|null;source:string;createdAt:string;signedAt:string|null}>};
+export type ContractItem={id:string;salesCaseId:string;unit:string;project:string;client:string;type:string;typeCode:string;state:string;statusCode:string;updated:string;updatedAt:string;owner:string;action:string;title:string;reference:string;parentContractId:string|null;parentReference:string|null;assignmentEffectiveAt:string|null;history:ContractHistoryItem[];parties:Array<{id:string;partyId:string;name:string;role:string;signatureStatus:string;isCurrent:boolean;effectiveFrom:string;effectiveTo:string|null;assignmentReason:string|null;isPrimaryBuyer:boolean;ownershipShare:number|null}>;versions:Array<{id:string;number:number;name:string;status:string;basedOnVersionId:string|null;source:string;createdAt:string;signedAt:string|null}>};
 export type CommercialSnapshot={currentPrices:Record<string,number>;priceHistories:Record<string,PriceItem[]>;priceProposals:Array<{id:string;unit:string;priceType:string;currentAmount:number;proposedAmount:number;validFrom:string;reason:string;status:string;proposer:string;decider:string|null}>;contracts:ContractItem[];contractSummary:Record<string,number>};
 type Context={tenantId:string;userId:string;membershipId:string};
 
@@ -25,20 +25,24 @@ export class CommercialRepository {
            AND app.has_project_permission(price.tenant_id,$2,price.project_id,'price.read')
          ORDER BY unit.code,price.valid_from DESC,price.recorded_at DESC`,[input.tenantId,input.membershipId]);
       const hasBuyerAssignments=Boolean((await client.query("SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='buyer_assignment_events'")).rowCount);
-      const partyProjection=hasBuyerAssignments
-        ?`jsonb_build_object('id',participant.id,'partyId',participant.party_id,'name',party.display_name,'role',participant.participant_role,'signatureStatus',participant.signature_status,'isCurrent',participant.effective_to IS NULL,'effectiveFrom',participant.effective_from,'effectiveTo',participant.effective_to,'assignmentReason',assignment.reason)`
-        :`jsonb_build_object('id',participant.id,'partyId',participant.party_id,'name',party.display_name,'role',participant.participant_role,'signatureStatus',participant.signature_status,'isCurrent',true,'effectiveFrom',participant.created_at,'effectiveTo',NULL,'assignmentReason',NULL)`;
+      const hasAssignmentPartyColumns=Boolean((await client.query("SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='contract_parties' AND column_name='is_primary_buyer'")).rowCount);
+      const hasContractAssignmentColumns=Boolean((await client.query("SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='contracts' AND column_name='assignment_effective_at'")).rowCount);
+      const partyProjection=hasBuyerAssignments&&hasAssignmentPartyColumns
+        ?`jsonb_build_object('id',participant.id,'partyId',participant.party_id,'name',party.display_name,'role',participant.participant_role,'signatureStatus',participant.signature_status,'isCurrent',participant.effective_to IS NULL,'effectiveFrom',participant.effective_from,'effectiveTo',participant.effective_to,'assignmentReason',assignment.reason,'isPrimaryBuyer',participant.is_primary_buyer,'ownershipShare',participant.ownership_share)`
+        :`jsonb_build_object('id',participant.id,'partyId',participant.party_id,'name',party.display_name,'role',participant.participant_role,'signatureStatus',participant.signature_status,'isCurrent',true,'effectiveFrom',participant.created_at,'effectiveTo',NULL,'assignmentReason',NULL,'isPrimaryBuyer',false,'ownershipShare',NULL)`;
       const partyOrder=hasBuyerAssignments?"(participant.effective_to IS NULL) DESC,participant.effective_from DESC,party.display_name":"party.display_name";
-      const assignmentJoin=hasBuyerAssignments?"LEFT JOIN buyer_assignment_events assignment ON assignment.tenant_id=participant.tenant_id AND assignment.id=COALESCE(participant.ended_by_assignment_event_id,participant.assignment_event_id)":"";
-      const contracts=await client.query<{id:string;sales_case_id:string;unit:string;project:string;type:string;status:string;updated_at:string;title:string;reference:string;owner:string;parties:ContractItem["parties"];versions:ContractItem["versions"];history:ContractHistoryItem[]}>(
+      const assignmentJoin=hasBuyerAssignments&&hasAssignmentPartyColumns?"LEFT JOIN buyer_assignment_events assignment ON assignment.tenant_id=participant.tenant_id AND assignment.id=COALESCE(participant.ended_by_assignment_event_id,participant.assignment_event_id)":"";
+      const assignmentEffectiveProjection=hasContractAssignmentColumns?"contract.assignment_effective_at":"NULL::timestamptz";
+      const contracts=await client.query<{id:string;sales_case_id:string;unit:string;project:string;type:string;status:string;updated_at:string;title:string;reference:string;owner:string;parent_contract_id:string|null;parent_reference:string|null;assignment_effective_at:string|null;parties:ContractItem["parties"];versions:ContractItem["versions"];history:ContractHistoryItem[]}>(
         `SELECT contract.id,contract.sales_case_id,unit.code unit,project.name project,contract.contract_type type,contract.current_status status,
-          contract.updated_at,contract.title,contract.reference,creator.display_name owner,
+          contract.updated_at,contract.title,contract.reference,creator.display_name owner,contract.parent_contract_id,parent_contract.reference parent_reference,${assignmentEffectiveProjection} assignment_effective_at,
           COALESCE(parties.items,'[]'::jsonb) parties,COALESCE(versions.items,'[]'::jsonb) versions,
           COALESCE(history.items,'[]'::jsonb) history
          FROM contracts contract JOIN units unit ON unit.tenant_id=contract.tenant_id AND unit.id=contract.unit_id
          JOIN projects project ON project.tenant_id=contract.tenant_id AND project.id=contract.project_id
          JOIN tenant_memberships membership ON membership.tenant_id=contract.tenant_id AND membership.id=contract.created_by_membership_id
          JOIN users creator ON creator.id=membership.user_id
+         LEFT JOIN contracts parent_contract ON parent_contract.tenant_id=contract.tenant_id AND parent_contract.id=contract.parent_contract_id
          LEFT JOIN LATERAL (SELECT jsonb_agg(${partyProjection} ORDER BY ${partyOrder}) items
            FROM contract_parties participant JOIN parties party ON party.tenant_id=participant.tenant_id AND party.id=participant.party_id
            ${assignmentJoin}
@@ -68,11 +72,11 @@ export class CommercialRepository {
         const amount=unitId?(await client.query<{amount:number}>("SELECT app.current_unit_price($1,$2)::float8 amount",[input.tenantId,unitId])).rows[0]?.amount:0;
         return [unit,amount??0];
       })));
-      const mapped=contracts.rows.map(row=>({id:row.id,salesCaseId:row.sales_case_id,unit:row.unit,project:row.project,client:row.parties.filter(p=>p.isCurrent&&(p.role==='buyer'||p.role==='co_buyer')).map(p=>p.name).join(' a '),type:typeLabel(row.type),state:contractStatusLabel(row.status),statusCode:row.status,updated:row.updated_at,updatedAt:row.updated_at,owner:row.owner.split(' ')[0]??row.owner,action:recommendedContractAction({status:row.status,type:row.type}).label,title:row.title,reference:row.reference,history:row.history,parties:row.parties,versions:row.versions}));
+      const mapped=contracts.rows.map(row=>({id:row.id,salesCaseId:row.sales_case_id,unit:row.unit,project:row.project,client:row.parties.filter(p=>p.isCurrent&&(['buyer','co_buyer','assignee'].includes(p.role))).map(p=>p.name).join(' a '),type:typeLabel(row.type),typeCode:row.type,state:contractStatusLabel(row.status),statusCode:row.status,updated:row.updated_at,updatedAt:row.updated_at,owner:row.owner.split(' ')[0]??row.owner,action:recommendedContractAction({status:row.status,type:row.type}).label,title:row.title,reference:row.reference,parentContractId:row.parent_contract_id,parentReference:row.parent_reference,assignmentEffectiveAt:row.assignment_effective_at,history:row.history,parties:row.parties,versions:row.versions}));
       const contractSummary=contracts.rows.reduce<Record<string,number>>((sum,row)=>(sum[row.status]=(sum[row.status]??0)+1,sum),{});
       return {currentPrices,priceHistories,priceProposals:proposals.rows.map(row=>({id:row.id,unit:row.unit,priceType:row.price_type,currentAmount:row.current_amount,proposedAmount:row.proposed_amount,validFrom:row.valid_from,reason:row.reason,status:row.status,proposer:row.proposer,decider:row.decider})),contracts:mapped,contractSummary};
     });
   }
 }
 
-function typeLabel(type:string){return ({rs:"RS",sbk:"SBK",ks:"KS",amendment:"Dodatek"} as Record<string,string>)[type]??type;}
+function typeLabel(type:string){return ({rs:"RS",sbk:"SBK",ks:"KS",amendment:"Dodatek",assignment_rs:"Postoupení RS",assignment_sbk:"Postoupení SBK"} as Record<string,string>)[type]??type;}

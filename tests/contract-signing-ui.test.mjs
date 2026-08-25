@@ -14,7 +14,8 @@ test("detail smlouvy nabízí řízené označení aktuální verze jako podepsa
   assert.match(repository,/signContract/);
   assert.match(proxy,/forwardBackendMutation/);
   assert.match(app,/refreshCommercial\(\);refreshCatalog\(\);refreshClients\(\)/);
-  assert.match(nextAction,/Čeká na úhradu rezervačního poplatku/);
+  assert.match(nextAction,/return\{kind:"create_contract",contractType:"sbk",label:"Vytvořit SBK"\}/);
+  assert.doesNotMatch(nextAction,/Čeká na úhradu rezervačního poplatku/);
   assert.match(app,/Smlouva byla označena jako podepsaná a obchodní proces byl aktualizován/);
   assert.doesNotMatch(app,/ContractSignatureModal/);
 });

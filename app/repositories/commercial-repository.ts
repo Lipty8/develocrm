@@ -28,6 +28,7 @@ export interface CommercialRepository {
   createNextContract(input:ContextualContractInput):Promise<ContractCreateResult>;
   createContractVersion(input:{contractId:string;name:string;source?:string;basedOnVersionId?:string}):Promise<{id:string}>;
   signContract(input:{contractId:string;versionId:string;signedAt:string;note?:string}):Promise<{completed:boolean;alreadySigned:boolean;versionId:string}>;
+  createContractAssignment(input:{unitId:string;buyers?:Array<{partyId:string;role:"buyer"|"co_buyer";isPrimary:boolean;share?:number|null}>;newParty?:{kind:"individual"|"organization";salutation?:string;firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;email?:string;phone?:string};effectiveAt:string;note?:string;idempotencyKey:string}):Promise<{contractId:string;versionId:string;type:string;parentContractId:string}>;
 }
 
 type PreviewContractEdit = Pick<ContractRecord, "statusCode" | "state" | "updated" | "updatedAt" | "history">;
@@ -145,6 +146,11 @@ class ApiCommercialRepository implements CommercialRepository {
   }
   async signContract(input:{contractId:string;versionId:string;signedAt:string;note?:string}){
     const response=await apiFetch(`/api/commercial/contracts/${input.contractId}/sign`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});if(response.ok)return response.json() as Promise<{completed:boolean;alreadySigned:boolean;versionId:string}>;const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??"Podpis smlouvy nelze zaznamenat");
+  }
+  async createContractAssignment(input:{unitId:string;buyers?:Array<{partyId:string;role:"buyer"|"co_buyer";isPrimary:boolean;share?:number|null}>;newParty?:{kind:"individual"|"organization";salutation?:string;firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;email?:string;phone?:string};effectiveAt:string;note?:string;idempotencyKey:string}){
+    const response=await apiFetch(`/api/commercial/units/${encodeURIComponent(input.unitId)}/contract-assignment`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});
+    if(response.ok)return response.json() as Promise<{contractId:string;versionId:string;type:string;parentContractId:string}>;
+    const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??"Postoupení smlouvy nelze vytvořit");
   }
 }
 

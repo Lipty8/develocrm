@@ -18,7 +18,7 @@ export type PartyDuplicateMatch={id:string;name:string;kind:"FO"|"PO";strength:"
 export type UnitCommercialContext = {
   salesCaseId: string | null;
   buyers: Array<{ partyId: string; name: string; email: string; role: string; share: number | null }>;
-  buyerHistory: Array<{ id:string; occurredAt:string; previousBuyers:Array<{partyId:string;name:string;role:string}>; currentBuyers:Array<{partyId:string;name:string;role:string}>; reason:string; actor:string }>;
+  buyerHistory: Array<{ id:string; occurredAt:string; previousBuyers:Array<{partyId:string;name:string;role:string}>; currentBuyers:Array<{partyId:string;name:string;role:string}>; reason:string; actor:string; sourceContractId?:string|null;sourceContractReference?:string|null }>;
   interests: Array<{ date: string; partyId: string; name: string; type: string; result: string }>;
   stage: string | null;
   hold: { id: string; type: string; expiresAt: string } | null;
@@ -55,7 +55,6 @@ export class SalesRepository {
   async archiveImpact(input:{tenantId:string;userId:string;partyId:string;membershipId:string}){return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{impact:Record<string,number|string>}>("SELECT app.party_archive_impact($1,$2,$3) impact",[input.tenantId,input.partyId,input.membershipId])).rows[0]?.impact??{});}
   async archiveParty(input:{tenantId:string;userId:string;partyId:string;membershipId:string;reason:string}){return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{outcome:{mode:"delete"|"archive";impact:Record<string,number>}}>("SELECT app.remove_or_archive_party($1,$2,$3,$4) outcome",[input.tenantId,input.partyId,input.membershipId,input.reason])).rows[0]?.outcome);}
   async addActivity(input:{tenantId:string;userId:string;partyId:string;membershipId:string;activityType:string;note:string}){return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{id:string}>("SELECT app.add_party_activity($1,$2,$3,$4,$5) id",[input.tenantId,input.partyId,input.activityType,input.note,input.membershipId])).rows[0]);}
-  async changeBuyer(input:{tenantId:string;userId:string;salesCaseId:string;buyers:Array<{partyId:string;role:"buyer"|"co_buyer";isPrimary:boolean;share?:number|null}>;membershipId:string;reason:string;idempotencyKey:string}){return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{id:string}>("SELECT app.assign_sales_case_buyers($1,$2,$3::jsonb,$4,$5,$6) id",[input.tenantId,input.salesCaseId,JSON.stringify(input.buyers),input.membershipId,input.reason,input.idempotencyKey])).rows[0]);}
 
   private async findDuplicatesWithClient(client:SqlClient,input:{tenantId:string;membershipId:string;projectId:string;kind:string;firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;email?:string;phone?:string}):Promise<PartyDuplicateMatch[]>{
     const permission=await client.query<{allowed:boolean}>("SELECT app.has_project_permission($1,$2,$3,'clients.create') allowed",[input.tenantId,input.membershipId,input.projectId]);
@@ -149,6 +148,7 @@ export class SalesRepository {
 
       const hasContracts=Boolean((await client.query<{present:boolean}>("SELECT to_regclass('public.contracts') IS NOT NULL present")).rows[0]?.present);
       const hasBuyerAssignments=Boolean((await client.query<{present:boolean}>("SELECT to_regclass('public.buyer_assignment_events') IS NOT NULL present")).rows[0]?.present);
+      const hasAssignmentContractSource=hasBuyerAssignments&&Boolean((await client.query("SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='buyer_assignment_events' AND column_name='source_contract_id'")).rowCount);
       const contractColumns=hasContracts?"relevant_contract.contract_type,relevant_contract.current_status contract_status":"NULL::text contract_type,NULL::text contract_status";
       const contractJoin=hasContracts?`LEFT JOIN LATERAL (
            SELECT contract.contract_type,contract.current_status
@@ -194,14 +194,18 @@ export class SalesRepository {
       for(const activity of activityRows.rows){const list=activitiesByParty.get(activity.party_id)??[];list.push({id:activity.id,type:activity.activity_type,note:activity.note,occurredAt:activity.occurred_at,author:activity.author});activitiesByParty.set(activity.party_id,list);}
 
       const buyerHistorySelect=hasBuyerAssignments?"COALESCE(buyer_history.items,'[]'::jsonb) buyer_history":"'[]'::jsonb buyer_history";
+      const assignmentSourceProjection=hasAssignmentContractSource?"'sourceContractId',event.source_contract_id,'sourceContractReference',source_contract.reference,":"'sourceContractId',NULL,'sourceContractReference',NULL,";
+      const assignmentSourceJoin=hasAssignmentContractSource?"LEFT JOIN contracts source_contract ON source_contract.tenant_id=event.tenant_id AND source_contract.id=event.source_contract_id":"";
       const buyerHistoryJoin=hasBuyerAssignments?`LEFT JOIN LATERAL (
            SELECT jsonb_agg(jsonb_build_object('id',event.id,'occurredAt',event.effective_at,'reason',event.reason,'actor',actor.display_name,
+             ${assignmentSourceProjection}
              'previousBuyers',(SELECT COALESCE(jsonb_agg(jsonb_build_object('partyId',item->>'partyId','name',party.display_name,'role',item->>'role')),'[]'::jsonb) FROM jsonb_array_elements(event.previous_buyers) item LEFT JOIN parties party ON party.tenant_id=event.tenant_id AND party.id=(item->>'partyId')::uuid),
              'currentBuyers',(SELECT COALESCE(jsonb_agg(jsonb_build_object('partyId',item->>'partyId','name',party.display_name,'role',item->>'role')),'[]'::jsonb) FROM jsonb_array_elements(event.current_buyers) item LEFT JOIN parties party ON party.tenant_id=event.tenant_id AND party.id=(item->>'partyId')::uuid)
            ) ORDER BY event.effective_at DESC,event.id DESC) items
            FROM buyer_assignment_events event
            JOIN tenant_memberships event_membership ON event_membership.tenant_id=event.tenant_id AND event_membership.id=event.recorded_by_membership_id
            JOIN users actor ON actor.id=event_membership.user_id
+           ${assignmentSourceJoin}
            WHERE event.tenant_id=unit.tenant_id AND event.sales_case_id=active_case.id
          ) buyer_history ON true`:"";
       const contextRows = await client.query<{

@@ -15,8 +15,8 @@ export const CONTRACT_STATUS_LABELS: Record<ContractStatus, string> = {
   approved: "Schválená",
   signing: "Schválená",
   signed: "Podepsaná",
-  cancelled: "Zrušena",
-  terminated: "Ukončena",
+  cancelled: "Zrušená",
+  terminated: "Ukončená",
 };
 
 export const CONTRACT_TRANSITIONS: Record<ContractStatus, ContractStatus[]> = {
@@ -25,7 +25,7 @@ export const CONTRACT_TRANSITIONS: Record<ContractStatus, ContractStatus[]> = {
   negotiation: ["sent", "approved", "cancelled"],
   approved: ["negotiation", "cancelled"],
   signing: ["approved", "negotiation", "cancelled"],
-  signed: ["terminated"],
+  signed: ["cancelled"],
   cancelled: [],
   terminated: [],
 };
