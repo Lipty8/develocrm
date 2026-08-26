@@ -54,8 +54,17 @@ test("zrušená RS neblokuje novou RS v aktuálním obchodním případu",()=>{
   assert.deepEqual(getNextContractAction({hasActiveSalesCase:true,contracts}),{kind:"create_contract",contractType:"rs",label:"Vytvořit RS"});
 });
 
-test("zastaralá obchodní etapa nemůže odporovat CTA odvozenému ze skutečných smluv",()=>{
-  const projection=getSalesProcessState({hasActiveSalesCase:true,salesStage:"ks",contracts:[]});
-  assert.equal(projection.currentStage,"rs");
-  assert.deepEqual(projection.nextContractAction,{kind:"create_contract",contractType:"rs",label:"Vytvořit RS"});
+test("aktivní etapa sales case udrží timeline a CTA konzistentní i po ukončení historické smlouvy",()=>{
+  const projection=getSalesProcessState({hasActiveSalesCase:true,commercialStatus:"contracted",salesStage:"sbk",contracts:[
+    {id:"old-rs",type:"rs",status:"terminated"},{id:"old-sbk",type:"sbk",status:"terminated"},
+  ]});
+  assert.equal(projection.commercialStatusLabel,"SBK");
+  assert.equal(projection.currentStage,"sbk");
+  assert.deepEqual(projection.steps.map(step=>step.state),["complete","complete","complete","current","pending","pending"]);
+  assert.deepEqual(projection.nextContractAction,{kind:"create_contract",contractType:"sbk",label:"Vytvořit SBK"});
+});
+
+test("etapa KS nabídne KS a etapa předání už další smlouvu nenabízí",()=>{
+  assert.deepEqual(getNextContractAction({hasActiveSalesCase:true,salesStage:"ks",contracts:[]}),{kind:"create_contract",contractType:"ks",label:"Vytvořit KS"});
+  assert.equal(getNextContractAction({hasActiveSalesCase:true,salesStage:"handover",contracts:[]}).kind,"none");
 });

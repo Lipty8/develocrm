@@ -14,7 +14,7 @@ test("detail smlouvy nabízí řízené označení aktuální verze jako podepsa
   assert.match(repository,/signContract/);
   assert.match(proxy,/forwardBackendMutation/);
   assert.match(app,/refreshUnitWorkflow\(\)/);
-  assert.match(nextAction,/return\{kind:"create_contract",contractType:"sbk",label:"Vytvořit SBK"\}/);
+  assert.match(nextAction,/return\{kind:"create_contract",contractType,label:`Vytvořit \$\{contractType\.toUpperCase\(\)\}`\}/);
   assert.doesNotMatch(nextAction,/Čeká na úhradu rezervačního poplatku/);
   assert.match(app,/Smlouva byla označena jako podepsaná a obchodní proces byl aktualizován/);
   assert.doesNotMatch(app,/ContractSignatureModal/);
@@ -37,9 +37,11 @@ test("vizuální prodejní proces používá smlouvy a nemá duplicitní krok re
 test("timeline a hlavní smluvní CTA používají stejnou projekci aktivního obchodního případu",async()=>{
   const app=await readFile(new URL("../app/CRMApp.tsx",import.meta.url),"utf8");
   const service=await readFile(new URL("../backend/src/commercial/service.ts",import.meta.url),"utf8");
-  assert.match(service,/getSalesProcessState\(\{hasActiveSalesCase:Boolean\(unit\.sales_case_id\),contracts,salesStage:unit\.sales_stage,holdType:unit\.hold_type,hasInterest:unit\.has_interest,handoverCompleted:unit\.handover_completed\}\)/);
+  assert.match(service,/getSalesProcessState\(\{hasActiveSalesCase:Boolean\(unit\.sales_case_id\),contracts,commercialStatus:unit\.commercial_status,salesStage:unit\.sales_stage,holdType:unit\.hold_type,hasInterest:unit\.has_interest,handoverCompleted:unit\.handover_completed\}\)/);
   assert.match(service,/sales_case_id=\$2 AND contract_type IN \('rs','sbk','ks'\)/);
+  assert.match(service,/getNextContractAction\(\{hasActiveSalesCase:true,contracts,salesStage:unit\.sales_stage\}\)/);
   assert.match(app,/workflow=\{salesProcess\}/);
+  assert.match(app,/<Badge>\{salesProcess\.commercialStatusLabel\}<\/Badge>/);
   assert.match(app,/nextContractAction\?\.kind==="create_contract"/);
   assert.match(app,/const refreshUnitWorkflow = \(\) => \{ refreshCommercial\(\); refreshCatalog\(\); refreshClients\(\);/);
 });

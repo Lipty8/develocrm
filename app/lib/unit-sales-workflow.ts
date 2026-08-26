@@ -4,13 +4,14 @@ import {getSalesProcessState,type SalesProcessProjection} from "../../backend/sr
 export const unitSalesWorkflowSteps = ["Zájem", "Předrezervace", "RS", "SBK", "KS", "Předání"] as const;
 
 export function projectUnitSalesWorkflow(input: {
-  unit: Pick<UnitRecord, "id" | "handover">;
+  unit: Pick<UnitRecord, "id" | "handover" | "status">;
   context?: UnitCommercialContext;
   contracts: ContractRecord[];
 }): SalesProcessProjection {
   const relevant = input.contracts.filter(contract => contract.unit === input.unit.id&&(!input.context?.salesCaseId||contract.salesCaseId===input.context.salesCaseId));
   const projection=getSalesProcessState({
     hasActiveSalesCase:Boolean(input.context?.salesCaseId),
+    commercialStatus:input.unit.status,
     hasInterest:Boolean(input.context?.interests.length),
     salesStage:input.context?.stage,
     holdType:input.context?.hold?.type,

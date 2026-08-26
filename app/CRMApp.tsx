@@ -1319,15 +1319,16 @@ function RolePermissionsModal({role,permissions,close,save}:{role:AdminRole;perm
 }
 
 function UnitPreview({ unit, close, open, previous, next, position, total }: { unit: UnitRecord; close: () => void; open: () => void; previous: () => void; next: () => void; position: number; total: number }) {
+  const workflow=projectUnitSalesWorkflow({unit,context:unitCommercialContexts[unit.id],contracts});
   return (
     <aside className="preview-panel">
       <div className="preview-browser"><span>{position} z {total} jednotek ve výběru</span><div><button onClick={previous} aria-label="Předchozí jednotka"><ChevronRight className="rotate-180" size={17} /></button><button onClick={next} aria-label="Další jednotka"><ChevronRight size={17} /></button><button onClick={close} aria-label="Zavřít náhled"><X size={18} /></button></div></div>
-      <div className="preview-header"><div><span className="preview-project">{unit.project} · {unit.building}</span><h2>{unit.id} <Badge>{unit.status}</Badge></h2><p>{unit.layout} · {unit.area.toLocaleString("cs-CZ")} m² · {unit.floor}</p></div></div>
+      <div className="preview-header"><div><span className="preview-project">{unit.project} · {unit.building}</span><h2>{unit.id} <Badge>{workflow.commercialStatusLabel}</Badge></h2><p>{unit.layout} · {unit.area.toLocaleString("cs-CZ")} m² · {unit.floor}</p></div></div>
       <div className={`preview-attention ${unit.attention ? "" : "calm"}`}><AlertTriangle size={18} /><span><strong>{unit.attention ? "Nejbližší důležitý krok" : "Doporučený další krok"}</strong><small>{unit.attention || (unit.status === "Volný" ? "Jednotka je připravena k nabídnutí zájemci" : "Pokračovat podle obchodního workflow")}</small></span></div>
       <div className="mini-floorplan"><div className="room living"><span>Obývací pokoj + kk</span></div><div className="room bed"><span>Ložnice</span></div><div className="room bath"><span>Koupelna</span></div><div className="room hall"><span>Chodba</span></div><div className="room bed2"><span>Pokoj</span></div><div className="balcony">Lodžie 8,2 m²</div></div>
-      <div className="preview-grid"><span><small>Aktuální cena</small><strong>{formatMoney(unit.price)}</strong></span><span><small>Obchodní stav</small><strong><Badge>{unit.status}</Badge></strong></span><span><small>Stavební stav</small><strong>{unit.construction}</strong></span><span><small>Klient</small><strong>{unit.client || "Bez klienta"}</strong></span></div>
+      <div className="preview-grid"><span><small>Aktuální cena</small><strong>{formatMoney(unit.price)}</strong></span><span><small>Obchodní stav</small><strong><Badge>{workflow.commercialStatusLabel}</Badge></strong></span><span><small>Stavební stav</small><strong>{unit.construction}</strong></span><span><small>Klient</small><strong>{unit.client || "Bez klienta"}</strong></span></div>
       <div className="preview-section"><h3>Příslušenství</h3><p>{unit.accessory}</p></div>
-      <div className="preview-flow"><h3>Prodejní proces</h3><div>{unitSalesWorkflowSteps.map((stage,index)=>{const projection=projectUnitSalesWorkflow({unit,context:unitCommercialContexts[unit.id],contracts});return <span className={index<=projection.completedThrough?"complete":index===projection.activeIndex?"current":""} key={stage}><i>{index+1}</i><small>{stage}</small></span>;})}</div></div>
+      <div className="preview-flow"><h3>Prodejní proces</h3><div>{unitSalesWorkflowSteps.map((stage,index)=><span className={index<=workflow.completedThrough?"complete":index===workflow.activeIndex?"current":""} key={stage}><i>{index+1}</i><small>{stage}</small></span>)}</div></div>
       <div className="preview-footer"><button className="secondary-button" onClick={close}>Zavřít</button><button className="primary-button" onClick={open}>Otevřít celý detail <ArrowRight size={17} /></button></div>
     </aside>
   );
@@ -1345,11 +1346,11 @@ function UnitDetail({ unit, tab, onTab, onBack,openProjects,openProject, notify,
     <div className="unit-detail">
       <div className="unit-breadcrumb"><button onClick={openProjects}>Všechny projekty</button><ChevronRight size={14}/><button onClick={openProject}>{unit.project}</button><ChevronRight size={14}/><button onClick={onBack}>Jednotky</button><ChevronRight size={14}/><strong>{unit.id}</strong></div>
       <div className="unit-hero">
-        <div className="unit-identity"><span className="unit-symbol"><Home size={23} /></span><div><span>{unit.project} · {unit.building}</span><h1>{unit.id} <Badge>{unit.status}</Badge></h1><p>{unit.layout} · {unit.area.toLocaleString("cs-CZ")} m² · {unit.floor} · orientace {unit.orientation}</p></div></div>
+        <div className="unit-identity"><span className="unit-symbol"><Home size={23} /></span><div><span>{unit.project} · {unit.building}</span><h1>{unit.id} <Badge>{salesProcess.commercialStatusLabel}</Badge></h1><p>{unit.layout} · {unit.area.toLocaleString("cs-CZ")} m² · {unit.floor} · orientace {unit.orientation}</p></div></div>
         <div className="unit-hero-actions">{onEdit&&<button className="secondary-button" onClick={onEdit}><MoreHorizontal size={17} /> Upravit jednotku</button>}<button className="secondary-button" onClick={() => notify("Odkaz na jednotku byl zkopírován")}><Link2 size={17} /> Sdílet odkaz</button>{nextContractAction?.kind==="create_contract"&&onNewContract&&<button className="primary-button" onClick={()=>onNewContract(nextContractAction)}><FileText size={17} /> {nextContractAction.label}</button>}{nextContractAction?.kind==="open_contracts"&&<button className="primary-button" onClick={()=>onTab("contracts")}><FileText size={17}/> Otevřít smlouvy</button>}</div>
       </div>
       <div className="unit-status-strip">
-        <span><small>OBCHODNÍ STAV</small><strong><Badge>{unit.status}</Badge></strong></span>
+        <span><small>OBCHODNÍ STAV</small><strong><Badge>{salesProcess.commercialStatusLabel}</Badge></strong></span>
         <span><small>STAV VÝSTAVBY</small><strong><HardHat size={16} /> {unit.construction}</strong></span>
         <span><small>PŘEDÁNÍ</small><strong><KeyRound size={16} /> {unit.handover}</strong></span>
         <span className="attention-status"><small>VYŽADUJE POZORNOST</small><strong><AlertTriangle size={16} /> {unit.attention || "Bez otevřených bodů"}</strong></span>
