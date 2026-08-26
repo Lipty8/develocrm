@@ -11,6 +11,7 @@ export type ContextualContractInput={unitId:string;idempotencyKey:string;payment
 
 export type CommercialSnapshot = {
   currentPrices: Record<string, number>;
+  priceBreakdowns:Record<string,{unitPrice:number;accessoryPrice:number;totalPrice:number}>;
   priceHistories: Record<string, PriceHistoryRecord[]>;
   contracts: ContractRecord[];
   contractSummary: Record<string, number>;

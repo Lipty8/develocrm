@@ -10,6 +10,7 @@ export async function GET(request:Request){
     if(serverDataMode()!=="browser")return apiUnavailable("Ceny a smlouvy nejsou dostupné bez společného backendu");
     return browserFallbackResponse({
       currentPrices:Object.fromEntries(units.map(unit=>[unit.id,unit.price])),
+      priceBreakdowns:Object.fromEntries(units.map(unit=>[unit.id,{unitPrice:unit.basePrice??unit.price,accessoryPrice:unit.accessoryPrice??0,totalPrice:unit.price}])),
       priceHistories:unitPriceHistories,
       contracts:contracts.map(contract=>({...contract,id:contract.id??`preview-contract-${slug(contract.project)}-${slug(contract.unit)}-${slug(contract.type)}`,statusCode:contract.statusCode??statusCode(contract.state)})),
       contractSummary:{},source:"preview-seed",

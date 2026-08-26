@@ -13,7 +13,7 @@ export type CatalogUnit = {
   balconyM2: number | null; terraceM2: number | null; gardenM2: number | null;
   commercialStatus: string; constructionStatus: string | null;
   updatedAt: string;
-  accessories: Array<{ id: string; assignmentId:string; code: string; type: string; category: string; areaM2: number | null; relation:string|null }>;
+  accessories: Array<{ id: string; assignmentId:string; code: string; type: string; category: string; areaM2: number | null; relation:string|null; amount:number; amountNet:number|null; currency:string }>;
 };
 
 export class InventoryRepository {
@@ -89,10 +89,12 @@ export class InventoryRepository {
            ON structure.tenant_id=unit.tenant_id AND structure.project_id=unit.project_id AND structure.id=unit.structure_id
          LEFT JOIN LATERAL (
            SELECT jsonb_agg(jsonb_build_object('id', accessory.id,'assignmentId',assignment.id, 'code', accessory.code,
-             'type', type.name, 'category', type.category, 'areaM2', accessory.area_m2,'relation',relation.target_code) ORDER BY accessory.code) AS items
+             'type', type.name, 'category', type.category, 'areaM2', accessory.area_m2,'relation',relation.target_code,
+             'amount',COALESCE(price.amount,0),'amountNet',price.amount_net,'currency',COALESCE(price.currency,'CZK')) ORDER BY accessory.code) AS items
            FROM unit_accessory_assignments assignment
            JOIN accessories accessory ON accessory.tenant_id=assignment.tenant_id AND accessory.project_id=assignment.project_id AND accessory.id=assignment.accessory_id
            JOIN accessory_types type ON type.tenant_id=accessory.tenant_id AND type.id=accessory.accessory_type_id
+           LEFT JOIN LATERAL (SELECT history.amount::float8 amount,history.amount_net::float8 amount_net,history.currency FROM accessory_price_history history WHERE history.tenant_id=accessory.tenant_id AND history.accessory_id=accessory.id AND history.valid_from<=now() ORDER BY history.valid_from DESC,history.recorded_at DESC,history.id DESC LIMIT 1) price ON true
            LEFT JOIN LATERAL (SELECT target.code target_code FROM accessory_relations link JOIN accessories target ON target.tenant_id=link.tenant_id AND target.id=link.target_accessory_id WHERE link.tenant_id=accessory.tenant_id AND link.source_accessory_id=accessory.id AND link.relation_type='installed_at' LIMIT 1) relation ON true
            WHERE assignment.tenant_id=unit.tenant_id AND assignment.unit_id=unit.id
              AND assignment.valid_from <= now() AND (assignment.valid_to IS NULL OR assignment.valid_to > now())
@@ -102,12 +104,13 @@ export class InventoryRepository {
          ORDER BY project.name, unit.code`,
         [input.tenantId, input.membershipId],
       );
-      const accessories=await client.query<{id:string;code:string;project_id:string;project_name:string;type:string;category:string;area_m2:string|null;available:boolean;relation:string|null}>(
+      const accessories=await client.query<{id:string;code:string;project_id:string;project_name:string;type:string;category:string;area_m2:string|null;available:boolean;relation:string|null;amount:number;amount_net:number|null;currency:string}>(
         `SELECT accessory.id,accessory.code,accessory.project_id,project.name project_name,type.name type,type.category,accessory.area_m2::text,
           NOT EXISTS(SELECT 1 FROM unit_accessory_assignments assignment WHERE assignment.tenant_id=accessory.tenant_id AND assignment.accessory_id=accessory.id AND assignment.valid_from<=now() AND (assignment.valid_to IS NULL OR assignment.valid_to>now())) available,
-          relation.target_code relation
+          relation.target_code relation,COALESCE(price.amount,0)::float8 amount,price.amount_net::float8 amount_net,COALESCE(price.currency,'CZK') currency
          FROM accessories accessory JOIN projects project ON project.tenant_id=accessory.tenant_id AND project.id=accessory.project_id
          JOIN accessory_types type ON type.tenant_id=accessory.tenant_id AND type.id=accessory.accessory_type_id
+         LEFT JOIN LATERAL (SELECT history.amount,history.amount_net,history.currency FROM accessory_price_history history WHERE history.tenant_id=accessory.tenant_id AND history.accessory_id=accessory.id AND history.valid_from<=now() ORDER BY history.valid_from DESC,history.recorded_at DESC,history.id DESC LIMIT 1) price ON true
          LEFT JOIN LATERAL (SELECT target.code target_code FROM accessory_relations link JOIN accessories target ON target.tenant_id=link.tenant_id AND target.id=link.target_accessory_id WHERE link.tenant_id=accessory.tenant_id AND link.source_accessory_id=accessory.id AND link.relation_type='installed_at' LIMIT 1) relation ON true
          WHERE accessory.tenant_id=$1 AND accessory.archived_at IS NULL AND project.archived_at IS NULL AND app.has_project_permission(accessory.tenant_id,$2,accessory.project_id,'accessory.read') ORDER BY project.name,type.category,accessory.code`,[input.tenantId,input.membershipId]);
       const memberships=await client.query<{id:string;name:string}>(`SELECT membership.id,user_row.display_name name FROM tenant_memberships membership JOIN users user_row ON user_row.id=membership.user_id WHERE membership.tenant_id=$1 AND membership.status='active' ORDER BY user_row.display_name`,[input.tenantId]);
@@ -128,7 +131,7 @@ export class InventoryRepository {
           gardenM2: row.garden_m2 === null ? null : Number(row.garden_m2),
           floorLabel: row.floor_label, orientation: row.orientation, commercialStatus: row.commercial_status,
           constructionStatus: row.construction_status,updatedAt:row.updated_at, accessories: row.accessories,
-        })),accessories:accessories.rows.map(row=>({id:row.id,code:row.code,projectId:row.project_id,projectName:row.project_name,type:row.type,category:row.category,areaM2:row.area_m2===null?null:Number(row.area_m2),available:row.available,relation:row.relation})),memberships:memberships.rows,structures:structures.rows.map(row=>({id:row.id,projectId:row.project_id,projectName:row.project_name,name:row.name,kind:row.kind})),
+        })),accessories:accessories.rows.map(row=>({id:row.id,code:row.code,projectId:row.project_id,projectName:row.project_name,type:row.type,category:row.category,areaM2:row.area_m2===null?null:Number(row.area_m2),available:row.available,relation:row.relation,amount:row.amount,amountNet:row.amount_net,currency:row.currency})),memberships:memberships.rows,structures:structures.rows.map(row=>({id:row.id,projectId:row.project_id,projectName:row.project_name,name:row.name,kind:row.kind})),
       };
     });
   }
@@ -156,5 +159,11 @@ export class InventoryRepository {
   }
   async removeAccessory(input: {tenantId:string;userId:string;membershipId:string;assignmentId:string;validTo?:string}) {
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId}, async client => (await client.query<{id:string}>("SELECT app.remove_accessory_from_unit($1,$2,$3,$4) id", [input.tenantId,input.assignmentId,input.validTo??null,input.membershipId])).rows[0]);
+  }
+  async createAccessory(input:{tenantId:string;userId:string;membershipId:string;projectId:string;category:"parking"|"cellar"|"wallbox";code:string;areaM2?:number|null;amount:number;amountNet?:number|null;relatedAccessoryId?:string|null}){
+    return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{id:string}>(
+      "SELECT app.create_project_accessory($1,$2,$3,$4,$5,$6,$7,$8,$9) id",
+      [input.tenantId,input.projectId,input.category,input.code,input.areaM2??null,input.amount,input.amountNet??null,input.relatedAccessoryId??null,input.membershipId],
+    )).rows[0]);
   }
 }

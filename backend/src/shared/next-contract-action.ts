@@ -79,7 +79,7 @@ export function getNextContractAction(input:SalesProcessInput):NextContractActio
 }
 
 export function contextualContractIdentity(type:CoreContractType,unitCode:string){
-  const reference=`${type.toUpperCase()} ${unitCode}`;
-  const title=({rs:"Rezervační smlouva",sbk:"Smlouva o budoucí kupní smlouvě",ks:"Kupní smlouva"} as const)[type];
-  return{reference,title:`${title} · ${unitCode}`};
+  const displayName=`${type.toUpperCase()} ${unitCode}`;
+  const contractName=({rs:"Rezervační smlouva",sbk:"Smlouva o smlouvě budoucí kupní",ks:"Kupní smlouva"} as const)[type];
+  return{reference:displayName,title:`${contractName} · ${unitCode}`};
 }

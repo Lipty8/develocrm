@@ -15,6 +15,8 @@ export type UnitRecord = {
   floor: string;
   orientation: string;
   price: number;
+  basePrice?: number;
+  accessoryPrice?: number;
   status: UnitStatus;
   construction: string;
   handover: string;
@@ -31,7 +33,7 @@ export type UnitRecord = {
   accessories?: AccessoryAssignmentRecord[];
   updatedAt?: string;
 };
-export type AccessoryAssignmentRecord = { id:string; assignmentId?:string; code:string; type:string; category:string; areaM2:number|null; relation?:string|null };
+export type AccessoryAssignmentRecord = { id:string; assignmentId?:string; code:string; type:string; category:string; areaM2:number|null; relation?:string|null; amount?:number; amountNet?:number|null; currency?:string };
 export type CatalogAccessoryRecord = AccessoryAssignmentRecord & { project:string; projectBackendId?:string; available:boolean };
 export type MembershipOption = { id:string; name:string };
 export type ProjectStructureOption = { id:string; projectId:string; project:string; name:string; kind:string };

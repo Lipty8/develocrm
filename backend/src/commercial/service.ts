@@ -45,7 +45,8 @@ export class CommercialService{
       const hasPayment=action.contractType==="rs"||action.contractType==="sbk";
       if(hasPayment&&(!input.paymentCalculationType||!input.paymentInputValue||!input.paymentDueAt))throw new Error("payment terms are required for the next contract");
       const created=(await client.query<{id:string;versionId:string;paymentObligationId:string|null;paymentAmount:number|null}>(`SELECT contract_id id,version_id "versionId",payment_obligation_id "paymentObligationId",payment_amount::float8 "paymentAmount" FROM app.create_contract_with_payment($1,$2,$3,$4,$5,$6,NULL,$7,$8,$9,$10)`,[input.tenantId,unit.sales_case_id,action.contractType,identity.reference,identity.title,input.membershipId,input.idempotencyKey,input.paymentCalculationType??null,input.paymentInputValue??null,input.paymentDueAt??null])).rows[0];
-      return{...created,type:action.contractType,reference:identity.reference,title:identity.title};
+      const saved=(await client.query<{reference:string;title:string}>("SELECT reference,title FROM contracts WHERE tenant_id=$1 AND id=$2",[input.tenantId,created.id])).rows[0];
+      return{...created,type:action.contractType,reference:saved.reference,title:saved.title};
     });
   }
   async createContractAssignment(input:Context&{unitId:string;buyers?:Array<{partyId:string;role:"buyer"|"co_buyer";isPrimary:boolean;share?:number|null}>;newParty?:{kind:"individual"|"organization";salutation?:string;firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;email?:string;phone?:string;duplicateOverride?:boolean};effectiveAt:string;note?:string;idempotencyKey:string}){

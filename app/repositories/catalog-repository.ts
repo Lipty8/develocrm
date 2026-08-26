@@ -19,6 +19,7 @@ export interface CatalogRepository {
   updateUnit(input:UnitUpdate): Promise<void>;
   assignAccessory(unitId:string, accessoryId:string): Promise<void>;
   removeAccessory(assignmentId:string): Promise<void>;
+  createAccessory(input:{projectId:string;category:"parking"|"cellar"|"wallbox";code:string;areaM2?:number|null;amount:number;amountNet?:number|null;relatedAccessoryId?:string|null}):Promise<void>;
 }
 
 export class ApiCatalogRepository implements CatalogRepository {
@@ -70,6 +71,16 @@ export class ApiCatalogRepository implements CatalogRepository {
     const preview=await requestJson(`/api/catalog/accessory-assignments/${assignmentId}`,"DELETE");
     if(preview) previewAccessoryMutation("",assignmentId,"remove");
   }
+  async createAccessory(input:{projectId:string;category:"parking"|"cellar"|"wallbox";code:string;areaM2?:number|null;amount:number;amountNet?:number|null;relatedAccessoryId?:string|null}){
+    const preview=await requestJson(`/api/catalog/projects/${input.projectId}/accessories`,"POST",input);
+    if(preview&&typeof window!=="undefined"){
+      const project=previewProjects.find(item=>(item.backendId??item.code)===input.projectId||item.code===input.projectId);
+      const rows=JSON.parse(localStorage.getItem("develocrm.new.accessories")||"[]") as CatalogAccessoryRecord[];
+      const relation=rows.find(item=>item.id===input.relatedAccessoryId)?.code??previewCatalogMeta.accessories.find(item=>item.id===input.relatedAccessoryId)?.code;
+      rows.push({id:`preview-accessory-${crypto.randomUUID()}`,code:input.code,type:input.category==="parking"?"Parkovací stání":input.category==="cellar"?"Sklep":"Wallbox",category:input.category,areaM2:input.areaM2??null,amount:input.amount,amountNet:input.amountNet??null,currency:"CZK",project:project?.name??"Preview projekt",projectBackendId:input.projectId,available:true,relation});
+      localStorage.setItem("develocrm.new.accessories",JSON.stringify(rows));
+    }
+  }
 }
 
 function applyPreviewEdits(snapshot:CatalogSnapshot){
@@ -85,6 +96,8 @@ function applyPreviewEdits(snapshot:CatalogSnapshot){
   snapshot.units=snapshot.units.map(u=>({...u,project:projectNames.get(u.project)??u.project,...(edits.units?.[u.backendId??u.id]||{}),...(edits.units?.[u.id]||{})}));
   snapshot.structures=snapshot.structures.map(item=>({...item,project:projectNames.get(item.project)??item.project}));
   snapshot.accessories=snapshot.accessories.map(item=>({...item,project:projectNames.get(item.project)??item.project}));
+  const createdAccessories=JSON.parse(localStorage.getItem("develocrm.new.accessories")||"[]") as CatalogAccessoryRecord[];
+  snapshot.accessories.push(...createdAccessories.filter(item=>!snapshot.accessories.some(existing=>existing.id===item.id)));
   const mutations=JSON.parse(localStorage.getItem("develocrm.accessory.assignments")||"[]") as Array<{unitId:string;accessoryId:string;action:string}>;
   for(const row of mutations){const accessory=snapshot.accessories.find(item=>item.id===row.accessoryId||item.assignmentId===row.accessoryId);if(!accessory)continue;if(row.action==="assign"){accessory.available=false;const unit=snapshot.units.find(item=>(item.backendId??item.id)===row.unitId||item.id===row.unitId);if(unit&&!unit.accessories?.some(item=>item.id===accessory.id))(unit.accessories??=[]).push({...accessory,assignmentId:`preview-${accessory.id}`} as AccessoryAssignmentRecord);}else{accessory.available=true;for(const unit of snapshot.units)unit.accessories=unit.accessories?.filter(item=>item.assignmentId!==row.accessoryId);}}
   for(const unit of snapshot.units)unit.accessory=unit.accessories?.map(item=>`${item.type} ${item.code}${item.areaM2?` · ${item.areaM2} m²`:""}`).join(" · ")||unit.accessory;

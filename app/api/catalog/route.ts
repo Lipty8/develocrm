@@ -20,9 +20,9 @@ type BackendCatalog = {
     balconyM2: number | null; terraceM2: number | null; gardenM2: number | null; commercialStatus: string;
     constructionStatus: string | null;
     updatedAt:string;
-    accessories: Array<{ id:string; assignmentId:string; code: string; type: string; category: string; areaM2: number | null; relation?:string|null }>;
+    accessories: Array<{ id:string; assignmentId:string; code: string; type: string; category: string; areaM2: number | null; relation?:string|null; amount:number; amountNet:number|null; currency:string }>;
   }>;
-  accessories:Array<{id:string;code:string;type:string;category:string;areaM2:number|null;projectId:string;projectName:string;available:boolean;relation?:string|null}>;
+  accessories:Array<{id:string;code:string;type:string;category:string;areaM2:number|null;projectId:string;projectName:string;available:boolean;relation?:string|null;amount:number;amountNet:number|null;currency:string}>;
   memberships:Array<{id:string;name:string}>;
   structures:Array<{id:string;projectId:string;projectName:string;name:string;kind:string}>;
 };
