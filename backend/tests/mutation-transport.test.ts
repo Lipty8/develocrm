@@ -1,15 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {forwardBackendMutation} from "../../app/lib/backend-proxy.js";
+import {POST as assignAccessory} from "../../app/api/catalog/units/[unitId]/accessories/route.js";
 
 const originalFetch=globalThis.fetch;
 const originalApiUrl=process.env.DEVELOCRM_API_URL;
 const originalTenant=process.env.DEVELOCRM_TENANT_ID;
+const originalDataMode=process.env.DEVELOCRM_DATA_MODE;
 
 test.afterEach(()=>{
   globalThis.fetch=originalFetch;
   if(originalApiUrl===undefined)delete process.env.DEVELOCRM_API_URL;else process.env.DEVELOCRM_API_URL=originalApiUrl;
   if(originalTenant===undefined)delete process.env.DEVELOCRM_TENANT_ID;else process.env.DEVELOCRM_TENANT_ID=originalTenant;
+  if(originalDataMode===undefined)delete process.env.DEVELOCRM_DATA_MODE;else process.env.DEVELOCRM_DATA_MODE=originalDataMode;
 });
 
 test("BFF proxy předá POST tělo, autorizaci, tenant a correlation ID právě jednou",async()=>{
@@ -44,6 +47,29 @@ test("BFF proxy podporuje PATCH a DELETE bez opakovaného čtení těla",async()
   assert.equal((await forwardBackendMutation(new Request("https://crm.example.test/api/project",{method:"PATCH",headers,body:'{"name":"Nový"}'}),{method:"PATCH",target:"/v1/projects/project-1",unavailableMessage:"Backend chybí"})).status,204);
   assert.equal((await forwardBackendMutation(new Request("https://crm.example.test/api/accessory",{method:"DELETE",headers}),{method:"DELETE",target:"/v1/accessory-assignments/assignment-1",unavailableMessage:"Backend chybí"})).status,204);
   assert.deepEqual(methods,["PATCH","DELETE"]);
+});
+
+test("BFF route přiřazení příslušenství předá POST na jednotku",async()=>{
+  process.env.DEVELOCRM_API_URL="https://api.example.test";
+  process.env.DEVELOCRM_TENANT_ID="tenant-1";
+  process.env.DEVELOCRM_DATA_MODE="api";
+  globalThis.fetch=(async(input:RequestInfo|URL,init?:RequestInit)=>{
+    assert.equal(String(input),"https://api.example.test/v1/units/unit-417/accessories");
+    assert.equal(init?.method,"POST");
+    assert.equal(new Headers(init?.headers).get("authorization"),"Bearer test-token");
+    assert.equal(new TextDecoder().decode(init?.body as ArrayBuffer),'{"accessoryId":"accessory-p9"}');
+    return Response.json({id:"assignment-p9"},{status:201});
+  }) as typeof fetch;
+  const response=await assignAccessory(
+    new Request("https://crm.example.test/api/catalog/units/unit-417/accessories",{
+      method:"POST",
+      headers:{authorization:"DeveloCRM test-token","content-type":"application/json"},
+      body:'{"accessoryId":"accessory-p9"}',
+    }),
+    {params:Promise.resolve({unitId:"unit-417"})},
+  );
+  assert.equal(response.status,201);
+  assert.deepEqual(await response.json(),{id:"assignment-p9"});
 });
 
 test("BFF proxy převede transportní chybu na korektní 502 odpověď",async()=>{
