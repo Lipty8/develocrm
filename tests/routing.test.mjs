@@ -10,6 +10,8 @@ test("stable deep links use IDs and restore project and unit tabs",()=>{
   assert.equal(pageRoute("dashboard"),"/dashboard");
   assert.equal(projectRoute("DEJ"),"/projects/DEJ");
   assert.equal(projectRoute("DEJ","units"),"/projects/DEJ/units");
+  assert.equal(projectRoute("DEJ","cellars"),"/projects/DEJ/cellars");
+  assert.equal(projectRoute("DEJ","parking"),"/projects/DEJ/parking");
   assert.equal(unitRoute("101","history"),"/units/101?tab=history");
   assert.equal(clientRoute("party-101"),"/clients/party-101");
   assert.equal(contractRoute("contract-101"),"/contracts/contract-101");

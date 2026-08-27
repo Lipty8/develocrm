@@ -8,16 +8,28 @@ const catalog=await readFile(new URL("../backend/src/inventory/repository.ts",im
 const proxy=await readFile(new URL("../app/lib/backend-proxy.ts",import.meta.url),"utf8");
 const importSeed=await readFile(new URL("../backend/seeds/0004_pilot_rezidence_dejvice.sql",import.meta.url),"utf8");
 
-test("projekt má routovatelný inventář příslušenství se sdílenými akcemi",()=>{
-  assert.equal(projectRoute("project-1","accessories"),"/projects/project-1/accessories");
-  assert.equal(parseCrmRoute("/projects/project-1/accessories").projectTab,"accessories");
-  for(const text of ["Inventář příslušenství","Přiřazená jednotka","Klient / obchodní stav","Historie přiřazení","onAssignAccessory","onReleaseAccessory"])
+test("projekt má samostatně routovatelné sklepy a parkovací místa se sdílenými akcemi",()=>{
+  assert.equal(projectRoute("project-1","cellars"),"/projects/project-1/cellars");
+  assert.equal(projectRoute("project-1","parking"),"/projects/project-1/parking");
+  assert.equal(parseCrmRoute("/projects/project-1/cellars").projectTab,"cellars");
+  assert.equal(parseCrmRoute("/projects/project-1/parking").projectTab,"parking");
+  assert.equal(parseCrmRoute("/projects/project-1/accessories").projectTab,"parking");
+  for(const text of ["Sklepy","Parkovací místa","Přiřazená jednotka","Klient / obchodní stav","Historie přiřazení","ProjectAccessoryInventory","onAssignAccessory","onReleaseAccessory"])
     assert.match(crm,new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")));
 });
 
-test("inventář je backendová projekce aktivního přiřazení, kupujícího a historie",()=>{
+test("oba inventáře mají skutečné souhrny, hledání, filtry a wallbox vazbu",()=>{
+  for(const text of ["accessory-inventory-summary","Hledat v seznamu","Výměra","Filtrovat typ parkování","Filtrovat wallbox","Wallbox","accessory-inventory-scroll"])
+    assert.match(crm,new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")));
+  assert.match(crm,/item\.category === "cellar"/);
+  assert.match(crm,/item\.category === "parking"/);
+});
+
+test("inventář je backendová projekce aktivního přiřazení, kupujícího, wallboxu a historie",()=>{
   for(const token of ["active_assignment","assigned_unit_code","assigned_client","assignment_history"])
     assert.match(catalog,new RegExp(token));
+  assert.match(catalog,/string_agg\(DISTINCT party\.display_name/);
+  assert.match(catalog,/link\.target_accessory_id=accessory\.id/);
   assert.match(catalog,/app\.has_project_permission\(accessory\.tenant_id,\$2,accessory\.project_id,'accessory\.read'\)/);
 });
 

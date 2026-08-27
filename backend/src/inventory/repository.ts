@@ -107,7 +107,7 @@ export class InventoryRepository {
       const accessories=await client.query<{id:string;code:string;project_id:string;project_name:string;type:string;category:string;area_m2:string|null;available:boolean;relation:string|null;amount:number;amount_net:number|null;currency:string;assignment_id:string|null;assigned_unit_id:string|null;assigned_unit_code:string|null;assigned_unit_status:string|null;assigned_client:string|null;assignment_history:Array<{assignmentId:string;unitId:string;unitCode:string;validFrom:string;validTo:string|null;assignedBy:string|null}>}>(
         `SELECT accessory.id,accessory.code,accessory.project_id,project.name project_name,type.name type,type.category,accessory.area_m2::text,
           active_assignment.id IS NULL available,active_assignment.id assignment_id,active_assignment.unit_id assigned_unit_id,
-          active_assignment.unit_code assigned_unit_code,active_assignment.commercial_status assigned_unit_status,NULL::text assigned_client,
+          active_assignment.unit_code assigned_unit_code,active_assignment.commercial_status assigned_unit_status,buyers.names assigned_client,
           relation.target_code relation,COALESCE(price.amount,0)::float8 amount,price.amount_net::float8 amount_net,COALESCE(price.currency,'CZK') currency,
           COALESCE(history.items,'[]'::jsonb) assignment_history
          FROM accessories accessory JOIN projects project ON project.tenant_id=accessory.tenant_id AND project.id=accessory.project_id
@@ -121,7 +121,25 @@ export class InventoryRepository {
            ORDER BY assignment.valid_from DESC,assignment.id DESC LIMIT 1
          ) active_assignment ON true
          LEFT JOIN LATERAL (SELECT history.amount,history.amount_net,history.currency FROM accessory_price_history history WHERE history.tenant_id=accessory.tenant_id AND history.accessory_id=accessory.id AND history.valid_from<=now() ORDER BY history.valid_from DESC,history.recorded_at DESC,history.id DESC LIMIT 1) price ON true
-         LEFT JOIN LATERAL (SELECT target.code target_code FROM accessory_relations link JOIN accessories target ON target.tenant_id=link.tenant_id AND target.id=link.target_accessory_id WHERE link.tenant_id=accessory.tenant_id AND link.source_accessory_id=accessory.id AND link.relation_type='installed_at' LIMIT 1) relation ON true
+         LEFT JOIN LATERAL (
+           SELECT related.code target_code FROM (
+             SELECT target.code,0 priority FROM accessory_relations link
+             JOIN accessories target ON target.tenant_id=link.tenant_id AND target.id=link.target_accessory_id
+             WHERE link.tenant_id=accessory.tenant_id AND link.source_accessory_id=accessory.id AND link.relation_type='installed_at'
+             UNION ALL
+             SELECT source.code,1 priority FROM accessory_relations link
+             JOIN accessories source ON source.tenant_id=link.tenant_id AND source.id=link.source_accessory_id
+             WHERE link.tenant_id=accessory.tenant_id AND link.target_accessory_id=accessory.id AND link.relation_type='installed_at'
+           ) related ORDER BY related.priority,related.code LIMIT 1
+         ) relation ON true
+         LEFT JOIN LATERAL (
+           SELECT string_agg(DISTINCT party.display_name,' a ' ORDER BY party.display_name) names
+           FROM sales_cases sales_case
+           JOIN sales_case_parties participant ON participant.tenant_id=sales_case.tenant_id AND participant.sales_case_id=sales_case.id
+             AND participant.participant_role IN ('buyer','co_buyer') AND participant.left_at IS NULL
+           JOIN parties party ON party.tenant_id=participant.tenant_id AND party.id=participant.party_id
+           WHERE sales_case.tenant_id=accessory.tenant_id AND sales_case.unit_id=active_assignment.unit_id AND sales_case.status='active'
+         ) buyers ON true
          LEFT JOIN LATERAL (
            SELECT jsonb_agg(jsonb_build_object('assignmentId',assignment.id,'unitId',assignment.unit_id,'unitCode',unit.code,
              'validFrom',assignment.valid_from,'validTo',assignment.valid_to,'assignedBy',actor_user.display_name)

@@ -1,4 +1,4 @@
-export const projectTabSlugs = ["overview", "units", "accessories", "clients", "contracts", "payments", "changes", "handovers", "documents"];
+export const projectTabSlugs = ["overview", "units", "cellars", "parking", "clients", "contracts", "payments", "changes", "handovers", "documents"];
 export const unitTabSlugs = ["overview", "contracts", "payments", "changes", "documents", "handover", "tasks", "history"];
 
 const pagePaths = {
@@ -47,7 +47,10 @@ export function parseCrmRoute(pathname, search = "") {
   const parts = pathname.split("/").filter(Boolean).map(decode);
   const params = new URLSearchParams(typeof search === "string" ? search.replace(/^\?/, "") : search);
   if (!parts.length || parts[0] === "dashboard") return { page: "dashboard", kind: "page", params };
-  if (parts[0] === "projects" && parts[1]) return { page: "projects", kind: "project", projectId: parts[1], projectTab: projectTabSlugs.includes(parts[2]) ? parts[2] : "overview", params };
+  if (parts[0] === "projects" && parts[1]) {
+    const requestedTab = parts[2] === "accessories" ? "parking" : parts[2];
+    return { page: "projects", kind: "project", projectId: parts[1], projectTab: projectTabSlugs.includes(requestedTab) ? requestedTab : "overview", params };
+  }
   if (parts[0] === "projects") return { page: "projects", kind: "page", params };
   if (parts[0] === "units" && parts[1]) return { page: "projects", kind: "unit", unitId: parts[1], unitTab: unitTabSlugs.includes(params.get("tab")) ? params.get("tab") : "overview", params };
   if (parts[0] === "clients" && parts[1]) return { page: "clients", kind: "client", clientId: parts[1], params };
