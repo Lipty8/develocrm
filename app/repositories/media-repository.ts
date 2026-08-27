@@ -1,14 +1,16 @@
 import { apiFetch } from "../lib/api-client";
+import { validateMediaFile, type MediaKind } from "../lib/media-validation";
 
-export type MediaLink = { id: string; entityType: "project" | "unit"; entityId: string; kind: "cover" | "floorplan"; fileName: string; mimeType: string; url: string };
+export type MediaLink = { id: string; entityType: "project" | "unit"; entityId: string; kind: MediaKind; fileName: string; mimeType: string; url: string; uploadedAt?: string; uploadedBy?: string; version?: string };
 
 export interface MediaRepository {
   get(entityType: "project" | "unit", entityId: string, signal?: AbortSignal): Promise<MediaLink | null>;
   upload(entityType: "project" | "unit", entityId: string, kind: "cover" | "floorplan", file: File): Promise<MediaLink>;
 }
 
-async function prepareMediaUpload(file: File): Promise<File> {
-  if (file.size > 12 * 1024 * 1024) throw new Error("Soubor může mít nejvýše 12 MB");
+async function prepareMediaUpload(file: File, kind: MediaKind): Promise<File> {
+  const validation = validateMediaFile(file, kind);
+  if (validation.isPdf) return file;
   if (file.size <= 850 * 1024) return file;
 
   const bitmap = await createImageBitmap(file);
@@ -43,12 +45,12 @@ class ApiMediaRepository implements MediaRepository {
     return payload.media[0] ?? null;
   }
   async upload(entityType: "project" | "unit", entityId: string, kind: "cover" | "floorplan", file: File) {
-    const prepared = await prepareMediaUpload(file);
+    const prepared = await prepareMediaUpload(file, kind);
     const form = new FormData();
     form.set("entityType", entityType); form.set("entityId", entityId); form.set("kind", kind); form.set("file", prepared);
     const response = await apiFetch("/api/media", { method: "POST", body: form });
-    const payload = await response.json().catch(() => ({})) as { media?: MediaLink; error?: string };
-    if (!response.ok || !payload.media) throw new Error(payload.error || "Obrázek se nepodařilo uložit");
+    const payload = await response.json().catch(() => ({})) as { media?: MediaLink; error?: string; correlationId?: string };
+    if (!response.ok || !payload.media) throw new Error(payload.error || "Půdorys se nepodařilo uložit. Zkuste to prosím znovu.");
     return payload.media;
   }
 }

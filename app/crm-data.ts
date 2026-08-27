@@ -30,6 +30,10 @@ export type UnitRecord = {
   garden?: number | null;
   floorplanAvailable?: boolean;
   floorplanImageUrl?: string | null;
+  floorplanMimeType?: string | null;
+  floorplanFileName?: string | null;
+  floorplanUploadedAt?: string | null;
+  floorplanUploadedBy?: string | null;
   accessories?: AccessoryAssignmentRecord[];
   updatedAt?: string;
 };
