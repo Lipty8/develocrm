@@ -79,14 +79,14 @@ export async function forwardBackendMutation(request: Request, options: Mutation
     );
   }
 
-  const contentType = options.contentType === undefined
-    ? request.headers.get("content-type") || "application/json"
-    : options.contentType;
   let body = options.body;
   if (body === undefined && options.method !== "DELETE") {
     const bytes = await request.arrayBuffer();
     body = bytes.byteLength ? bytes : null;
   }
+  const contentType = options.contentType === undefined
+    ? options.method === "DELETE" ? null : request.headers.get("content-type") || (body ? "application/json" : null)
+    : options.contentType;
 
   const headers = new Headers({
     accept: "application/json",

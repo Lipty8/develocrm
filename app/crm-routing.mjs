@@ -1,4 +1,4 @@
-export const projectTabSlugs = ["overview", "units", "clients", "contracts", "payments", "changes", "handovers", "documents"];
+export const projectTabSlugs = ["overview", "units", "accessories", "clients", "contracts", "payments", "changes", "handovers", "documents"];
 export const unitTabSlugs = ["overview", "contracts", "payments", "changes", "documents", "handover", "tasks", "history"];
 
 const pagePaths = {

@@ -22,7 +22,7 @@ type BackendCatalog = {
     updatedAt:string;
     accessories: Array<{ id:string; assignmentId:string; code: string; type: string; category: string; areaM2: number | null; relation?:string|null; amount:number; amountNet:number|null; currency:string }>;
   }>;
-  accessories:Array<{id:string;code:string;type:string;category:string;areaM2:number|null;projectId:string;projectName:string;available:boolean;relation?:string|null;amount:number;amountNet:number|null;currency:string}>;
+  accessories:Array<{id:string;assignmentId?:string;code:string;type:string;category:string;areaM2:number|null;projectId:string;projectName:string;available:boolean;assignedUnitId?:string|null;assignedUnitCode?:string|null;assignedUnitStatus?:string|null;assignedClient?:string|null;assignmentHistory?:Array<{assignmentId:string;unitId:string;unitCode:string;validFrom:string;validTo:string|null;assignedBy:string|null}>;relation?:string|null;amount:number;amountNet:number|null;currency:string}>;
   memberships:Array<{id:string;name:string}>;
   structures:Array<{id:string;projectId:string;projectName:string;name:string;kind:string}>;
 };

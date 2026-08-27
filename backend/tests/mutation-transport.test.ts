@@ -39,7 +39,7 @@ test("BFF proxy podporuje PATCH a DELETE bez opakovaného čtení těla",async()
   process.env.DEVELOCRM_API_URL="https://api.example.test";
   process.env.DEVELOCRM_TENANT_ID="tenant-1";
   const methods:string[]=[];
-  globalThis.fetch=(async(_input:RequestInfo|URL,init?:RequestInit)=>{methods.push(String(init?.method));if(init?.method==="DELETE")assert.equal(init.body,undefined);return new Response(null,{status:204});}) as typeof fetch;
+  globalThis.fetch=(async(_input:RequestInfo|URL,init?:RequestInit)=>{methods.push(String(init?.method));if(init?.method==="DELETE"){assert.equal(init.body,undefined);assert.equal(new Headers(init.headers).has("content-type"),false);}return new Response(null,{status:204});}) as typeof fetch;
   const headers={authorization:"Bearer test-token","content-type":"application/json"};
   assert.equal((await forwardBackendMutation(new Request("https://crm.example.test/api/project",{method:"PATCH",headers,body:'{"name":"Nový"}'}),{method:"PATCH",target:"/v1/projects/project-1",unavailableMessage:"Backend chybí"})).status,204);
   assert.equal((await forwardBackendMutation(new Request("https://crm.example.test/api/accessory",{method:"DELETE",headers}),{method:"DELETE",target:"/v1/accessory-assignments/assignment-1",unavailableMessage:"Backend chybí"})).status,204);

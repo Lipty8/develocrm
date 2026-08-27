@@ -34,7 +34,17 @@ export type UnitRecord = {
   updatedAt?: string;
 };
 export type AccessoryAssignmentRecord = { id:string; assignmentId?:string; code:string; type:string; category:string; areaM2:number|null; relation?:string|null; amount?:number; amountNet?:number|null; currency?:string };
-export type CatalogAccessoryRecord = AccessoryAssignmentRecord & { project:string; projectBackendId?:string; available:boolean };
+export type AccessoryAssignmentHistoryRecord = { assignmentId:string; unitId:string; unitCode:string; validFrom:string; validTo:string|null; assignedBy:string|null };
+export type CatalogAccessoryRecord = AccessoryAssignmentRecord & {
+  project:string;
+  projectBackendId?:string;
+  available:boolean;
+  assignedUnitId?:string|null;
+  assignedUnitCode?:string|null;
+  assignedUnitStatus?:string|null;
+  assignedClient?:string|null;
+  assignmentHistory?:AccessoryAssignmentHistoryRecord[];
+};
 export type MembershipOption = { id:string; name:string };
 export type ProjectStructureOption = { id:string; projectId:string; project:string; name:string; kind:string };
 export type ProjectRecord = { backendId?:string; name:string; sourceName?:string; code:string; location:string; address?:string|null; description?:string|null; projectCompany?:string|null; defaultCurrency?:string; plannedUnitCount?:number|null; note?:string|null; progress:number; units:number; available:number; preReserved:number; reserved:number; sold:number; handedOver:number; attention:number; color:"sage"|"sand"|"slate"; stage:string; stageCode?:string|null; lifecycleStatus?:string; revenue:string; buildings:string[]; manager:string; managerMembershipId?:string|null; plannedHandover:string; plannedCompletionFrom?:string|null; plannedCompletionTo?:string|null; coverImageUrl?:string|null };

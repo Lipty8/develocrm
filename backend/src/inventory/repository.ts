@@ -104,14 +104,34 @@ export class InventoryRepository {
          ORDER BY project.name, unit.code`,
         [input.tenantId, input.membershipId],
       );
-      const accessories=await client.query<{id:string;code:string;project_id:string;project_name:string;type:string;category:string;area_m2:string|null;available:boolean;relation:string|null;amount:number;amount_net:number|null;currency:string}>(
+      const accessories=await client.query<{id:string;code:string;project_id:string;project_name:string;type:string;category:string;area_m2:string|null;available:boolean;relation:string|null;amount:number;amount_net:number|null;currency:string;assignment_id:string|null;assigned_unit_id:string|null;assigned_unit_code:string|null;assigned_unit_status:string|null;assigned_client:string|null;assignment_history:Array<{assignmentId:string;unitId:string;unitCode:string;validFrom:string;validTo:string|null;assignedBy:string|null}>}>(
         `SELECT accessory.id,accessory.code,accessory.project_id,project.name project_name,type.name type,type.category,accessory.area_m2::text,
-          NOT EXISTS(SELECT 1 FROM unit_accessory_assignments assignment WHERE assignment.tenant_id=accessory.tenant_id AND assignment.accessory_id=accessory.id AND assignment.valid_from<=now() AND (assignment.valid_to IS NULL OR assignment.valid_to>now())) available,
-          relation.target_code relation,COALESCE(price.amount,0)::float8 amount,price.amount_net::float8 amount_net,COALESCE(price.currency,'CZK') currency
+          active_assignment.id IS NULL available,active_assignment.id assignment_id,active_assignment.unit_id assigned_unit_id,
+          active_assignment.unit_code assigned_unit_code,active_assignment.commercial_status assigned_unit_status,NULL::text assigned_client,
+          relation.target_code relation,COALESCE(price.amount,0)::float8 amount,price.amount_net::float8 amount_net,COALESCE(price.currency,'CZK') currency,
+          COALESCE(history.items,'[]'::jsonb) assignment_history
          FROM accessories accessory JOIN projects project ON project.tenant_id=accessory.tenant_id AND project.id=accessory.project_id
          JOIN accessory_types type ON type.tenant_id=accessory.tenant_id AND type.id=accessory.accessory_type_id
+         LEFT JOIN LATERAL (
+           SELECT assignment.id,assignment.unit_id,unit.code unit_code,unit.commercial_status
+           FROM unit_accessory_assignments assignment
+           JOIN units unit ON unit.tenant_id=assignment.tenant_id AND unit.id=assignment.unit_id
+           WHERE assignment.tenant_id=accessory.tenant_id AND assignment.accessory_id=accessory.id
+             AND assignment.valid_from<=now() AND (assignment.valid_to IS NULL OR assignment.valid_to>now())
+           ORDER BY assignment.valid_from DESC,assignment.id DESC LIMIT 1
+         ) active_assignment ON true
          LEFT JOIN LATERAL (SELECT history.amount,history.amount_net,history.currency FROM accessory_price_history history WHERE history.tenant_id=accessory.tenant_id AND history.accessory_id=accessory.id AND history.valid_from<=now() ORDER BY history.valid_from DESC,history.recorded_at DESC,history.id DESC LIMIT 1) price ON true
          LEFT JOIN LATERAL (SELECT target.code target_code FROM accessory_relations link JOIN accessories target ON target.tenant_id=link.tenant_id AND target.id=link.target_accessory_id WHERE link.tenant_id=accessory.tenant_id AND link.source_accessory_id=accessory.id AND link.relation_type='installed_at' LIMIT 1) relation ON true
+         LEFT JOIN LATERAL (
+           SELECT jsonb_agg(jsonb_build_object('assignmentId',assignment.id,'unitId',assignment.unit_id,'unitCode',unit.code,
+             'validFrom',assignment.valid_from,'validTo',assignment.valid_to,'assignedBy',actor_user.display_name)
+             ORDER BY assignment.valid_from DESC,assignment.id DESC) items
+           FROM unit_accessory_assignments assignment
+           JOIN units unit ON unit.tenant_id=assignment.tenant_id AND unit.id=assignment.unit_id
+           LEFT JOIN tenant_memberships actor ON actor.tenant_id=assignment.tenant_id AND actor.id=assignment.assigned_by_membership_id
+           LEFT JOIN users actor_user ON actor_user.id=actor.user_id
+           WHERE assignment.tenant_id=accessory.tenant_id AND assignment.accessory_id=accessory.id
+         ) history ON true
          WHERE accessory.tenant_id=$1 AND accessory.archived_at IS NULL AND project.archived_at IS NULL AND app.has_project_permission(accessory.tenant_id,$2,accessory.project_id,'accessory.read') ORDER BY project.name,type.category,accessory.code`,[input.tenantId,input.membershipId]);
       const memberships=await client.query<{id:string;name:string}>(`SELECT membership.id,user_row.display_name name FROM tenant_memberships membership JOIN users user_row ON user_row.id=membership.user_id WHERE membership.tenant_id=$1 AND membership.status='active' ORDER BY user_row.display_name`,[input.tenantId]);
       const structures=await client.query<{id:string;project_id:string;project_name:string;name:string;kind:string}>(`SELECT structure.id,structure.project_id,project.name project_name,structure.name,structure.kind FROM project_structures structure JOIN projects project ON project.tenant_id=structure.tenant_id AND project.id=structure.project_id WHERE structure.tenant_id=$1 AND structure.archived_at IS NULL AND project.archived_at IS NULL AND app.has_project_permission(structure.tenant_id,$2,structure.project_id,'project.read') ORDER BY project.name,structure.sort_order,structure.name`,[input.tenantId,input.membershipId]);
@@ -131,7 +151,7 @@ export class InventoryRepository {
           gardenM2: row.garden_m2 === null ? null : Number(row.garden_m2),
           floorLabel: row.floor_label, orientation: row.orientation, commercialStatus: row.commercial_status,
           constructionStatus: row.construction_status,updatedAt:row.updated_at, accessories: row.accessories,
-        })),accessories:accessories.rows.map(row=>({id:row.id,code:row.code,projectId:row.project_id,projectName:row.project_name,type:row.type,category:row.category,areaM2:row.area_m2===null?null:Number(row.area_m2),available:row.available,relation:row.relation,amount:row.amount,amountNet:row.amount_net,currency:row.currency})),memberships:memberships.rows,structures:structures.rows.map(row=>({id:row.id,projectId:row.project_id,projectName:row.project_name,name:row.name,kind:row.kind})),
+        })),accessories:accessories.rows.map(row=>({id:row.id,assignmentId:row.assignment_id??undefined,code:row.code,projectId:row.project_id,projectName:row.project_name,type:row.type,category:row.category,areaM2:row.area_m2===null?null:Number(row.area_m2),available:row.available,assignedUnitId:row.assigned_unit_id,assignedUnitCode:row.assigned_unit_code,assignedUnitStatus:row.assigned_unit_status,assignedClient:row.assigned_client,assignmentHistory:row.assignment_history,relation:row.relation,amount:row.amount,amountNet:row.amount_net,currency:row.currency})),memberships:memberships.rows,structures:structures.rows.map(row=>({id:row.id,projectId:row.project_id,projectName:row.project_name,name:row.name,kind:row.kind})),
       };
     });
   }

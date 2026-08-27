@@ -104,6 +104,10 @@ test("inventory repository vrátí seedované projekty a jednotky přes RBAC", a
   assert.equal(catalog.projects.length, 3);
   assert.equal(catalog.units.length, 10);
   assert.equal(catalog.units.find((unit) => unit.code === "A203")?.accessories.length, 3);
+  const assignedAccessory=catalog.accessories.find((accessory)=>accessory.assignedUnitCode==="A203");
+  assert.equal(assignedAccessory?.available,false);
+  assert.equal(assignedAccessory?.assignmentHistory.length,1);
+  assert.equal(assignedAccessory?.assignmentId,assignedAccessory?.assignmentHistory[0].assignmentId);
   await db.close();
 });
 
