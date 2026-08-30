@@ -18,6 +18,8 @@ test("sklepy a parkování nemají search ani vlastní svislý scroll",()=>{
 });
 
 test("klienti se načítají automaticky podle viewportu a stránka nese svislý scroll",()=>{
+  assert.match(crm,/placeholder="Hledat jméno, telefon nebo e-mail…"/);
+  assert.match(crm,/page === "clients" \? "Přidat klienta"/);
   assert.match(crm,/IntersectionObserver[\s\S]*?root:null,rootMargin:"360px"/);
   assert.match(crm,/window\.scrollY/);
   assert.doesNotMatch(crm,/clientScrollRef|onScroll=\{event=>sessionStorage/);
