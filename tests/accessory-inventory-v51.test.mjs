@@ -18,9 +18,10 @@ test("projekt má samostatně routovatelné sklepy a parkovací místa se sdíle
     assert.match(crm,new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")));
 });
 
-test("oba inventáře mají skutečné souhrny, hledání, filtry a wallbox vazbu",()=>{
-  for(const text of ["accessory-inventory-summary","Hledat v seznamu","Výměra","Filtrovat typ parkování","Filtrovat wallbox","Wallbox","accessory-inventory-scroll"])
+test("oba inventáře mají skutečné souhrny, hlavičkové filtry a wallbox vazbu bez search boxu",()=>{
+  for(const text of ["accessory-inventory-summary","Výměra","Filtrovat typ parkování","Filtrovat wallbox","Wallbox"])
     assert.match(crm,new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")));
+  assert.doesNotMatch(crm,/accessory-inventory-search|accessory-inventory-scroll|Hledat v seznamu/);
   assert.match(crm,/item\.category === "cellar"/);
   assert.match(crm,/item\.category === "parking"/);
 });

@@ -14,7 +14,7 @@ test("hlavní stránky nezobrazují obecný podtitulek a tabulky nemají výplň
   assert.doesNotMatch(app, /jedna společná databáze napříč firmou/);
   assert.doesNotMatch(app, /Stejný datový zdroj jako kalendář/);
   assert.doesNotMatch(app, /CRM je zdrojem metadat a vazeb/);
-  assert.match(app, /table-footer compact-pagination/);
+  assert.doesNotMatch(app, /table-footer compact-pagination/);
   assert.match(app, /Předchozí jednotka/);
   assert.match(app, /Další jednotka/);
 });
