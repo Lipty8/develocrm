@@ -21,7 +21,7 @@ async function database(){
     "0013_v32_scope_enforcement.sql","0014_payments_and_reservation_activation.sql","0020_core_sales_workflow.sql",
     "0021_contract_external_signature.sql","0022_rs_signature_reservation.sql","0023_atomic_party_prereservation.sql",
     "0024_unit_payment_and_contract_workflow.sql","0028_contract_workflow_and_buyer_assignment.sql","0029_contract_party_assignments.sql",
-    "0030_contract_assignment_workflow.sql","0031_accessory_pricing_and_contract_references.sql",
+    "0030_contract_assignment_workflow.sql","0031_accessory_pricing_and_contract_references.sql","0032_accessory_lifecycle.sql",
   ])await db.exec(await source(`../migrations/${name}`));
   await db.exec(`INSERT INTO role_assignments(tenant_id,membership_id,role_id,assigned_by_user_id) VALUES('${tenant}','${member}','d4000000-0000-4000-8000-000000000001','${user}') ON CONFLICT DO NOTHING`);
   await db.exec(`SET ROLE develocrm_app;SELECT set_config('app.user_id','${user}',false);SELECT set_config('app.tenant_id','${tenant}',false);`);
@@ -53,6 +53,25 @@ test("příslušenství má vlastní cenu, časové přiřazení a po uvolnění
   assert.equal((await db.query("SELECT id FROM accessories accessory WHERE accessory.id=$1 AND NOT EXISTS(SELECT 1 FROM unit_accessory_assignments assignment WHERE assignment.accessory_id=accessory.id AND assignment.valid_to IS NULL)",[wallbox])).rows.length,1);
   assert.equal((await db.query("SELECT id FROM audit_log WHERE entity_id IN ($1,$2) AND action IN ('accessory.assigned','accessory.removed')",[assignment,parkingAssignment])).rows.length,4);
   assert.equal((await db.query("SELECT id FROM outbox_events WHERE aggregate_id=$1 AND event_type IN ('accessory.assigned.v1','accessory.removed.v1')",[unit])).rows.length,4);
+  await db.close();
+});
+
+test("nepoužité příslušenství se smaže, použité archivuje a aktivní přiřazení operaci blokuje",async()=>{
+  const db=await database();
+  const unused=await createAccessory(db,"cellar","S-DELETE",100000);
+  const deleted=(await db.query<{outcome:{mode:string}}>("SELECT app.remove_or_archive_accessory($1,$2,$3,'Test nepoužité položky') outcome",[tenant,unused,member])).rows[0].outcome;
+  assert.equal(deleted.mode,"delete");
+  assert.equal((await db.query("SELECT id FROM accessories WHERE id=$1",[unused])).rows.length,0);
+
+  const used=await createAccessory(db,"parking","P-ARCHIVE",750000);
+  const assignment=(await db.query<{id:string}>("SELECT app.assign_accessory_to_unit($1,$2,$3,now(),$4) id",[tenant,unit,used,member])).rows[0].id;
+  await assert.rejects(db.query("SELECT app.remove_or_archive_accessory($1,$2,$3,'Stále přiřazené')",[tenant,used,member]),/currently assigned/i);
+  await db.query("SELECT app.remove_accessory_from_unit($1,$2,now(),$3)",[tenant,assignment,member]);
+  const archived=(await db.query<{outcome:{mode:string}}>("SELECT app.remove_or_archive_accessory($1,$2,$3,'Historická položka') outcome",[tenant,used,member])).rows[0].outcome;
+  assert.equal(archived.mode,"archive");
+  assert.equal((await db.query("SELECT id FROM accessories WHERE id=$1 AND archived_at IS NOT NULL AND operational_status='archived'",[used])).rows.length,1);
+  assert.equal((await db.query("SELECT id FROM unit_accessory_assignments WHERE accessory_id=$1",[used])).rows.length,1);
+  assert.equal((await db.query("SELECT id FROM audit_log WHERE entity_id IN ($1,$2) AND action IN ('accessory.deleted','accessory.archived')",[unused,used])).rows.length,2);
   await db.close();
 });
 

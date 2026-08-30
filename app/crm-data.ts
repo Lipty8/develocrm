@@ -48,6 +48,7 @@ export type CatalogAccessoryRecord = AccessoryAssignmentRecord & {
   assignedUnitStatus?:string|null;
   assignedClient?:string|null;
   assignmentHistory?:AccessoryAssignmentHistoryRecord[];
+  archived?:boolean;
 };
 export type MembershipOption = { id:string; name:string };
 export type ProjectStructureOption = { id:string; projectId:string; project:string; name:string; kind:string };

@@ -85,7 +85,7 @@ test("preview seed je opakovatelný a zachová známé projekty a jednotky", asy
 
 test("inventory repository vrátí seedované projekty a jednotky přes RBAC", async () => {
   const db = new PGlite();
-  for (const name of ["0001_block_a_identity.sql", "0002_block_b_inventory.sql"]) {
+  for (const name of ["0001_block_a_identity.sql", "0002_block_b_inventory.sql", "0003_block_c_sales.sql"]) {
     await db.exec(await readFile(new URL(`../migrations/${name}`, import.meta.url), "utf8"));
   }
   await db.exec(await readFile(new URL("../seeds/0001_preview_block_b.sql", import.meta.url), "utf8"));

@@ -20,6 +20,8 @@ export interface CatalogRepository {
   assignAccessory(unitId:string, accessoryId:string): Promise<void>;
   removeAccessory(assignmentId:string): Promise<void>;
   createAccessory(input:{projectId:string;category:"parking"|"cellar"|"wallbox";code:string;areaM2?:number|null;amount:number;amountNet?:number|null;relatedAccessoryId?:string|null}):Promise<void>;
+  updateAccessory(input:{accessoryId:string;code:string;areaM2?:number|null;amount:number;amountNet?:number|null;reason?:string}):Promise<void>;
+  removeOrArchiveAccessory(accessory:CatalogAccessoryRecord,reason:string):Promise<{mode:"delete"|"archive"}>;
 }
 
 export class ApiCatalogRepository implements CatalogRepository {
@@ -81,6 +83,30 @@ export class ApiCatalogRepository implements CatalogRepository {
       localStorage.setItem("develocrm.new.accessories",JSON.stringify(rows));
     }
   }
+  async updateAccessory(input:{accessoryId:string;code:string;areaM2?:number|null;amount:number;amountNet?:number|null;reason?:string}){
+    const preview=await requestJson(`/api/catalog/accessories/${encodeURIComponent(input.accessoryId)}`,"PATCH",input);
+    if(preview&&typeof window!=="undefined"){
+      const edits=JSON.parse(localStorage.getItem("develocrm.accessory.edits")||"{}");
+      edits[input.accessoryId]={...(edits[input.accessoryId]||{}),code:input.code,areaM2:input.areaM2??null,amount:input.amount,amountNet:input.amountNet??null};
+      localStorage.setItem("develocrm.accessory.edits",JSON.stringify(edits));
+    }
+  }
+  async removeOrArchiveAccessory(accessory:CatalogAccessoryRecord,reason:string){
+    const response=await apiFetch(`/api/catalog/accessories/${encodeURIComponent(accessory.id)}`,{method:"DELETE",headers:{"content-type":"application/json"},body:JSON.stringify({reason})});
+    if(response.ok)return((await response.json()) as {outcome:{mode:"delete"|"archive"}}).outcome;
+    if(response.status===503&&responseAllowsBrowserFallback(response)&&typeof window!=="undefined"){
+      const created=JSON.parse(localStorage.getItem("develocrm.new.accessories")||"[]") as CatalogAccessoryRecord[];
+      const createdIndex=created.findIndex(item=>item.id===accessory.id);
+      if(createdIndex>=0&&!(accessory.assignmentHistory?.length)){
+        created.splice(createdIndex,1);localStorage.setItem("develocrm.new.accessories",JSON.stringify(created));return{mode:"delete"};
+      }
+      const archived=JSON.parse(localStorage.getItem("develocrm.archived.accessories")||"[]") as string[];
+      if(!archived.includes(accessory.id))archived.push(accessory.id);
+      localStorage.setItem("develocrm.archived.accessories",JSON.stringify(archived));return{mode:"archive"};
+    }
+    const payload=await response.json().catch(()=>({})) as {error?:string;correlationId?:string};
+    throw new Error(`${payload.error||"Příslušenství se nepodařilo odstranit"}${payload.correlationId?` · ID chyby ${payload.correlationId}`:""}`);
+  }
 }
 
 function applyPreviewEdits(snapshot:CatalogSnapshot){
@@ -96,10 +122,13 @@ function applyPreviewEdits(snapshot:CatalogSnapshot){
   snapshot.units=snapshot.units.map(u=>({...u,project:projectNames.get(u.project)??u.project,...(edits.units?.[u.backendId??u.id]||{}),...(edits.units?.[u.id]||{})}));
   snapshot.structures=snapshot.structures.map(item=>({...item,project:projectNames.get(item.project)??item.project}));
   snapshot.accessories=snapshot.accessories.map(item=>({...item,project:projectNames.get(item.project)??item.project}));
+  const accessoryEdits=JSON.parse(localStorage.getItem("develocrm.accessory.edits")||"{}");
+  const archivedAccessories=new Set(JSON.parse(localStorage.getItem("develocrm.archived.accessories")||"[]") as string[]);
   const createdAccessories=JSON.parse(localStorage.getItem("develocrm.new.accessories")||"[]") as CatalogAccessoryRecord[];
   snapshot.accessories.push(...createdAccessories.filter(item=>!snapshot.accessories.some(existing=>existing.id===item.id)));
+  snapshot.accessories=snapshot.accessories.map(item=>({...item,...(accessoryEdits[item.id]||{}),archived:item.archived||archivedAccessories.has(item.id),available:item.archived||archivedAccessories.has(item.id)?false:item.available}));
   const mutations=JSON.parse(localStorage.getItem("develocrm.accessory.assignments")||"[]") as Array<{unitId:string;accessoryId:string;action:string}>;
-  for(const row of mutations){const accessory=snapshot.accessories.find(item=>item.id===row.accessoryId||item.assignmentId===row.accessoryId);if(!accessory)continue;if(row.action==="assign"){accessory.available=false;const unit=snapshot.units.find(item=>(item.backendId??item.id)===row.unitId||item.id===row.unitId);if(unit){accessory.assignmentId=`preview-${accessory.id}`;accessory.assignedUnitId=unit.backendId??unit.id;accessory.assignedUnitCode=unit.id;accessory.assignedUnitStatus=unit.status;if(!unit.accessories?.some(item=>item.id===accessory.id))(unit.accessories??=[]).push({...accessory,assignmentId:accessory.assignmentId} as AccessoryAssignmentRecord);}}else{accessory.available=true;accessory.assignmentId=undefined;accessory.assignedUnitId=null;accessory.assignedUnitCode=null;accessory.assignedUnitStatus=null;accessory.assignedClient=null;for(const unit of snapshot.units)unit.accessories=unit.accessories?.filter(item=>item.assignmentId!==row.accessoryId);}}
+  for(const row of mutations){const accessory=snapshot.accessories.find(item=>item.id===row.accessoryId||item.assignmentId===row.accessoryId);if(!accessory||accessory.archived)continue;if(row.action==="assign"){accessory.available=false;const unit=snapshot.units.find(item=>(item.backendId??item.id)===row.unitId||item.id===row.unitId);if(unit){accessory.assignmentId=`preview-${accessory.id}`;accessory.assignedUnitId=unit.backendId??unit.id;accessory.assignedUnitCode=unit.id;accessory.assignedUnitStatus=unit.status;if(!unit.accessories?.some(item=>item.id===accessory.id))(unit.accessories??=[]).push({...accessory,assignmentId:accessory.assignmentId} as AccessoryAssignmentRecord);}}else{accessory.available=true;accessory.assignmentId=undefined;accessory.assignedUnitId=null;accessory.assignedUnitCode=null;accessory.assignedUnitStatus=null;accessory.assignedClient=null;for(const unit of snapshot.units)unit.accessories=unit.accessories?.filter(item=>item.assignmentId!==row.accessoryId);}}
   for(const unit of snapshot.units)unit.accessory=unit.accessories?.map(item=>`${item.type} ${item.code}${item.areaM2?` · ${item.areaM2} m²`:""}`).join(" · ")||unit.accessory;
 }
 function storeEdit(kind:"projects"|"units",id:string,value:unknown){if(typeof window==="undefined")return;const edits=JSON.parse(localStorage.getItem("develocrm.catalog.edits")||"{}");edits[kind]??={};edits[kind][id]={...(edits[kind][id]||{}),...(value as object)};localStorage.setItem("develocrm.catalog.edits",JSON.stringify(edits));}

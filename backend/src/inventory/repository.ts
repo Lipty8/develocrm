@@ -104,9 +104,10 @@ export class InventoryRepository {
          ORDER BY project.name, unit.code`,
         [input.tenantId, input.membershipId],
       );
-      const accessories=await client.query<{id:string;code:string;project_id:string;project_name:string;type:string;category:string;area_m2:string|null;available:boolean;relation:string|null;amount:number;amount_net:number|null;currency:string;assignment_id:string|null;assigned_unit_id:string|null;assigned_unit_code:string|null;assigned_unit_status:string|null;assigned_client:string|null;assignment_history:Array<{assignmentId:string;unitId:string;unitCode:string;validFrom:string;validTo:string|null;assignedBy:string|null}>}>(
+      const accessories=await client.query<{id:string;code:string;project_id:string;project_name:string;type:string;category:string;area_m2:string|null;available:boolean;archived:boolean;relation:string|null;amount:number;amount_net:number|null;currency:string;assignment_id:string|null;assigned_unit_id:string|null;assigned_unit_code:string|null;assigned_unit_status:string|null;assigned_client:string|null;assignment_history:Array<{assignmentId:string;unitId:string;unitCode:string;validFrom:string;validTo:string|null;assignedBy:string|null}>}>(
         `SELECT accessory.id,accessory.code,accessory.project_id,project.name project_name,type.name type,type.category,accessory.area_m2::text,
-          active_assignment.id IS NULL available,active_assignment.id assignment_id,active_assignment.unit_id assigned_unit_id,
+          active_assignment.id IS NULL AND accessory.archived_at IS NULL available,accessory.archived_at IS NOT NULL archived,
+          active_assignment.id assignment_id,active_assignment.unit_id assigned_unit_id,
           active_assignment.unit_code assigned_unit_code,active_assignment.commercial_status assigned_unit_status,buyers.names assigned_client,
           relation.target_code relation,COALESCE(price.amount,0)::float8 amount,price.amount_net::float8 amount_net,COALESCE(price.currency,'CZK') currency,
           COALESCE(history.items,'[]'::jsonb) assignment_history
@@ -150,7 +151,7 @@ export class InventoryRepository {
            LEFT JOIN users actor_user ON actor_user.id=actor.user_id
            WHERE assignment.tenant_id=accessory.tenant_id AND assignment.accessory_id=accessory.id
          ) history ON true
-         WHERE accessory.tenant_id=$1 AND accessory.archived_at IS NULL AND project.archived_at IS NULL AND app.has_project_permission(accessory.tenant_id,$2,accessory.project_id,'accessory.read') ORDER BY project.name,type.category,accessory.code`,[input.tenantId,input.membershipId]);
+         WHERE accessory.tenant_id=$1 AND project.archived_at IS NULL AND app.has_project_permission(accessory.tenant_id,$2,accessory.project_id,'accessory.read') ORDER BY project.name,type.category,accessory.code`,[input.tenantId,input.membershipId]);
       const memberships=await client.query<{id:string;name:string}>(`SELECT membership.id,user_row.display_name name FROM tenant_memberships membership JOIN users user_row ON user_row.id=membership.user_id WHERE membership.tenant_id=$1 AND membership.status='active' ORDER BY user_row.display_name`,[input.tenantId]);
       const structures=await client.query<{id:string;project_id:string;project_name:string;name:string;kind:string}>(`SELECT structure.id,structure.project_id,project.name project_name,structure.name,structure.kind FROM project_structures structure JOIN projects project ON project.tenant_id=structure.tenant_id AND project.id=structure.project_id WHERE structure.tenant_id=$1 AND structure.archived_at IS NULL AND project.archived_at IS NULL AND app.has_project_permission(structure.tenant_id,$2,structure.project_id,'project.read') ORDER BY project.name,structure.sort_order,structure.name`,[input.tenantId,input.membershipId]);
       return {
@@ -169,7 +170,7 @@ export class InventoryRepository {
           gardenM2: row.garden_m2 === null ? null : Number(row.garden_m2),
           floorLabel: row.floor_label, orientation: row.orientation, commercialStatus: row.commercial_status,
           constructionStatus: row.construction_status,updatedAt:row.updated_at, accessories: row.accessories,
-        })),accessories:accessories.rows.map(row=>({id:row.id,assignmentId:row.assignment_id??undefined,code:row.code,projectId:row.project_id,projectName:row.project_name,type:row.type,category:row.category,areaM2:row.area_m2===null?null:Number(row.area_m2),available:row.available,assignedUnitId:row.assigned_unit_id,assignedUnitCode:row.assigned_unit_code,assignedUnitStatus:row.assigned_unit_status,assignedClient:row.assigned_client,assignmentHistory:row.assignment_history,relation:row.relation,amount:row.amount,amountNet:row.amount_net,currency:row.currency})),memberships:memberships.rows,structures:structures.rows.map(row=>({id:row.id,projectId:row.project_id,projectName:row.project_name,name:row.name,kind:row.kind})),
+        })),accessories:accessories.rows.map(row=>({id:row.id,assignmentId:row.assignment_id??undefined,code:row.code,projectId:row.project_id,projectName:row.project_name,type:row.type,category:row.category,areaM2:row.area_m2===null?null:Number(row.area_m2),available:row.available,archived:row.archived,assignedUnitId:row.assigned_unit_id,assignedUnitCode:row.assigned_unit_code,assignedUnitStatus:row.assigned_unit_status,assignedClient:row.assigned_client,assignmentHistory:row.assignment_history,relation:row.relation,amount:row.amount,amountNet:row.amount_net,currency:row.currency})),memberships:memberships.rows,structures:structures.rows.map(row=>({id:row.id,projectId:row.project_id,projectName:row.project_name,name:row.name,kind:row.kind})),
       };
     });
   }
@@ -203,5 +204,17 @@ export class InventoryRepository {
       "SELECT app.create_project_accessory($1,$2,$3,$4,$5,$6,$7,$8,$9) id",
       [input.tenantId,input.projectId,input.category,input.code,input.areaM2??null,input.amount,input.amountNet??null,input.relatedAccessoryId??null,input.membershipId],
     )).rows[0]);
+  }
+  async updateAccessory(input:{tenantId:string;userId:string;membershipId:string;accessoryId:string;code:string;areaM2?:number|null;amount:number;amountNet?:number|null;reason?:string}){
+    return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{id:string}>(
+      "SELECT app.update_project_accessory($1,$2,$3,$4,$5,$6,$7,$8) id",
+      [input.tenantId,input.accessoryId,input.code,input.areaM2??null,input.amount,input.amountNet??null,input.reason??"Úprava příslušenství",input.membershipId],
+    )).rows[0]);
+  }
+  async removeOrArchiveAccessory(input:{tenantId:string;userId:string;membershipId:string;accessoryId:string;reason:string}){
+    return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{outcome:{mode:"delete"|"archive";accessoryId:string}}>(
+      "SELECT app.remove_or_archive_accessory($1,$2,$3,$4) outcome",
+      [input.tenantId,input.accessoryId,input.membershipId,input.reason],
+    )).rows[0]?.outcome);
   }
 }
