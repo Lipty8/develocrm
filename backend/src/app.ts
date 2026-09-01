@@ -4,6 +4,7 @@ import { EntraTokenVerifier } from "./auth/entra.js";
 import type { Database } from "./database.js";
 import { IamRepository } from "./iam/repository.js";
 import { InventoryRepository } from "./inventory/repository.js";
+import { InventoryImportService, type InventoryEntityType, type InventoryImportRow } from "./inventory/import-service.js";
 import { CommercialStatusService } from "./inventory/commercial-status-service.js";
 import { PartyDuplicateError, SalesRepository } from "./sales/repository.js";
 import { HoldService } from "./sales/hold-service.js";
@@ -23,6 +24,7 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
   const app = Fastify({ logger: true,trustProxy:true });
   const repository = new IamRepository(dependencies.database);
   const inventory = new InventoryRepository(dependencies.database);
+  const inventoryImports = new InventoryImportService(dependencies.database);
   const commercialStatus = new CommercialStatusService(dependencies.database);
   const sales = new SalesRepository(dependencies.database);
   const holds = new HoldService(dependencies.database);
@@ -139,7 +141,7 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
     catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Oprávnění role nelze upravit"});}
   });
 
-  app.get("/v1/catalog", async (request, reply) => {
+  app.get<{Querystring:{projectId?:string}}>("/v1/catalog", async (request, reply) => {
     try {
       const identity = await authenticate(request, dependencies.verifier);
       const tenantId = headerValue(request.headers["x-tenant-id"]);
@@ -147,7 +149,7 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
       const user = await repository.resolveUser(identity);
       const session = await repository.getSession(user, identity, tenantId);
       if (!session) return reply.code(403).send({ error: "Workspace není uživateli přístupný" });
-      return inventory.getCatalog({ tenantId, userId: user.id, membershipId: session.workspace.membershipId });
+      return inventory.getCatalog({ tenantId, userId: user.id, membershipId: session.workspace.membershipId,projectId:request.query.projectId });
     } catch {
       return reply.code(401).send({ error: "Neplatné přihlášení" });
     }
@@ -202,6 +204,15 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
   app.patch<{Params:{unitId:string};Body:{structureId?:string|null;layout?:string|null;floorLabel?:string|null;floorNumber?:number|null;areaM2:number;usableAreaM2?:number|null;orientation?:string|null;balconyM2?:number|null;terraceM2?:number|null;gardenM2?:number|null}}>("/v1/units/:unitId",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.send(await inventory.updateUnit({...context,unitId:request.params.unitId,...request.body}));}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Jednotku nelze upravit"});}
   });
+  app.post<{Params:{projectId:string};Body:InventoryImportRow}>("/v1/projects/:projectId/units",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await inventoryImports.createUnit({...context,projectId:request.params.projectId,row:{...request.body,rowNumber:request.body.rowNumber??1}}));}catch(error){request.log.warn({err:error,correlationId:request.id,projectId:request.params.projectId},"unit creation failed");return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Jednotku nelze vytvořit",correlationId:request.id});}
+  });
+  app.post<{Params:{projectId:string};Body:{entityType:InventoryEntityType;rows:InventoryImportRow[];strategy?:"update"|"skip"}}>("/v1/projects/:projectId/inventory-imports/preview",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.send(await inventoryImports.preview({...context,projectId:request.params.projectId,...request.body}));}catch(error){request.log.warn({err:error,correlationId:request.id,projectId:request.params.projectId},"inventory import preview failed");return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Import nelze zkontrolovat",correlationId:request.id});}
+  });
+  app.post<{Params:{projectId:string};Body:{entityType:InventoryEntityType;rows:InventoryImportRow[];strategy:"update"|"skip";idempotencyKey:string;fileName?:string}}>("/v1/projects/:projectId/inventory-imports",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await inventoryImports.confirm({...context,projectId:request.params.projectId,...request.body}));}catch(error){request.log.warn({err:error,correlationId:request.id,projectId:request.params.projectId},"inventory import failed");return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Import nelze dokončit",correlationId:request.id});}
+  });
   app.post<{Params:{unitId:string};Body:{accessoryId:string;validFrom?:string}}>("/v1/units/:unitId/accessories",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await inventory.assignAccessory({...context,unitId:request.params.unitId,...request.body}));}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Příslušenství nelze přiřadit"});}
   });
@@ -233,7 +244,7 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await sales.addInterest({...context,unitId:request.params.unitId,...request.body}));}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Zájem nelze uložit"});}
   });
 
-  app.get<{Querystring:{page?:string;pageSize?:string;q?:string;quickProject?:string;types?:string;projects?:string;unit?:string;relations?:string;contracts?:string;phone?:string;email?:string;sort?:string;direction?:"asc"|"desc";includeArchived?:string}}>("/v1/clients", async (request, reply) => {
+  app.get<{Querystring:{page?:string;pageSize?:string;projectId?:string;q?:string;quickProject?:string;types?:string;projects?:string;unit?:string;relations?:string;contracts?:string;phone?:string;email?:string;sort?:string;direction?:"asc"|"desc";includeArchived?:string}}>("/v1/clients", async (request, reply) => {
     try {
       const identity = await authenticate(request,dependencies.verifier);
       const tenantId = headerValue(request.headers["x-tenant-id"]);
@@ -242,7 +253,7 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
       const session = await repository.getSession(user,identity,tenantId);
       if (!session) return reply.code(403).send({ error:"Workspace není uživateli přístupný" });
       const includeArchived=request.query.includeArchived==="true";
-      if(request.query.page)return sales.getPage({tenantId,userId:user.id,membershipId:session.workspace.membershipId,page:Number(request.query.page)||1,pageSize:Math.min(100,Math.max(1,Number(request.query.pageSize)||25)),query:request.query.q,quickProject:request.query.quickProject,types:request.query.types?.split(",").filter(Boolean),projects:request.query.projects?.split(",").filter(Boolean),unit:request.query.unit,relations:request.query.relations?.split(",").filter(Boolean),contracts:request.query.contracts?.split(",").filter(Boolean),phone:request.query.phone,email:request.query.email,sort:request.query.sort,direction:request.query.direction,includeArchived});
+      if(request.query.page)return sales.getPage({tenantId,userId:user.id,membershipId:session.workspace.membershipId,page:Number(request.query.page)||1,pageSize:Math.min(100,Math.max(1,Number(request.query.pageSize)||25)),projectId:request.query.projectId,query:request.query.q,quickProject:request.query.quickProject,types:request.query.types?.split(",").filter(Boolean),projects:request.query.projects?.split(",").filter(Boolean),unit:request.query.unit,relations:request.query.relations?.split(",").filter(Boolean),contracts:request.query.contracts?.split(",").filter(Boolean),phone:request.query.phone,email:request.query.email,sort:request.query.sort,direction:request.query.direction,includeArchived});
       return sales.getDirectory({ tenantId,userId:user.id,membershipId:session.workspace.membershipId,includeArchived });
     } catch { return reply.code(401).send({ error:"Neplatné přihlášení" }); }
   });
@@ -255,8 +266,8 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
   app.post<{Params:{partyId:string};Body:{reason:string}}>("/v1/parties/:partyId/archive",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return{outcome:await sales.archiveParty({...context,partyId:request.params.partyId,reason:request.body.reason})};}catch(error){request.log.warn({err:error,correlationId:request.id,partyId:request.params.partyId},"party removal failed");return reply.code(permissionError(error)?403:409).send({error:permissionError(error)?"Nemáte oprávnění klienta odstranit.":"Klienta se nepodařilo odstranit. Zkuste to prosím znovu.",correlationId:request.id});}});
   app.post<{Params:{partyId:string};Body:{activityType:string;note:string}}>("/v1/parties/:partyId/activities",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await sales.addActivity({...context,partyId:request.params.partyId,...request.body}));}catch(error){request.log.warn({err:error,correlationId:request.id,partyId:request.params.partyId},"party activity creation failed");return reply.code(permissionError(error)?403:409).send({error:permissionError(error)?"Nemáte oprávnění přidat aktivitu klienta.":"Aktivitu klienta se nepodařilo uložit.",correlationId:request.id});}});
 
-  app.get("/v1/commercial", async(request,reply)=>{
-    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return commercial.getSnapshot(context);}
+  app.get<{Querystring:{projectId?:string}}>("/v1/commercial", async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return commercial.getSnapshot({...context,projectId:request.query.projectId});}
     catch{return reply.code(401).send({error:"Neplatné přihlášení"});}
   });
 

@@ -3,7 +3,7 @@ import { clientUsesBrowserAdapter, responseAllowsBrowserFallback } from "../lib/
 import { apiFetch } from "../lib/api-client";
 
 export type ClientSnapshot = { clients: ClientRecord[]; unitContexts: Record<string,UnitCommercialContext>; source:"backend-api"|"preview-seed" };
-export type ClientPageInput={page:number;pageSize:number;query?:string;quickProject?:string;types?:string[];projects?:string[];unit?:string;relations?:string[];contracts?:string[];phone?:string;email?:string;sort?:string;direction?:"asc"|"desc";includeArchived?:boolean};
+export type ClientPageInput={page:number;pageSize:number;projectId?:string;query?:string;quickProject?:string;types?:string[];projects?:string[];unit?:string;relations?:string[];contracts?:string[];phone?:string;email?:string;sort?:string;direction?:"asc"|"desc";includeArchived?:boolean};
 export type DuplicateMatch={id:string;name:string;kind:"FO"|"PO";strength:"strong"|"possible";reasons:string[];email:string;phone:string;projects:string[];units:string[]};
 export type ArchiveImpact={units:number;interests:number;salesCases:number;contracts:number;payments:number;tasks:number;handovers:number;documents:number;clientChanges?:number;removalMode?:"delete"|"archive"};
 export type RemovalOutcome={mode:"delete"|"archive";impact:ArchiveImpact};

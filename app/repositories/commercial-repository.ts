@@ -20,7 +20,7 @@ export type CommercialSnapshot = {
 };
 
 export interface CommercialRepository {
-  getSnapshot(signal?: AbortSignal): Promise<CommercialSnapshot>;
+  getSnapshot(signal?: AbortSignal,projectId?:string): Promise<CommercialSnapshot>;
   recordPrice(input: { unitId: string; unitKey?: string; priceType: string; amount: number; validFrom: string; reason: string; approverMembershipId?: string; actorName?: string }): Promise<void>;
   decidePrice(input:{proposalId:string;decision:"approved"|"rejected";reason:string;actorName?:string}):Promise<void>;
   transitionContract(input: { contractId: string; to: string; reason: string; actorName?: string }): Promise<void>;
@@ -36,8 +36,8 @@ type PreviewContractEdit = Pick<ContractRecord, "statusCode" | "state" | "update
 const PREVIEW_CONTRACT_EDITS = "develocrm.contract.edits.v31";
 
 class ApiCommercialRepository implements CommercialRepository {
-  async getSnapshot(signal?: AbortSignal) {
-    const response = await apiFetch("/api/commercial", { signal, cache: "no-store" });
+  async getSnapshot(signal?: AbortSignal,projectId?:string) {
+    const response = await apiFetch(`/api/commercial${projectId?`?projectId=${encodeURIComponent(projectId)}`:""}`, { signal, cache: "no-store" });
     if (!response.ok) throw new Error("Ceny a smlouvy se nepodařilo načíst");
     const snapshot = await response.json() as CommercialSnapshot;
     if (typeof window !== "undefined"&&clientUsesBrowserAdapter()) {

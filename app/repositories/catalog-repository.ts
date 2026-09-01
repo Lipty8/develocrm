@@ -10,10 +10,16 @@ export type CatalogSnapshot = { projects: ProjectRecord[]; units: UnitRecord[]; 
 export type ProjectUpdate={id:string;name:string;location?:string|null;lifecycleStatus:string;managerMembershipId?:string|null;plannedHandoverFrom?:string|null;plannedHandoverTo?:string|null};
 export type ProjectCreate={name:string;code:string;slug:string;location?:string|null;address?:string|null;description?:string|null;constructionStatus:string;plannedHandoverFrom?:string|null;managerMembershipId?:string|null;projectCompany?:string|null;defaultCurrency:string;plannedUnitCount?:number|null;note?:string|null};
 export type UnitUpdate={id:string;structureId?:string|null;layout?:string|null;floorLabel?:string|null;floorNumber?:number|null;areaM2:number;usableAreaM2?:number|null;orientation?:string|null;balconyM2?:number|null;terraceM2?:number|null;gardenM2?:number|null};
+export type InventoryEntityType="unit"|"cellar"|"parking";
+export type InventoryImportRow={rowNumber:number;code?:string;layout?:string;areaM2?:number|null;usableAreaM2?:number|null;floorLabel?:string;orientation?:string;balconyM2?:number|null;terraceM2?:number|null;gardenM2?:number|null;price?:number|null;commercialStatus?:string;constructionStatus?:string;type?:string;unitCode?:string;wallboxCode?:string;wallboxPrice?:number|null};
+export type InventoryImportPreview={rows:Array<InventoryImportRow&{action:"create"|"update"|"skip"|"error";errors:string[]}>;summary:{source:number;created:number;updated:number;skipped:number;errors:number;duplicates:number;unknownUnits:number;missingFields:number}};
 
 export interface CatalogRepository {
-  getCatalog(signal?: AbortSignal): Promise<CatalogSnapshot>;
+  getCatalog(signal?: AbortSignal,projectId?:string): Promise<CatalogSnapshot>;
   createProject(input:ProjectCreate):Promise<{id:string}>;
+  createUnit(projectId:string,input:InventoryImportRow):Promise<void>;
+  previewInventoryImport(projectId:string,input:{entityType:InventoryEntityType;rows:InventoryImportRow[];strategy:"update"|"skip"}):Promise<InventoryImportPreview>;
+  confirmInventoryImport(projectId:string,input:{entityType:InventoryEntityType;rows:InventoryImportRow[];strategy:"update"|"skip";idempotencyKey:string;fileName:string}):Promise<{batchId:string;preview:InventoryImportPreview;replayed:boolean}>;
   updateProject(input:ProjectUpdate): Promise<void>;
   recordProjectConstructionStatus(input:{projectId:string;statusCode:string;note:string}):Promise<void>;
   updateUnit(input:UnitUpdate): Promise<void>;
@@ -25,8 +31,8 @@ export interface CatalogRepository {
 }
 
 export class ApiCatalogRepository implements CatalogRepository {
-  async getCatalog(signal?: AbortSignal): Promise<CatalogSnapshot> {
-    const response = await apiFetch("/api/catalog", { signal, cache: "no-store" });
+  async getCatalog(signal?: AbortSignal,projectId?:string): Promise<CatalogSnapshot> {
+    const response = await apiFetch(`/api/catalog${projectId?`?projectId=${encodeURIComponent(projectId)}`:""}`, { signal, cache: "no-store" });
     if (!response.ok){const payload=await response.json().catch(()=>({})) as {error?:string;correlationId?:string};throw new Error(`${payload.error||"Katalog projektů se nepodařilo načíst"}${payload.correlationId?` · ID chyby ${payload.correlationId}`:""}`);}
     const snapshot=await response.json() as CatalogSnapshot;
     if(typeof window!=="undefined"&&clientUsesBrowserAdapter()) applyPreviewEdits(snapshot);
@@ -47,6 +53,9 @@ export class ApiCatalogRepository implements CatalogRepository {
     const payload=await response.json().catch(()=>({})) as {error?:string;correlationId?:string};
     throw new Error(`${payload.error||"Projekt se nepodařilo založit"}${payload.correlationId?` · ID chyby ${payload.correlationId}`:""}`);
   }
+  async createUnit(projectId:string,input:InventoryImportRow){await requestJson(`/api/catalog/projects/${projectId}/units`,"POST",input);}
+  async previewInventoryImport(projectId:string,input:{entityType:InventoryEntityType;rows:InventoryImportRow[];strategy:"update"|"skip"}){const response=await apiFetch(`/api/catalog/projects/${projectId}/inventory-imports/preview`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});const payload=await response.json().catch(()=>({})) as InventoryImportPreview&{error?:string};if(!response.ok)throw new Error(payload.error??"Import nelze zkontrolovat");return payload;}
+  async confirmInventoryImport(projectId:string,input:{entityType:InventoryEntityType;rows:InventoryImportRow[];strategy:"update"|"skip";idempotencyKey:string;fileName:string}){const response=await apiFetch(`/api/catalog/projects/${projectId}/inventory-imports`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});const payload=await response.json().catch(()=>({})) as {batchId:string;preview:InventoryImportPreview;replayed:boolean;error?:string};if(!response.ok)throw new Error(payload.error??"Import nelze dokončit");return payload;}
   async updateProject(input:ProjectUpdate){
     const preview=await requestJson(`/api/catalog/projects/${input.id}`,"PATCH",input);
     if(preview) storeEdit("projects",input.id,{

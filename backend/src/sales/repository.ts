@@ -2,7 +2,7 @@ import type { Database, SqlClient } from "../database.js";
 
 export type ClientDirectoryItem = {
   id: string; name: string; type: string; kind: "FO" | "PO"; email: string; phone: string;
-  contact: string; units: string[]; projects: string; projectNames: string[]; state: string;
+  contact: string; units: string[]; projects: string; projectIds:string[]; projectNames: string[]; state: string;
   contractStatus: string; initials: string;
   interestHistory: Array<{ date: string; project: string; unit: string; type: string; result: string }>;
   activityHistory:Array<{id:string;type:string;note:string;occurredAt:string;author:string}>;
@@ -248,12 +248,13 @@ export class SalesRepository {
       return {
         clients: partyRows.rows.map((row) => {
           const projectNames = row.projects.map((project) => project.name).sort();
+          const projectIds = row.projects.map((project) => project.id);
           const email = row.email ?? ""; const phone = row.phone ?? "";
           const unitRelations=relationsByParty.get(row.id)??[];
           const bestContract=[...unitRelations].filter(item=>item.contractType).sort((left,right)=>contractTypeRank(right.contractType)-contractTypeRank(left.contractType)||contractStatusRank(right.contractStatus)-contractStatusRank(left.contractStatus))[0];
           return { id: row.id,name: row.display_name,type: row.party_type === "individual" ? "Fyzická osoba" : "Právnická osoba",
             kind: row.party_type === "individual" ? "FO" : "PO",email,phone,contact: [email,phone].filter(Boolean).join(" · "),
-            units: unitRelations.map(item=>item.code),unitRelations,projects: projectNames.join(", "),projectNames,state: row.state,
+            units: unitRelations.map(item=>item.code),unitRelations,projects: projectNames.join(", "),projectIds,projectNames,state: row.state,
             contractStatus: bestContract?.contractType ? `${bestContract.contractType}${bestContract.contractStatus?` · ${contractStatusLabel(bestContract.contractStatus)}`:""}` : "Bez smlouvy",initials: initials(row.display_name),interestHistory: row.interest_history,activityHistory:activitiesByParty.get(row.id)??[],firstName:row.first_name??undefined,lastName:row.last_name??undefined,legalName:row.legal_name??undefined,registrationNumber:row.registration_number??undefined,vatNumber:row.vat_number??undefined,contactPerson:row.contact_person??undefined,address:row.address,updatedAt:row.updated_at,lifecycleStatus:row.lifecycle_status };
         }),
         unitContexts: Object.fromEntries(contextRows.rows.map((row) => [row.unit_code,{ salesCaseId:row.sales_case_id,buyers: row.buyers,buyerHistory:row.buyer_history,interests: row.interests,stage: row.stage,hold: row.hold }])),
@@ -261,9 +262,9 @@ export class SalesRepository {
     });
   }
 
-  async getPage(input:Context&{page:number;pageSize:number;query?:string;quickProject?:string;types?:string[];projects?:string[];unit?:string;relations?:string[];contracts?:string[];phone?:string;email?:string;sort?:string;direction?:"asc"|"desc";includeArchived?:boolean}){
+  async getPage(input:Context&{page:number;pageSize:number;projectId?:string;query?:string;quickProject?:string;types?:string[];projects?:string[];unit?:string;relations?:string[];contracts?:string[];phone?:string;email?:string;sort?:string;direction?:"asc"|"desc";includeArchived?:boolean}){
     const directory=await this.getDirectory(input);const includes=(value:string,query?:string)=>!query||value.toLocaleLowerCase("cs-CZ").includes(query.toLocaleLowerCase("cs-CZ"));
-    const filtered=directory.clients.filter(item=>includes(item.name,input.query)&&(!input.quickProject||input.quickProject==="Všichni"||item.projectNames.includes(input.quickProject))&&(!input.types?.length||input.types.includes(item.kind))&&(!input.projects?.length||input.projects.some(project=>item.projectNames.includes(project)))&&includes(item.units.join(" "),input.unit)&&(!input.relations?.length||input.relations.includes(item.lifecycleStatus==="archived"?"Archivovaný":item.state))&&(!input.contracts?.length||input.contracts.some(status=>item.contractStatus.startsWith(status)))&&includes(item.phone,input.phone)&&includes(item.email,input.email));
+    const filtered=directory.clients.filter(item=>(!input.projectId||item.projectIds.includes(input.projectId))&&includes(item.name,input.query)&&(!input.quickProject||input.quickProject==="Všichni"||item.projectNames.includes(input.quickProject))&&(!input.types?.length||input.types.includes(item.kind))&&(!input.projects?.length||input.projects.some(project=>item.projectNames.includes(project)))&&includes(item.units.join(" "),input.unit)&&(!input.relations?.length||input.relations.includes(item.lifecycleStatus==="archived"?"Archivovaný":item.state))&&(!input.contracts?.length||input.contracts.some(status=>item.contractStatus.startsWith(status)))&&includes(item.phone,input.phone)&&includes(item.email,input.email));
     const value=(item:ClientDirectoryItem)=>input.sort==="updated"?item.updatedAt??"":input.sort==="relation"?item.state:input.sort==="contract"?item.contractStatus:input.sort==="project"?item.projectNames.join(" "):input.sort==="unit"?item.units.join(" "):item.name;
     filtered.sort((left,right)=>{const compared=String(value(left)).localeCompare(String(value(right)),"cs",{numeric:true,sensitivity:"base"});return (input.direction==="desc"?-compared:compared)||left.id.localeCompare(right.id);});
     const total=filtered.length;const page=Math.max(1,Math.min(input.page,Math.max(1,Math.ceil(total/input.pageSize))));return{clients:filtered.slice((page-1)*input.pageSize,page*input.pageSize),total,page,pageSize:input.pageSize};

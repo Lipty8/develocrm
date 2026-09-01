@@ -22,7 +22,7 @@ type BackendCatalog = {
     updatedAt:string;
     accessories: Array<{ id:string; assignmentId:string; code: string; type: string; category: string; areaM2: number | null; relation?:string|null; amount:number; amountNet:number|null; currency:string }>;
   }>;
-  accessories:Array<{id:string;assignmentId?:string;code:string;type:string;category:string;areaM2:number|null;projectId:string;projectName:string;available:boolean;archived?:boolean;assignedUnitId?:string|null;assignedUnitCode?:string|null;assignedUnitStatus?:string|null;assignedClient?:string|null;assignmentHistory?:Array<{assignmentId:string;unitId:string;unitCode:string;validFrom:string;validTo:string|null;assignedBy:string|null}>;relation?:string|null;amount:number;amountNet:number|null;currency:string}>;
+  accessories:Array<{id:string;assignmentId?:string;code:string;type:string;category:string;subtype?:string|null;location?:string|null;areaM2:number|null;projectId:string;projectName:string;available:boolean;archived?:boolean;assignedUnitId?:string|null;assignedUnitCode?:string|null;assignedUnitStatus?:string|null;assignedClient?:string|null;assignmentHistory?:Array<{assignmentId:string;unitId:string;unitCode:string;validFrom:string;validTo:string|null;assignedBy:string|null}>;relation?:string|null;amount:number;amountNet:number|null;currency:string}>;
   memberships:Array<{id:string;name:string}>;
   structures:Array<{id:string;projectId:string;projectName:string;name:string;kind:string}>;
 };
@@ -31,15 +31,18 @@ export async function GET(request: Request) {
   const backendUrl = process.env.DEVELOCRM_API_URL?.replace(/\/$/, "");
   const tenantId = process.env.DEVELOCRM_TENANT_ID;
   const authorization = request.headers.get("authorization");
+  const incoming=new URL(request.url).searchParams;const projectId=incoming.get("projectId");
   if (!backendUrl || !tenantId || !authorization) {
     if (serverDataMode() !== "browser") {
       return apiUnavailable("Katalog není dostupný. Aplikace není připojena ke společnému backendu.");
     }
-    const units=previewUnits.map(unit=>({...unit,projectCode:previewProjects.find(project=>project.name===unit.project)?.code,accessories:previewCatalogMeta.accessories.filter(item=>item.project===unit.project&&item.assignmentId?.includes(`-${unit.id}-`))}));
-    return browserFallbackResponse({ projects: previewProjects, units, ...previewCatalogMeta, source: "preview-seed" } satisfies CatalogSnapshot);
+    const scopedProjects=projectId?previewProjects.filter(project=>(project.backendId??project.code)===projectId):previewProjects;
+    const scopedNames=new Set(scopedProjects.map(project=>project.name));
+    const units=previewUnits.filter(unit=>scopedNames.has(unit.project)).map(unit=>({...unit,projectCode:scopedProjects.find(project=>project.name===unit.project)?.code,accessories:previewCatalogMeta.accessories.filter(item=>item.project===unit.project&&item.assignmentId?.includes(`-${unit.id}-`))}));
+    return browserFallbackResponse({ projects: scopedProjects, units, accessories:previewCatalogMeta.accessories.filter(item=>scopedNames.has(item.project)),memberships:previewCatalogMeta.memberships,structures:previewCatalogMeta.structures.filter(item=>scopedProjects.some(project=>(project.backendId??project.code)===item.projectId||project.name===item.project)), source: "preview-seed" } satisfies CatalogSnapshot);
   }
 
-  const response = await fetch(`${backendUrl}/v1/catalog`, {
+  const response = await fetch(`${backendUrl}/v1/catalog${incoming.size?`?${incoming}`:""}`, {
     headers: { authorization, "x-tenant-id": tenantId }, cache: "no-store",
   });
   if (!response.ok) return Response.json({ error: "Backend katalog není dostupný" }, { status: response.status });

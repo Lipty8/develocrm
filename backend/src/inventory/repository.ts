@@ -38,7 +38,7 @@ export class InventoryRepository {
     });
   }
 
-  async getCatalog(input: { tenantId: string; userId: string; membershipId: string }) {
+  async getCatalog(input: { tenantId: string; userId: string; membershipId: string; projectId?:string }) {
     return this.database.withContext({ tenantId: input.tenantId, userId: input.userId }, async (client) => {
       const projects = await client.query<{
         id: string; code: string; name: string; location: string | null; lifecycle_status: string;
@@ -67,9 +67,10 @@ export class InventoryRepository {
                  GROUP BY unit.commercial_status) grouped
          ) status_counts ON true
          WHERE project.tenant_id = $1 AND project.archived_at IS NULL
+           AND ($3::uuid IS NULL OR project.id=$3)
            AND app.has_project_permission(project.tenant_id, $2, project.id, 'project.read')
          ORDER BY project.name`,
-        [input.tenantId, input.membershipId],
+        [input.tenantId, input.membershipId,input.projectId??null],
       );
       const units = await client.query<{
         id: string; code: string; project_id: string; project_name: string; structure_id:string|null; structure_name: string | null;
@@ -100,12 +101,13 @@ export class InventoryRepository {
              AND assignment.valid_from <= now() AND (assignment.valid_to IS NULL OR assignment.valid_to > now())
          ) accessory_rows ON true
          WHERE unit.tenant_id=$1 AND unit.archived_at IS NULL AND project.archived_at IS NULL
+           AND ($3::uuid IS NULL OR unit.project_id=$3)
            AND app.has_project_permission(unit.tenant_id, $2, unit.project_id, 'unit.read')
          ORDER BY project.name, unit.code`,
-        [input.tenantId, input.membershipId],
+        [input.tenantId, input.membershipId,input.projectId??null],
       );
-      const accessories=await client.query<{id:string;code:string;project_id:string;project_name:string;type:string;category:string;area_m2:string|null;available:boolean;archived:boolean;relation:string|null;amount:number;amount_net:number|null;currency:string;assignment_id:string|null;assigned_unit_id:string|null;assigned_unit_code:string|null;assigned_unit_status:string|null;assigned_client:string|null;assignment_history:Array<{assignmentId:string;unitId:string;unitCode:string;validFrom:string;validTo:string|null;assignedBy:string|null}>}>(
-        `SELECT accessory.id,accessory.code,accessory.project_id,project.name project_name,type.name type,type.category,accessory.area_m2::text,
+      const accessories=await client.query<{id:string;code:string;project_id:string;project_name:string;type:string;category:string;subtype:string|null;location:string|null;area_m2:string|null;available:boolean;archived:boolean;relation:string|null;amount:number;amount_net:number|null;currency:string;assignment_id:string|null;assigned_unit_id:string|null;assigned_unit_code:string|null;assigned_unit_status:string|null;assigned_client:string|null;assignment_history:Array<{assignmentId:string;unitId:string;unitCode:string;validFrom:string;validTo:string|null;assignedBy:string|null}>}>(
+        `SELECT accessory.id,accessory.code,accessory.project_id,project.name project_name,COALESCE(accessory.description,type.name) type,type.category,accessory.description subtype,accessory.floor_label location,accessory.area_m2::text,
           active_assignment.id IS NULL AND accessory.archived_at IS NULL available,accessory.archived_at IS NOT NULL archived,
           active_assignment.id assignment_id,active_assignment.unit_id assigned_unit_id,
           active_assignment.unit_code assigned_unit_code,active_assignment.commercial_status assigned_unit_status,buyers.names assigned_client,
@@ -151,9 +153,10 @@ export class InventoryRepository {
            LEFT JOIN users actor_user ON actor_user.id=actor.user_id
            WHERE assignment.tenant_id=accessory.tenant_id AND assignment.accessory_id=accessory.id
          ) history ON true
-         WHERE accessory.tenant_id=$1 AND project.archived_at IS NULL AND app.has_project_permission(accessory.tenant_id,$2,accessory.project_id,'accessory.read') ORDER BY project.name,type.category,accessory.code`,[input.tenantId,input.membershipId]);
+         WHERE accessory.tenant_id=$1 AND project.archived_at IS NULL AND app.has_project_permission(accessory.tenant_id,$2,accessory.project_id,'accessory.read')
+           AND ($3::uuid IS NULL OR accessory.project_id=$3) ORDER BY project.name,type.category,accessory.code`,[input.tenantId,input.membershipId,input.projectId??null]);
       const memberships=await client.query<{id:string;name:string}>(`SELECT membership.id,user_row.display_name name FROM tenant_memberships membership JOIN users user_row ON user_row.id=membership.user_id WHERE membership.tenant_id=$1 AND membership.status='active' ORDER BY user_row.display_name`,[input.tenantId]);
-      const structures=await client.query<{id:string;project_id:string;project_name:string;name:string;kind:string}>(`SELECT structure.id,structure.project_id,project.name project_name,structure.name,structure.kind FROM project_structures structure JOIN projects project ON project.tenant_id=structure.tenant_id AND project.id=structure.project_id WHERE structure.tenant_id=$1 AND structure.archived_at IS NULL AND project.archived_at IS NULL AND app.has_project_permission(structure.tenant_id,$2,structure.project_id,'project.read') ORDER BY project.name,structure.sort_order,structure.name`,[input.tenantId,input.membershipId]);
+      const structures=await client.query<{id:string;project_id:string;project_name:string;name:string;kind:string}>(`SELECT structure.id,structure.project_id,project.name project_name,structure.name,structure.kind FROM project_structures structure JOIN projects project ON project.tenant_id=structure.tenant_id AND project.id=structure.project_id WHERE structure.tenant_id=$1 AND structure.archived_at IS NULL AND project.archived_at IS NULL AND app.has_project_permission(structure.tenant_id,$2,structure.project_id,'project.read') AND ($3::uuid IS NULL OR structure.project_id=$3) ORDER BY project.name,structure.sort_order,structure.name`,[input.tenantId,input.membershipId,input.projectId??null]);
       return {
         projects: projects.rows.map((row): CatalogProject => ({
           id: row.id, code: row.code, name: row.name, location: row.location,
@@ -170,7 +173,7 @@ export class InventoryRepository {
           gardenM2: row.garden_m2 === null ? null : Number(row.garden_m2),
           floorLabel: row.floor_label, orientation: row.orientation, commercialStatus: row.commercial_status,
           constructionStatus: row.construction_status,updatedAt:row.updated_at, accessories: row.accessories,
-        })),accessories:accessories.rows.map(row=>({id:row.id,assignmentId:row.assignment_id??undefined,code:row.code,projectId:row.project_id,projectName:row.project_name,type:row.type,category:row.category,areaM2:row.area_m2===null?null:Number(row.area_m2),available:row.available,archived:row.archived,assignedUnitId:row.assigned_unit_id,assignedUnitCode:row.assigned_unit_code,assignedUnitStatus:row.assigned_unit_status,assignedClient:row.assigned_client,assignmentHistory:row.assignment_history,relation:row.relation,amount:row.amount,amountNet:row.amount_net,currency:row.currency})),memberships:memberships.rows,structures:structures.rows.map(row=>({id:row.id,projectId:row.project_id,projectName:row.project_name,name:row.name,kind:row.kind})),
+        })),accessories:accessories.rows.map(row=>({id:row.id,assignmentId:row.assignment_id??undefined,code:row.code,projectId:row.project_id,projectName:row.project_name,type:row.type,category:row.category,subtype:row.subtype,location:row.location,areaM2:row.area_m2===null?null:Number(row.area_m2),available:row.available,archived:row.archived,assignedUnitId:row.assigned_unit_id,assignedUnitCode:row.assigned_unit_code,assignedUnitStatus:row.assigned_unit_status,assignedClient:row.assigned_client,assignmentHistory:row.assignment_history,relation:row.relation,amount:row.amount,amountNet:row.amount_net,currency:row.currency})),memberships:memberships.rows,structures:structures.rows.map(row=>({id:row.id,projectId:row.project_id,projectName:row.project_name,name:row.name,kind:row.kind})),
       };
     });
   }
