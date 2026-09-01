@@ -22,6 +22,26 @@ test("plánování předání je auditované a dovolí jen jedno otevřené pře
   await db.close();
 });
 
+test("předání v2 je idempotentní, zrušení dovolí nový termín a dokončení atomicky předá jednotku",async()=>{
+  const db=await migrated();const normalized=normalizeBootstrapInput({entraTenantId:"10000000-0000-4000-8000-000000000052",adminOid:"20000000-0000-4000-8000-000000000052",adminEmail:"handover.admin@example.test",adminName:"Handover Admin",workspaceName:"Handover workspace",workspaceId:"30000000-0000-4000-8000-000000000052"});const ids=bootstrapIds(normalized);const client=clientFor(db);await bootstrapPilotWorkspace(client,{...normalized,...ids});const source=await readFile(new URL("../seeds/0004_pilot_rezidence_dejvice.sql",import.meta.url),"utf8");await importDejvice(client,source,{tenantId:ids.tenantId,membershipId:ids.membershipId,dryRun:false});
+  await db.exec(`SELECT set_config('app.tenant_id','${ids.tenantId}',false);SELECT set_config('app.user_id','${ids.userId}',false);`);
+  const context=(await db.query<{unit_id:string;case_id:string;project_id:string}>("SELECT unit.id unit_id,sales_case.id case_id,unit.project_id FROM sales_cases sales_case JOIN units unit ON unit.tenant_id=sales_case.tenant_id AND unit.id=sales_case.unit_id WHERE sales_case.tenant_id=$1 AND sales_case.status='active' ORDER BY sales_case.opened_at LIMIT 1",[ids.tenantId])).rows[0];
+  const first=(await db.query<{id:string}>("SELECT app.schedule_unit_handover_v2($1,$2,now()+interval '7 days',$3,'Kancelář projektu','První termín','handover-test-1',$3) id",[ids.tenantId,context.unit_id,ids.membershipId])).rows[0].id;
+  const retry=(await db.query<{id:string}>("SELECT app.schedule_unit_handover_v2($1,$2,now()+interval '7 days',$3,'Kancelář projektu','První termín','handover-test-1',$3) id",[ids.tenantId,context.unit_id,ids.membershipId])).rows[0].id;assert.equal(retry,first);
+  await assert.rejects(db.query("SELECT app.schedule_unit_handover_v2($1,$2,now()+interval '8 days',$3,NULL,NULL,'handover-test-conflict',$3)",[ids.tenantId,context.unit_id,ids.membershipId]),/active handover/i);
+  await db.query("SELECT app.update_unit_handover_v2($1,$2,now()+interval '7 days',$3,'cancelled',0,NULL,NULL,'Zrušený test',NULL,$3)",[ids.tenantId,first,ids.membershipId]);
+  const second=(await db.query<{id:string}>("SELECT app.schedule_unit_handover_v2($1,$2,now()+interval '9 days',$3,'Jednotka','Nový termín','handover-test-2',$3) id",[ids.tenantId,context.unit_id,ids.membershipId])).rows[0].id;assert.notEqual(second,first);
+  await db.exec("SELECT set_config('app.commercial_status_command','on',false)");await db.query("UPDATE units SET commercial_status='sold' WHERE tenant_id=$1 AND id=$2",[ids.tenantId,context.unit_id]);
+  await db.query("SELECT app.update_unit_handover_v2($1,$2,now()+interval '9 days',$3,'completed',100,NULL,'Jednotka','Dokončeno',now(),$3)",[ids.tenantId,second,ids.membershipId]);
+  assert.equal((await db.query<{status:string;completed_at:string|null}>("SELECT status,completed_at FROM unit_handovers WHERE tenant_id=$1 AND id=$2",[ids.tenantId,second])).rows[0].status,"completed");
+  assert.equal((await db.query<{commercial_status:string}>("SELECT commercial_status FROM units WHERE tenant_id=$1 AND id=$2",[ids.tenantId,context.unit_id])).rows[0].commercial_status,"handed_over");
+  assert.equal((await db.query<{current_stage:string}>("SELECT current_stage FROM sales_cases WHERE tenant_id=$1 AND id=$2",[ids.tenantId,context.case_id])).rows[0].current_stage,"handover");
+  const eventCount=(await db.query<{count:number}>("SELECT count(*)::int count FROM outbox_events WHERE tenant_id=$1 AND aggregate_id=$2 AND event_type='handover.completed.v1'",[ids.tenantId,second])).rows[0].count;
+  await db.query("SELECT app.update_unit_handover_v2($1,$2,now()+interval '9 days',$3,'completed',100,NULL,'Jednotka','Dokončeno',now(),$3)",[ids.tenantId,second,ids.membershipId]);
+  assert.equal((await db.query<{count:number}>("SELECT count(*)::int count FROM outbox_events WHERE tenant_id=$1 AND aggregate_id=$2 AND event_type='handover.completed.v1'",[ids.tenantId,second])).rows[0].count,eventCount);
+  await db.close();
+});
+
 test("handover repository používá skutečný název role účastníka a kanonické oprávnění",async()=>{const source=await readFile(new URL("../src/handovers/repository.ts",import.meta.url),"utf8");assert.match(source,/participant\.participant_role/);assert.doesNotMatch(source,/participant\.role\b/);assert.match(source,/handovers\.read/);});
 test("klientský endpoint stránkuje a zachovává kombinované filtry na backendu",async()=>{const repository=await readFile(new URL("../src/sales/repository.ts",import.meta.url),"utf8");const app=await readFile(new URL("../src/app.ts",import.meta.url),"utf8");assert.match(repository,/async getPage/);assert.match(repository,/total,page,pageSize/);assert.match(app,/request\.query\.page/);assert.match(app,/types:request\.query\.types/);});
 
