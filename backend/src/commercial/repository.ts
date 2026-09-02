@@ -4,7 +4,7 @@ import { contractStatusLabel, recommendedContractAction } from "../shared/contra
 export type PriceItem={id:string;unit:string;type:string;amount:number;amountNet?:number;currency:string;validFrom:string;validTo:string|null;reason:string;author:string;approver:string|null};
 export type ContractHistoryItem={id:string;fromStatus:string|null;toStatus:string;occurredAt:string;actor:string;note:string;source:"manual"|"automation"|"signature"|"import"};
 export type ContractItem={id:string;salesCaseId:string;unit:string;projectId:string;project:string;client:string;type:string;typeCode:string;state:string;statusCode:string;updated:string;updatedAt:string;owner:string;action:string;title:string;reference:string;parentContractId:string|null;parentReference:string|null;assignmentEffectiveAt:string|null;history:ContractHistoryItem[];parties:Array<{id:string;partyId:string;name:string;role:string;signatureStatus:string;isCurrent:boolean;effectiveFrom:string;effectiveTo:string|null;assignmentReason:string|null;isPrimaryBuyer:boolean;ownershipShare:number|null}>;versions:Array<{id:string;number:number;name:string;status:string;basedOnVersionId:string|null;source:string;createdAt:string;signedAt:string|null}>};
-export type CommercialSnapshot={currentPrices:Record<string,number>;priceBreakdowns:Record<string,{unitPrice:number;accessoryPrice:number;totalPrice:number}>;priceHistories:Record<string,PriceItem[]>;priceProposals:Array<{id:string;unit:string;priceType:string;currentAmount:number;proposedAmount:number;validFrom:string;reason:string;status:string;proposer:string;decider:string|null}>;contracts:ContractItem[];contractSummary:Record<string,number>};
+export type CommercialSnapshot={currentPrices:Record<string,number>;priceBreakdowns:Record<string,{unitPrice:number|null;accessoryPrice:number;totalPrice:number|null}>;priceHistories:Record<string,PriceItem[]>;priceProposals:Array<{id:string;unit:string;priceType:string;currentAmount:number;proposedAmount:number;validFrom:string;reason:string;status:string;proposer:string;decider:string|null}>;contracts:ContractItem[];contractSummary:Record<string,number>};
 type Context={tenantId:string;userId:string;membershipId:string};
 
 export class CommercialRepository {
@@ -71,13 +71,23 @@ export class CommercialRepository {
       const priceHistories:Record<string,PriceItem[]>={};
       for(const row of prices.rows)(priceHistories[row.unit]??=[]).push({id:row.id,unit:row.unit,type:row.type,amount:row.amount,...(row.amount_net===null?{}:{amountNet:row.amount_net}),currency:row.currency,validFrom:row.valid_from,validTo:row.valid_to,reason:row.reason,author:row.author,approver:row.approver});
       const hasAccessoryPriceProjection=Boolean((await client.query("SELECT 1 FROM pg_proc procedure JOIN pg_namespace namespace ON namespace.oid=procedure.pronamespace WHERE namespace.nspname='app' AND procedure.proname='current_unit_accessory_price'")).rowCount);
-      const priceBreakdowns:Record<string,{unitPrice:number;accessoryPrice:number;totalPrice:number}>=Object.fromEntries(await Promise.all(Object.keys(priceHistories).map(async unit=>{
-        const unitId=(await client.query<{id:string}>("SELECT id FROM units WHERE tenant_id=$1 AND code=$2 AND archived_at IS NULL",[input.tenantId,unit])).rows[0]?.id;
-        const breakdown=unitId?(await client.query<{unit_price:number;accessory_price:number;total_price:number}>(hasAccessoryPriceProjection?`SELECT app.current_unit_price($1,$2)::float8 unit_price,
-          app.current_unit_accessory_price($1,$2)::float8 accessory_price,app.current_unit_sales_price($1,$2)::float8 total_price`:`SELECT app.current_unit_price($1,$2)::float8 unit_price,0::float8 accessory_price,app.current_unit_price($1,$2)::float8 total_price`,[input.tenantId,unitId])).rows[0]:{unit_price:0,accessory_price:0,total_price:0};
-        return [unit,{unitPrice:breakdown?.unit_price??0,accessoryPrice:breakdown?.accessory_price??0,totalPrice:breakdown?.total_price??0}];
-      })));
-      const currentPrices=Object.fromEntries(Object.entries(priceBreakdowns).map(([unit,breakdown])=>[unit,breakdown.totalPrice]));
+      const breakdownRows=await client.query<{unit:string;unit_price:number|null;accessory_price:number;total_price:number|null}>(hasAccessoryPriceProjection
+        ?`SELECT unit.code unit,
+            CASE WHEN EXISTS(SELECT 1 FROM unit_price_history price WHERE price.tenant_id=unit.tenant_id AND price.unit_id=unit.id AND price.valid_from<=now()) THEN app.current_unit_price(unit.tenant_id,unit.id,now())::float8 ELSE NULL END unit_price,
+            app.current_unit_accessory_price(unit.tenant_id,unit.id,now())::float8 accessory_price,
+            CASE WHEN EXISTS(SELECT 1 FROM unit_price_history price WHERE price.tenant_id=unit.tenant_id AND price.unit_id=unit.id AND price.valid_from<=now()) THEN app.current_unit_sales_price(unit.tenant_id,unit.id,now())::float8 ELSE NULL END total_price
+          FROM units unit JOIN projects project ON project.tenant_id=unit.tenant_id AND project.id=unit.project_id
+          WHERE unit.tenant_id=$1 AND unit.archived_at IS NULL AND project.archived_at IS NULL
+            AND app.has_project_permission(unit.tenant_id,$2,unit.project_id,'price.read') AND ($3::uuid IS NULL OR unit.project_id=$3)`
+        :`SELECT unit.code unit,
+            CASE WHEN EXISTS(SELECT 1 FROM unit_price_history price WHERE price.tenant_id=unit.tenant_id AND price.unit_id=unit.id AND price.valid_from<=now()) THEN app.current_unit_price(unit.tenant_id,unit.id,now())::float8 ELSE NULL END unit_price,
+            0::float8 accessory_price,
+            CASE WHEN EXISTS(SELECT 1 FROM unit_price_history price WHERE price.tenant_id=unit.tenant_id AND price.unit_id=unit.id AND price.valid_from<=now()) THEN app.current_unit_price(unit.tenant_id,unit.id,now())::float8 ELSE NULL END total_price
+          FROM units unit JOIN projects project ON project.tenant_id=unit.tenant_id AND project.id=unit.project_id
+          WHERE unit.tenant_id=$1 AND unit.archived_at IS NULL AND project.archived_at IS NULL
+            AND app.has_project_permission(unit.tenant_id,$2,unit.project_id,'price.read') AND ($3::uuid IS NULL OR unit.project_id=$3)`,[input.tenantId,input.membershipId,input.projectId??null]);
+      const priceBreakdowns=Object.fromEntries(breakdownRows.rows.map(row=>[row.unit,{unitPrice:row.unit_price,accessoryPrice:row.accessory_price,totalPrice:row.total_price}]));
+      const currentPrices=Object.fromEntries(breakdownRows.rows.filter(row=>row.total_price!==null).map(row=>[row.unit,row.total_price as number]));
       const mapped=contracts.rows.map(row=>({id:row.id,salesCaseId:row.sales_case_id,unit:row.unit,projectId:row.project_id,project:row.project,client:row.parties.filter(p=>p.isCurrent&&(['buyer','co_buyer','assignee'].includes(p.role))).map(p=>p.name).join(' a '),type:typeLabel(row.type),typeCode:row.type,state:contractStatusLabel(row.status),statusCode:row.status,updated:row.updated_at,updatedAt:row.updated_at,owner:row.owner.split(' ')[0]??row.owner,action:recommendedContractAction({status:row.status,type:row.type}).label,title:row.title,reference:row.reference,parentContractId:row.parent_contract_id,parentReference:row.parent_reference,assignmentEffectiveAt:row.assignment_effective_at,history:row.history,parties:row.parties,versions:row.versions}));
       const contractSummary=contracts.rows.reduce<Record<string,number>>((sum,row)=>(sum[row.status]=(sum[row.status]??0)+1,sum),{});
       return {currentPrices,priceBreakdowns,priceHistories,priceProposals:proposals.rows.map(row=>({id:row.id,unit:row.unit,priceType:row.price_type,currentAmount:row.current_amount,proposedAmount:row.proposed_amount,validFrom:row.valid_from,reason:row.reason,status:row.status,proposer:row.proposer,decider:row.decider})),contracts:mapped,contractSummary};

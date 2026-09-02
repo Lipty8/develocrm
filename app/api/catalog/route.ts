@@ -18,7 +18,7 @@ type BackendCatalog = {
     id: string; code: string; projectId:string; structureId:string|null; projectName: string; structureName: string | null; layout: string | null;
     areaM2: number; usableAreaM2: number | null; floorLabel: string | null; orientation: string | null;
     balconyM2: number | null; terraceM2: number | null; gardenM2: number | null; commercialStatus: string;
-    constructionStatus: string | null;
+    constructionStatus: string | null; unitPrice?:number|null; accessoryPrice?:number; totalPrice?:number|null;
     updatedAt:string;
     accessories: Array<{ id:string; assignmentId:string; code: string; type: string; category: string; areaM2: number | null; relation?:string|null; amount:number; amountNet:number|null; currency:string }>;
   }>;
@@ -26,6 +26,12 @@ type BackendCatalog = {
   memberships:Array<{id:string;name:string}>;
   structures:Array<{id:string;projectId:string;projectName:string;name:string;kind:string}>;
 };
+
+type BackendPriceBreakdowns = Record<string, {
+  unitPrice: number | null;
+  accessoryPrice: number;
+  totalPrice: number | null;
+}>;
 
 export async function GET(request: Request) {
   const backendUrl = process.env.DEVELOCRM_API_URL?.replace(/\/$/, "");
@@ -42,12 +48,21 @@ export async function GET(request: Request) {
     return browserFallbackResponse({ projects: scopedProjects, units, accessories:previewCatalogMeta.accessories.filter(item=>scopedNames.has(item.project)),memberships:previewCatalogMeta.memberships,structures:previewCatalogMeta.structures.filter(item=>scopedProjects.some(project=>(project.backendId??project.code)===item.projectId||project.name===item.project)), source: "preview-seed" } satisfies CatalogSnapshot);
   }
 
-  const response = await fetch(`${backendUrl}/v1/catalog${incoming.size?`?${incoming}`:""}`, {
-    headers: { authorization, "x-tenant-id": tenantId }, cache: "no-store",
-  });
+  const backendHeaders = { authorization, "x-tenant-id": tenantId };
+  const [response, commercialResponse] = await Promise.all([
+    fetch(`${backendUrl}/v1/catalog${incoming.size?`?${incoming}`:""}`, {
+      headers: backendHeaders, cache: "no-store",
+    }),
+    fetch(`${backendUrl}/v1/commercial${incoming.size?`?${incoming}`:""}`, {
+      headers: backendHeaders, cache: "no-store",
+    }),
+  ]);
   if (!response.ok) return Response.json({ error: "Backend katalog není dostupný" }, { status: response.status });
   const catalog = await response.json() as BackendCatalog;
-  return Response.json(adaptBackendCatalog(catalog));
+  const commercial = commercialResponse.ok
+    ? await commercialResponse.json() as {priceBreakdowns?: BackendPriceBreakdowns}
+    : null;
+  return Response.json(adaptBackendCatalog(catalog, commercial?.priceBreakdowns));
 }
 
 export async function PATCH(request: Request, context: { params: Promise<{ projectId?: string; unitId?: string }> }) {
@@ -64,7 +79,7 @@ async function forwardMutation(request: Request, context: {params: Promise<Recor
   return forwardBackendMutation(request,{method,target,unavailableMessage:"Editace vyžaduje připojený backend"});
 }
 
-function adaptBackendCatalog(catalog: BackendCatalog): CatalogSnapshot {
+function adaptBackendCatalog(catalog: BackendCatalog, priceBreakdowns?: BackendPriceBreakdowns): CatalogSnapshot {
   const projectStructures = new Map<string, Set<string>>();
   for (const unit of catalog.units) {
     if (!unit.structureName) continue;
@@ -89,10 +104,14 @@ function adaptBackendCatalog(catalog: BackendCatalog): CatalogSnapshot {
     };
   });
   const units = catalog.units.map((unit): UnitRecord => {
+    const legacyBreakdown = priceBreakdowns?.[unit.code];
+    const unitPrice = unit.unitPrice ?? legacyBreakdown?.unitPrice ?? null;
+    const accessoryPrice = unit.accessoryPrice ?? legacyBreakdown?.accessoryPrice ?? 0;
+    const totalPrice = unit.totalPrice ?? legacyBreakdown?.totalPrice ?? null;
     return {
       backendId:unit.id,projectBackendId:unit.projectId,projectCode:catalog.projects.find(project=>project.id===unit.projectId)?.code,structureId:unit.structureId,id: unit.code, project: unit.projectName, building: unit.structureName ?? "Bez zařazení",
       layout: unit.layout ?? "—", area: unit.areaM2, floor: unit.floorLabel ?? "—",
-      orientation: unit.orientation ?? "—", price: 0,
+      orientation: unit.orientation ?? "—", price: totalPrice ?? 0,basePrice:unitPrice,accessoryPrice,priceConfigured:unitPrice!==null,
       usableArea: unit.usableAreaM2 ?? undefined, balcony: unit.balconyM2, terrace: unit.terraceM2, garden: unit.gardenM2,
       status: unitCommercialStatusLabel(unit.commercialStatus) as UnitStatus, construction: constructionLabel(unit.constructionStatus),
       updatedAt:unit.updatedAt,

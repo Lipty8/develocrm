@@ -15,8 +15,9 @@ export type UnitRecord = {
   floor: string;
   orientation: string;
   price: number;
-  basePrice?: number;
+  basePrice?: number | null;
   accessoryPrice?: number;
+  priceConfigured?: boolean;
   status: UnitStatus;
   construction: string;
   handover: string;

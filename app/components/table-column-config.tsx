@@ -14,7 +14,13 @@ export type TableColumnDefinition = {
   label: string;
   defaultVisible?: boolean;
   required?: boolean;
+  align?: "start" | "center";
 };
+
+export function tableColumnClassName(columns: readonly TableColumnDefinition[], id: string, extra = "") {
+  const alignment = columns.find((column) => column.id === id)?.align ?? "start";
+  return [`table-column-${alignment}`, extra].filter(Boolean).join(" ");
+}
 
 type TableColumnState = {
   visibleIds: string[];

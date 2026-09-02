@@ -12,6 +12,7 @@ export type CatalogUnit = {
   layout: string | null; areaM2: number; usableAreaM2: number | null; floorLabel: string | null; orientation: string | null;
   balconyM2: number | null; terraceM2: number | null; gardenM2: number | null;
   commercialStatus: string; constructionStatus: string | null;
+  unitPrice: number | null; accessoryPrice: number; totalPrice: number | null;
   updatedAt: string;
   accessories: Array<{ id: string; assignmentId:string; code: string; type: string; category: string; areaM2: number | null; relation:string|null; amount:number; amountNet:number|null; currency:string }>;
 };
@@ -72,22 +73,41 @@ export class InventoryRepository {
          ORDER BY project.name`,
         [input.tenantId, input.membershipId,input.projectId??null],
       );
+      const pricingProjection = await client.query<{available:boolean}>(
+        `SELECT to_regclass('unit_price_history') IS NOT NULL
+           AND to_regprocedure('app.current_unit_price(uuid,uuid,timestamptz)') IS NOT NULL
+           AND to_regprocedure('app.current_unit_accessory_price(uuid,uuid,timestamptz)') IS NOT NULL
+           AND to_regprocedure('app.current_unit_sales_price(uuid,uuid,timestamptz)') IS NOT NULL AS available`,
+      );
+      const priceColumns = pricingProjection.rows[0]?.available
+        ? `CASE WHEN current_price.configured THEN app.current_unit_price(unit.tenant_id,unit.id,now())::float8 ELSE NULL END unit_price,
+                CASE WHEN app.has_project_permission(unit.tenant_id,$2,unit.project_id,'price.read') THEN app.current_unit_accessory_price(unit.tenant_id,unit.id,now())::float8 ELSE 0 END accessory_price,
+                CASE WHEN current_price.configured THEN app.current_unit_sales_price(unit.tenant_id,unit.id,now())::float8 ELSE NULL END total_price,`
+        : `NULL::float8 unit_price,0::float8 accessory_price,NULL::float8 total_price,`;
+      const priceJoin = pricingProjection.rows[0]?.available
+        ? `LEFT JOIN LATERAL (
+           SELECT app.has_project_permission(unit.tenant_id,$2,unit.project_id,'price.read')
+             AND EXISTS(SELECT 1 FROM unit_price_history price WHERE price.tenant_id=unit.tenant_id AND price.unit_id=unit.id AND price.valid_from<=now()) configured
+         ) current_price ON true`
+        : "";
       const units = await client.query<{
         id: string; code: string; project_id: string; project_name: string; structure_id:string|null; structure_name: string | null;
         layout: string | null; area_m2: string; usable_area_m2: string | null; floor_label: string | null; orientation: string | null;
         balcony_m2: string | null; terrace_m2: string | null; garden_m2: string | null;
-        commercial_status: string; construction_status: string | null; updated_at:string; accessories: CatalogUnit["accessories"];
+        commercial_status: string; construction_status: string | null; unit_price:number|null; accessory_price:number; total_price:number|null; updated_at:string; accessories: CatalogUnit["accessories"];
       }>(
         `SELECT unit.id, unit.code, unit.project_id,unit.structure_id, project.name AS project_name,
                 structure.name AS structure_name, unit.layout, unit.area_m2::text, unit.usable_area_m2::text,
                 unit.floor_label, unit.orientation, unit.balcony_m2::text, unit.terrace_m2::text, unit.garden_m2::text,
                 unit.commercial_status,unit.updated_at,
+                ${priceColumns}
                 app.effective_unit_construction_status(unit.tenant_id, unit.id) AS construction_status,
                 COALESCE(accessory_rows.items, '[]'::jsonb) AS accessories
          FROM units unit
          JOIN projects project ON project.tenant_id=unit.tenant_id AND project.id=unit.project_id
          LEFT JOIN project_structures structure
            ON structure.tenant_id=unit.tenant_id AND structure.project_id=unit.project_id AND structure.id=unit.structure_id
+         ${priceJoin}
          LEFT JOIN LATERAL (
            SELECT jsonb_agg(jsonb_build_object('id', accessory.id,'assignmentId',assignment.id, 'code', accessory.code,
              'type', type.name, 'category', type.category, 'areaM2', accessory.area_m2,'relation',relation.target_code,
@@ -172,7 +192,7 @@ export class InventoryRepository {
           terraceM2: row.terrace_m2 === null ? null : Number(row.terrace_m2),
           gardenM2: row.garden_m2 === null ? null : Number(row.garden_m2),
           floorLabel: row.floor_label, orientation: row.orientation, commercialStatus: row.commercial_status,
-          constructionStatus: row.construction_status,updatedAt:row.updated_at, accessories: row.accessories,
+          constructionStatus: row.construction_status,unitPrice:row.unit_price,accessoryPrice:row.accessory_price,totalPrice:row.total_price,updatedAt:row.updated_at, accessories: row.accessories,
         })),accessories:accessories.rows.map(row=>({id:row.id,assignmentId:row.assignment_id??undefined,code:row.code,projectId:row.project_id,projectName:row.project_name,type:row.type,category:row.category,subtype:row.subtype,location:row.location,areaM2:row.area_m2===null?null:Number(row.area_m2),available:row.available,archived:row.archived,assignedUnitId:row.assigned_unit_id,assignedUnitCode:row.assigned_unit_code,assignedUnitStatus:row.assigned_unit_status,assignedClient:row.assigned_client,assignmentHistory:row.assignment_history,relation:row.relation,amount:row.amount,amountNet:row.amount_net,currency:row.currency})),memberships:memberships.rows,structures:structures.rows.map(row=>({id:row.id,projectId:row.project_id,projectName:row.project_name,name:row.name,kind:row.kind})),
       };
     });
