@@ -32,11 +32,11 @@ test("chybějící cena se nezobrazuje jako nula a detail používá stejné č�
 });
 
 test("zarovnání hlaviček a hodnot řídí sdílená metadata sloupců", () => {
-  assert.match(crm, /\{id:"unit",label:"Jednotka".*?align:"start"/);
+  assert.match(crm, /\{id:"unit",label:"Jednotka".*?align:"center"/);
   for (const id of ["usableArea", "balcony", "terrace", "garden", "basePrice", "accessoryPrice", "totalPrice", "status", "client", "cellar", "parking"]) {
     assert.match(crm, new RegExp(`id:\"${id}\"[^}]*align:\"center\"`));
     assert.match(crm, new RegExp(`tableColumnClassName\\(unitTableColumns,\"${id}\"`));
   }
   assert.match(styles, /\.table-column-center\{text-align:center!important\}/);
-  assert.match(styles, /\.table-column-start\{text-align:left!important\}/);
+  assert.doesNotMatch(styles, /\.table-column-start\{/);
 });

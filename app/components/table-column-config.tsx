@@ -14,11 +14,11 @@ export type TableColumnDefinition = {
   label: string;
   defaultVisible?: boolean;
   required?: boolean;
-  align?: "start" | "center";
+  align?: "center" | "action";
 };
 
 export function tableColumnClassName(columns: readonly TableColumnDefinition[], id: string, extra = "") {
-  const alignment = columns.find((column) => column.id === id)?.align ?? "start";
+  const alignment = columns.find((column) => column.id === id)?.align ?? "center";
   return [`table-column-${alignment}`, extra].filter(Boolean).join(" ");
 }
 
