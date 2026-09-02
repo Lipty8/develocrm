@@ -33,11 +33,12 @@ export function useTableColumns(tableId: string, columns: readonly TableColumnDe
   const userKey = useContext(TableColumnUserContext);
   const defaults = useMemo(() => defaultVisibleColumns(columns), [columns]);
   const [visibleIds, setVisibleIds] = useState<string[]>(defaults);
-  const [hydrated, setHydrated] = useState(false);
+  const hydratedKeyRef = useRef<string | null>(null);
   const storageKey = tableColumnStorageKey(userKey, tableId);
 
   useEffect(() => {
     let active = true;
+    hydratedKeyRef.current = null;
     queueMicrotask(() => {
       if (!active) return;
       try {
@@ -47,15 +48,15 @@ export function useTableColumns(tableId: string, columns: readonly TableColumnDe
       } catch {
         setVisibleIds(defaults);
       }
-      setHydrated(true);
+      hydratedKeyRef.current = storageKey;
     });
     return () => { active = false; };
   }, [columns, defaults, storageKey]);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (hydratedKeyRef.current !== storageKey) return;
     window.localStorage.setItem(storageKey, JSON.stringify({ version: 1, visibleIds }));
-  }, [hydrated, storageKey, visibleIds]);
+  }, [storageKey, visibleIds]);
 
   return {
     visibleIds,

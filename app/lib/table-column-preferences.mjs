@@ -1,4 +1,4 @@
-export const TABLE_COLUMN_STORAGE_VERSION = 1;
+export const TABLE_COLUMN_STORAGE_VERSION = 2;
 
 export function tableColumnStorageKey(userKey, tableId) {
   const user = String(userKey || "anonymous").trim().toLocaleLowerCase("cs-CZ");
