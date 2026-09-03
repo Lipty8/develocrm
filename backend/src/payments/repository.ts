@@ -24,7 +24,7 @@ export class PaymentRepository{
        LEFT JOIN contracts contract ON contract.tenant_id=obligation.tenant_id AND contract.id=obligation.contract_id
        LEFT JOIN LATERAL(SELECT json_agg(json_build_object('id',transaction.id,'amount',allocation.amount::float8,'paidAt',transaction.paid_at,
          'variableSymbol',transaction.variable_symbol,'counterpartyAccount',transaction.counterparty_account,'bankTransactionId',transaction.bank_transaction_id,
-         'note',transaction.note,'reversedAt',reversal.reversed_at,'reversalReason',reversal.reason) ORDER BY transaction.paid_at DESC) items
+         'note',transaction.note,'sourceType',transaction.source_type,'reversedAt',reversal.reversed_at,'reversalReason',reversal.reason) ORDER BY transaction.paid_at DESC) items
          FROM payment_allocations allocation JOIN payment_transactions transaction ON transaction.tenant_id=allocation.tenant_id AND transaction.id=allocation.transaction_id
          LEFT JOIN payment_reversals reversal ON reversal.tenant_id=transaction.tenant_id AND reversal.transaction_id=transaction.id
          WHERE allocation.tenant_id=obligation.tenant_id AND allocation.obligation_id=obligation.id) transactions ON true

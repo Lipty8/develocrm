@@ -22,6 +22,7 @@ async function database(){
   }
   await db.exec(await readFile(new URL("../migrations/0014_payments_and_reservation_activation.sql",import.meta.url),"utf8"));
   await db.exec(await readFile(new URL("../migrations/0024_unit_payment_and_contract_workflow.sql",import.meta.url),"utf8"));
+  await db.exec(await readFile(new URL("../migrations/0035_manual_payment_recording.sql",import.meta.url),"utf8"));
   await db.exec(`DELETE FROM role_assignments WHERE tenant_id='${tenant}' AND membership_id='${member}';
     INSERT INTO role_assignments(tenant_id,membership_id,role_id,assigned_by_user_id)
     VALUES('${tenant}','${member}','d4000000-0000-4000-8000-000000000001','${user}')`);
@@ -55,7 +56,7 @@ test("rezervaci nelze aktivovat bez podepsané RS ani bez úplné úhrady",async
   await db.close();
 });
 
-test("částečné a vícečetné úhrady odvozují stav, přeplatek aktivuje rezervaci a reverzace zachová historii",async()=>{
+test("částečné a vícečetné úhrady odvozují stav, přeplatek je odmítnut a reverzace zachová historii",async()=>{
   const db=await database();
   await db.query("SELECT app.transition_unit_commercial_status($1,$2,'available','cancelReservation','Příprava testu plateb',$3)",[tenant,unit,member]);
   await signRs(db);
@@ -66,8 +67,9 @@ test("částečné a vícečetné úhrady odvozují stav, přeplatek aktivuje re
   const first=(await db.query<{id:string}>("SELECT app.record_payment($1,$2,100000,now(),'305','123','bank-1','První část',$3) id",[tenant,obligation,member])).rows[0].id;
   assert.equal((await db.query<{status:string}>("SELECT app.payment_obligation_status($1,$2,now()) status",[tenant,obligation])).rows[0].status,"partially_paid");
   assert.equal((await db.query<{status:string}>("SELECT app.payment_obligation_status($1,$2,now()+interval '40 days') status",[tenant,obligation])).rows[0].status,"partially_paid");
-  await db.query("SELECT app.record_payment($1,$2,160000,now(),'305','123','bank-2','Druhá část',$3)",[tenant,obligation,member]);
-  assert.equal((await db.query<{status:string}>("SELECT app.payment_obligation_status($1,$2,now()) status",[tenant,obligation])).rows[0].status,"overpaid");
+  await assert.rejects(db.query("SELECT app.record_payment($1,$2,160000,now(),'305','123','bank-2','Druhá část',$3)",[tenant,obligation,member]),/exceeds remaining/i);
+  await db.query("SELECT app.record_payment($1,$2,150000,now(),'305','123','bank-2','Druhá část',$3)",[tenant,obligation,member]);
+  assert.equal((await db.query<{status:string}>("SELECT app.payment_obligation_status($1,$2,now()) status",[tenant,obligation])).rows[0].status,"paid");
   assert.equal((await db.query<{commercial_status:string}>("SELECT commercial_status FROM units WHERE id=$1",[unit])).rows[0].commercial_status,"reserved");
   assert.ok((await db.query("SELECT reservation_activated_at FROM sales_cases WHERE id=$1 AND reservation_activated_at IS NOT NULL",[salesCase])).rows.length===1);
   await db.query("SELECT app.reverse_payment($1,$2,'Chybně zadaná úhrada',$3)",[tenant,first,member]);
@@ -75,6 +77,17 @@ test("částečné a vícečetné úhrady odvozují stav, přeplatek aktivuje re
   assert.ok((await db.query("SELECT id FROM payment_events WHERE obligation_id=$1 OR transaction_id=$2",[obligation,first])).rows.length>=3);
   assert.ok((await db.query("SELECT id FROM audit_log WHERE entity_id IN ($1,$2)",[obligation,first])).rows.length>=2);
   assert.ok((await db.query("SELECT id FROM outbox_events WHERE aggregate_id IN ($1,$2)",[obligation,first])).rows.length>=2);
+  await db.close();
+});
+
+test("ruční úhrada je idempotentní a eviduje zdroj transakce",async()=>{
+  const db=await database();await signRs(db);await asApp(db);
+  const obligation=(await db.query<{id:string}>("SELECT id FROM payment_obligations WHERE contract_id=$1",[contract])).rows[0].id;
+  const first=(await db.query<{id:string}>("SELECT app.record_payment($1,$2,50000,now(),NULL,NULL,NULL,'Ruční úhrada','manual-payment-1',$3) id",[tenant,obligation,member])).rows[0].id;
+  const retry=(await db.query<{id:string}>("SELECT app.record_payment($1,$2,50000,now(),NULL,NULL,NULL,'Ruční úhrada','manual-payment-1',$3) id",[tenant,obligation,member])).rows[0].id;
+  assert.equal(retry,first);
+  assert.equal((await db.query<{count:number}>("SELECT count(*)::int count FROM payment_allocations WHERE obligation_id=$1",[obligation])).rows[0].count,1);
+  assert.equal((await db.query<{source_type:string}>("SELECT source_type FROM payment_transactions WHERE id=$1",[first])).rows[0].source_type,"manual");
   await db.close();
 });
 

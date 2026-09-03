@@ -4,7 +4,7 @@ import test from "node:test";
 
 const crm=await readFile(new URL("../app/CRMApp.tsx",import.meta.url),"utf8");
 const service=await readFile(new URL("../backend/src/commercial/service.ts",import.meta.url),"utf8");
-const paymentMigration=await readFile(new URL("../backend/migrations/0024_unit_payment_and_contract_workflow.sql",import.meta.url),"utf8");
+const paymentMigration=await readFile(new URL("../backend/migrations/0035_manual_payment_recording.sql",import.meta.url),"utf8");
 
 test("detail jednotky používá dynamickou smluvní akci a nemá duplicitní doporučený blok",()=>{
   assert.match(crm,/getNextContractAction\(unitId/);
@@ -20,7 +20,8 @@ test("kontextová smlouva je předvyplněná a backend určuje typ i identitu",(
 
 test("úhrada na jednotce používá transakce a oprávnění payments.record",()=>{
   assert.match(crm,/canRecordPayment/);
-  assert.match(crm,/Zaplacená částka/);
+  assert.match(crm,/Uhradit platbu/);
+  assert.match(crm,/Zbývá uhradit/);
   assert.match(crm,/Variabilní symbol/);
   assert.match(paymentMigration,/INSERT INTO payment_transactions/);
   assert.match(paymentMigration,/INSERT INTO payment_allocations/);

@@ -2,7 +2,7 @@ import { responseAllowsBrowserFallback } from "../lib/data-mode";
 import { apiFetch } from "../lib/api-client";
 
 export type PaymentStatus="pending"|"partially_paid"|"paid"|"overdue"|"overpaid"|"cancelled";
-export type PaymentTransactionRecord={id:string;amount:number;paidAt:string;variableSymbol?:string;counterpartyAccount?:string;bankTransactionId?:string;note?:string;reversedAt?:string|null;reversalReason?:string|null};
+export type PaymentTransactionRecord={id:string;amount:number;paidAt:string;variableSymbol?:string;counterpartyAccount?:string;bankTransactionId?:string;note?:string;sourceType?:"manual"|"bank_import"|"bank_sync";reversedAt?:string|null;reversalReason?:string|null};
 export type PaymentEventRecord={id:string;type:string;at:string;payload?:Record<string,unknown>};
 export type PaymentRecord={id:string;projectId:string;project:string;unitId:string;unit:string;partyId?:string;client:string;salesCaseId:string;contractId?:string;contractReference?:string;type:string;label:string;amount:number;currency:"CZK";dueAt:string;variableSymbol?:string;paid:number;status:PaymentStatus;transactions:PaymentTransactionRecord[];events:PaymentEventRecord[]};
 export type PaymentFilters={projectId?:string;project?:string;unitId?:string;unit?:string;partyId?:string;contractId?:string;salesCaseId?:string;status?:PaymentStatus;query?:string;sort?:string;direction?:"asc"|"desc"};
@@ -11,7 +11,7 @@ const STORAGE_KEY="develocrm-preview-payments-v2";
 
 const initialPayments:PaymentRecord[]=[];
 function deriveStatus(amount:number,paid:number,dueAt:string,cancelled=false):PaymentStatus{
-  if(cancelled)return"cancelled";if(paid>amount)return"overpaid";if(paid===amount)return"paid";if(new Date(dueAt)<new Date())return"overdue";if(paid>0)return"partially_paid";return"pending";
+  if(cancelled)return"cancelled";if(paid>amount)return"overpaid";if(paid===amount)return"paid";if(paid>0)return"partially_paid";if(new Date(dueAt)<new Date())return"overdue";return"pending";
 }
 function readPreview(){if(typeof window==="undefined")return structuredClone(initialPayments);try{return JSON.parse(localStorage.getItem(STORAGE_KEY)??"null")??structuredClone(initialPayments);}catch{return structuredClone(initialPayments);}}
 function writePreview(rows:PaymentRecord[]){localStorage.setItem(STORAGE_KEY,JSON.stringify(rows));}
@@ -24,7 +24,7 @@ function filterRows(rows:PaymentRecord[],filters:PaymentFilters){
 }
 export interface PaymentRepository{
   list(filters?:PaymentFilters,signal?:AbortSignal):Promise<{payments:PaymentRecord[];source:"postgresql"|"preview-adapter"}>;
-  record(obligationId:string,input:{amount:number;paidAt:string;variableSymbol?:string;counterpartyAccount?:string;bankTransactionId?:string;note?:string}):Promise<void>;
+  record(obligationId:string,input:{amount:number;paidAt:string;variableSymbol?:string;counterpartyAccount?:string;bankTransactionId?:string;note?:string;idempotencyKey?:string}):Promise<void>;
   reverse(transactionId:string,reason:string):Promise<void>;
   previewCsv(text:string):Promise<ImportPreviewRow[]>;
   confirmImport(rows:ImportPreviewRow[]):Promise<number>;
@@ -37,12 +37,14 @@ class ApiPaymentRepository implements PaymentRepository{
     if(!(response.status===503&&responseAllowsBrowserFallback(response)))throw new Error("Platby nelze načíst");
     return{payments:filterRows(readPreview(),filters),source:"preview-adapter" as const};
   }
-  async record(obligationId:string,input:{amount:number;paidAt:string;variableSymbol?:string;counterpartyAccount?:string;bankTransactionId?:string;note?:string}){
+  async record(obligationId:string,input:{amount:number;paidAt:string;variableSymbol?:string;counterpartyAccount?:string;bankTransactionId?:string;note?:string;idempotencyKey?:string}){
     const response=await apiFetch(`/api/payments/${obligationId}/transactions`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});
     if(response.ok)return;if(!(response.status===503&&responseAllowsBrowserFallback(response)))throw new Error((await response.json().catch(()=>({error:"Úhradu nelze uložit"}))).error);
     const rows=readPreview();const row=rows.find(item=>item.id===obligationId);if(!row)throw new Error("Předpis nebyl nalezen");
+    if(input.idempotencyKey&&rows.some(item=>item.transactions.some(tx=>(tx as PaymentTransactionRecord&{idempotencyKey?:string}).idempotencyKey===input.idempotencyKey)))return;
     if(input.bankTransactionId&&rows.some(item=>item.transactions.some(tx=>tx.bankTransactionId===input.bankTransactionId)))throw new Error("Tato bankovní transakce již byla importována");
-    const tx={id:crypto.randomUUID(),...input};row.transactions.unshift(tx);row.events.unshift({id:crypto.randomUUID(),type:"payment.recorded",at:new Date().toISOString(),payload:{amount:input.amount}});row.paid=row.transactions.filter(item=>!item.reversedAt).reduce((sum,item)=>sum+item.amount,0);row.status=deriveStatus(row.amount,row.paid,row.dueAt);writePreview(rows);
+    const remaining=Math.max(0,row.amount-row.paid);if(input.amount>remaining)throw new Error("Částka úhrady nesmí být vyšší než zbývající částka.");
+    const tx={id:crypto.randomUUID(),sourceType:input.bankTransactionId?"bank_import" as const:"manual" as const,...input};row.transactions.unshift(tx);row.events.unshift({id:crypto.randomUUID(),type:"payment.recorded",at:new Date().toISOString(),payload:{amount:input.amount}});row.paid=row.transactions.filter(item=>!item.reversedAt).reduce((sum,item)=>sum+item.amount,0);row.status=deriveStatus(row.amount,row.paid,row.dueAt);writePreview(rows);
   }
   async reverse(transactionId:string,reason:string){
     const response=await apiFetch(`/api/payment-transactions/${transactionId}/reversal`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({reason})});
@@ -62,4 +64,4 @@ class ApiPaymentRepository implements PaymentRepository{
   async confirmImport(rows:ImportPreviewRow[]){let count=0;for(const row of rows.filter(item=>!item.duplicate&&item.proposedObligationId)){await this.record(row.proposedObligationId!,{amount:row.amount,paidAt:row.paidAt,variableSymbol:row.variableSymbol,counterpartyAccount:row.counterpartyAccount,bankTransactionId:row.bankTransactionId,note:"Import bankovního výpisu po potvrzení"});count++;}return count;}
 }
 export const paymentRepository:PaymentRepository=new ApiPaymentRepository();
-export const paymentStatusLabel:Record<PaymentStatus,string>={pending:"Čeká na úhradu",partially_paid:"Částečně uhrazeno",paid:"Uhrazeno",overdue:"Po splatnosti",overpaid:"Přeplatek",cancelled:"Stornováno"};
+export const paymentStatusLabel:Record<PaymentStatus,string>={pending:"Neuhrazeno",partially_paid:"Částečně uhrazeno",paid:"Uhrazeno",overdue:"Po splatnosti",overpaid:"Přeplatek",cancelled:"Stornováno"};
