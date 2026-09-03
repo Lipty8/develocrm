@@ -55,8 +55,9 @@ test("klient bez historie se smaže a klient s historií se archivuje",()=>{
   assert.match(crm,/Klient bude bezpečně archivován/);
 });
 
-test("uživatelské timestampy používají český formatter nejvýše na sekundy",()=>{
-  assert.match(formatter,/second: "2-digit"/);
+test("uživatelské timestampy používají český formatter nejvýše na minuty",()=>{
+  assert.match(formatter,/formatPragueDateTime/);
+  assert.doesNotMatch(formatter,/second: "2-digit"/);
   assert.match(crm,/<time>\{formatPragueDateTime\(item\.date\)\}<\/time>/);
   assert.doesNotMatch(crm,/<time>\{item\.date\}<\/time>/);
 });

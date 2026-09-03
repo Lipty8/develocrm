@@ -1,6 +1,7 @@
 import type { ClientRecord, UnitCommercialContext } from "../crm-data";
 import { clientUsesBrowserAdapter, responseAllowsBrowserFallback } from "../lib/data-mode";
 import { apiFetch } from "../lib/api-client";
+import { formatPragueDate } from "../lib/date-format";
 
 export type ClientSnapshot = { clients: ClientRecord[]; unitContexts: Record<string,UnitCommercialContext>; source:"backend-api"|"preview-seed" };
 export type ClientPageInput={page:number;pageSize:number;projectId?:string;query?:string;quickProject?:string;types?:string[];projects?:string[];unit?:string;relations?:string[];contracts?:string[];phone?:string;email?:string;sort?:string;direction?:"asc"|"desc";includeArchived?:boolean};
@@ -55,7 +56,7 @@ function applyPreviewSalesCommands(snapshot:ClientSnapshot){
     for(const command of [...stored].reverse()){
       if(command.kind==="interest"&&command.partyId){
         const party=snapshot.clients.find(item=>item.id===command.partyId);
-        if(party&&!context.interests.some(item=>item.partyId===party.id))context.interests.unshift({date:new Date(command.recordedAt??Date.now()).toLocaleDateString("cs-CZ"),partyId:party.id,name:party.name,type:"Zájem",result:"Aktivní"});
+        if(party&&!context.interests.some(item=>item.partyId===party.id))context.interests.unshift({date:formatPragueDate(command.recordedAt??Date.now()),partyId:party.id,name:party.name,type:"Zájem",result:"Aktivní"});
       }
       if(command.kind==="hold"&&command.type){
         context.hold={id:command.id??`preview-hold-${unitKey}`,type:command.type,expiresAt:command.expiresAt??""};
@@ -65,7 +66,7 @@ function applyPreviewSalesCommands(snapshot:ClientSnapshot){
           const interest=context.interests.find(item=>item.partyId===buyer.partyId);
           const type=command.type==="reservation"?"Rezervace":"Předrezervace";
           if(interest){interest.type=type;interest.result=command.type==="reservation"?"Přešel do rezervace":"Přešel do předrezervace";}
-          else context.interests.unshift({date:new Date(command.recordedAt??Date.now()).toLocaleDateString("cs-CZ"),partyId:buyer.partyId,name:buyer.name,type,result:command.type==="reservation"?"Přešel do rezervace":"Přešel do předrezervace"});
+          else context.interests.unshift({date:formatPragueDate(command.recordedAt??Date.now()),partyId:buyer.partyId,name:buyer.name,type,result:command.type==="reservation"?"Přešel do rezervace":"Přešel do předrezervace"});
         }
       }
       if(command.kind==="convert"&&context.hold){

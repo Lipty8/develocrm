@@ -1,31 +1,9 @@
 import { useEffect, useState } from "react";
+import { PRAGUE_TIME_ZONE } from "./date-format";
 
-export const PRAGUE_TIME_ZONE = "Europe/Prague";
+export { formatPragueDate, formatPragueDateTime, formatPragueMonthYear, formatPragueTime, PRAGUE_TIME_ZONE } from "./date-format";
 export type Clock = { now(): Date };
 export const systemClock: Clock = { now: () => new Date() };
-
-export function formatPragueDate(value: Date | string, options: Intl.DateTimeFormatOptions = {}): string {
-  return new Intl.DateTimeFormat("cs-CZ", {
-    timeZone: PRAGUE_TIME_ZONE,
-    day: "numeric",
-    month: "numeric",
-    year: "numeric",
-    ...options,
-  }).format(typeof value === "string" ? new Date(value) : value);
-}
-
-export function formatPragueTime(value: Date | string): string {
-  return new Intl.DateTimeFormat("cs-CZ", {
-    timeZone: PRAGUE_TIME_ZONE,
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(typeof value === "string" ? new Date(value) : value);
-}
-
-export function formatPragueDateTime(value: Date | string): string {
-  return `${formatPragueDate(value)} ${formatPragueTime(value)}`;
-}
 
 export function formatPragueLongDate(value: Date): string {
   return new Intl.DateTimeFormat("cs-CZ", {
