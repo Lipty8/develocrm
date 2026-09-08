@@ -21,6 +21,21 @@ test("projektová platební povinnost umožní bezpečnou částečnou úhradu",
   assert.match(backend,/Částka úhrady nesmí být vyšší než zbývající částka/);
 });
 
+test("modal úhrady používá vzdušný responzivní layout a čitelný peněžní vstup",async()=>{
+  const [app,styles]=await Promise.all([read("app/CRMApp.tsx"),read("app/globals.css")]);
+  assert.match(app,/modal form-modal payment-record-modal/);
+  assert.match(app,/modal-form payment-record-body/);
+  assert.match(app,/payment-record-primary-fields/);
+  assert.match(app,/className="money-input"/);
+  assert.match(app,/toLocaleString\("cs-CZ"\)/);
+  assert.match(app,/inputMode="decimal"/);
+  assert.match(app,/rows=\{3\}/);
+  assert.match(app,/className="modal-foot"/);
+  assert.match(styles,/\.payment-record-primary-fields\{display:grid;grid-template-columns:minmax\(0,3fr\) minmax\(0,2fr\)/);
+  assert.match(styles,/\.payment-record-modal>\.modal-foot\{padding:16px 24px\}/);
+  assert.match(styles,/@media\(max-width:700px\).*\.payment-record-primary-fields\{grid-template-columns:1fr\}/s);
+});
+
 test("import výpisu je náhled s potvrzením, nikoli falešně hotové tlačítko",async()=>{
   const app=await read("app/CRMApp.tsx");
   assert.match(app,/Import CSV · nejdřív náhled/);assert.match(app,/Žádná transakce nebude spárována bez vašeho potvrzení/);
