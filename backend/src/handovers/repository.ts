@@ -1,6 +1,6 @@
 import type {Database} from "../database.js";
 type Context={tenantId:string;userId:string;membershipId:string};
-export type HandoverItem={id:string;projectId:string;project:string;unitId:string;unit:string;scheduledAt:string;client:string;owner:string;salesCaseId:string|null;status:string;readiness:number;attention:string|null;place:string|null;note:string|null;completedAt:string|null;participants:Array<{partyId:string;name:string;role:string}>};
+export type HandoverItem={id:string;projectId:string;project:string;unitId:string;unit:string;scheduledAt:string;client:string;owner:string;salesCaseId:string|null;status:string;readiness:number;attention:string|null;place:string|null;note:string|null;completedAt:string|null;participants:Array<{partyId:string;name:string;role:string}>;history:Array<{id:string;type:string;occurredAt:string;previousScheduledAt:string|null;scheduledAt:string|null;actor:string|null}>};
 export class HandoverRepository{
   constructor(private readonly database:Database){}
   list(input:Context&{projectId?:string;unitId?:string;status?:string;ownerId?:string;query?:string;sort?:string;direction?:"asc"|"desc"}){
@@ -10,7 +10,8 @@ export class HandoverRepository{
       const result=await client.query<HandoverItem>(`SELECT handover.id,handover.project_id "projectId",project.name project,handover.unit_id "unitId",unit.code unit,
         handover.scheduled_at "scheduledAt",COALESCE(buyers.names,'Bez přiřazeného klienta') client,owner.display_name owner,
         handover.sales_case_id "salesCaseId",handover.status,handover.readiness_percent readiness,handover.attention,
-        handover.place,handover.note,handover.completed_at "completedAt",COALESCE(participants.items,'[]'::jsonb) participants
+        handover.place,handover.note,handover.completed_at "completedAt",COALESCE(participants.items,'[]'::jsonb) participants,
+        COALESCE(history.items,'[]'::jsonb) history
        FROM unit_handovers handover JOIN projects project ON project.tenant_id=handover.tenant_id AND project.id=handover.project_id
        JOIN units unit ON unit.tenant_id=handover.tenant_id AND unit.id=handover.unit_id
        JOIN tenant_memberships owner_membership ON owner_membership.tenant_id=handover.tenant_id AND owner_membership.id=handover.responsible_membership_id
@@ -22,8 +23,14 @@ export class HandoverRepository{
        LEFT JOIN LATERAL(SELECT jsonb_agg(jsonb_build_object('partyId',participant.party_id,'name',party.display_name,'role',participant.participant_role) ORDER BY party.display_name) items
          FROM unit_handover_participants participant JOIN parties party ON party.tenant_id=participant.tenant_id AND party.id=participant.party_id
          WHERE participant.tenant_id=handover.tenant_id AND participant.handover_id=handover.id) participants ON true
+       LEFT JOIN LATERAL(SELECT jsonb_agg(jsonb_build_object('id',event.id,'type',event.event_type,'occurredAt',event.recorded_at,
+         'previousScheduledAt',event.previous_scheduled_at,'scheduledAt',event.scheduled_at,'actor',actor.display_name) ORDER BY event.recorded_at DESC,event.id DESC) items
+         FROM unit_handover_events event
+         LEFT JOIN tenant_memberships actor_membership ON actor_membership.tenant_id=event.tenant_id AND actor_membership.id=event.recorded_by_membership_id
+         LEFT JOIN users actor ON actor.id=actor_membership.user_id
+         WHERE event.tenant_id=handover.tenant_id AND event.handover_id=handover.id) history ON true
        WHERE handover.tenant_id=$1 AND project.archived_at IS NULL AND unit.archived_at IS NULL
-         AND handover.status<>'cancelled' AND app.has_project_permission(handover.tenant_id,$2,handover.project_id,'handovers.read')
+         AND app.has_project_permission(handover.tenant_id,$2,handover.project_id,'handovers.read')
          AND ($3::uuid IS NULL OR handover.project_id=$3) AND ($4::uuid IS NULL OR handover.unit_id=$4) AND ($5::text IS NULL OR handover.status=$5)
          AND ($6::uuid IS NULL OR handover.responsible_membership_id=$6)
          AND ($7::text IS NULL OR unit.code ILIKE '%'||$7||'%' OR COALESCE(buyers.names,'') ILIKE '%'||$7||'%')

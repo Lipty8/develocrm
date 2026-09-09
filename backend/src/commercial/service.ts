@@ -14,7 +14,7 @@ export class CommercialService{
       const unit=(await client.query<{id:string;code:string;commercial_status:string;sales_case_id:string|null;sales_stage:string|null;hold_type:string|null;has_interest:boolean;handover_completed:boolean}>(`SELECT unit.id,unit.code,unit.commercial_status,active_case.id sales_case_id,active_case.current_stage sales_stage,
         (SELECT hold.hold_type FROM unit_holds hold WHERE hold.tenant_id=unit.tenant_id AND hold.sales_case_id=active_case.id AND hold.status='active' AND hold.starts_at<=now() AND hold.expires_at>now() ORDER BY hold.starts_at DESC LIMIT 1) hold_type,
         EXISTS(SELECT 1 FROM unit_interests interest WHERE interest.tenant_id=unit.tenant_id AND interest.unit_id=unit.id) has_interest,
-        EXISTS(SELECT 1 FROM unit_handovers handover WHERE handover.tenant_id=unit.tenant_id AND handover.unit_id=unit.id AND handover.status='completed') handover_completed
+        EXISTS(SELECT 1 FROM unit_handovers handover WHERE handover.tenant_id=unit.tenant_id AND handover.unit_id=unit.id AND handover.status='handed_over') handover_completed
         FROM units unit
         LEFT JOIN LATERAL (SELECT sales_case.id,sales_case.current_stage FROM sales_cases sales_case WHERE sales_case.tenant_id=unit.tenant_id AND sales_case.unit_id=unit.id AND sales_case.status='active' ORDER BY sales_case.opened_at DESC LIMIT 1) active_case ON true
         WHERE unit.tenant_id=$1 AND unit.id=$2 AND unit.archived_at IS NULL

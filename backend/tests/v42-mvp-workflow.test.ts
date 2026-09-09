@@ -31,14 +31,17 @@ test("předání v2 je idempotentní, zrušení dovolí nový termín a dokonče
   await assert.rejects(db.query("SELECT app.schedule_unit_handover_v2($1,$2,now()+interval '8 days',$3,NULL,NULL,'handover-test-conflict',$3)",[ids.tenantId,context.unit_id,ids.membershipId]),/active handover/i);
   await db.query("SELECT app.update_unit_handover_v2($1,$2,now()+interval '7 days',$3,'cancelled',0,NULL,NULL,'Zrušený test',NULL,$3)",[ids.tenantId,first,ids.membershipId]);
   const second=(await db.query<{id:string}>("SELECT app.schedule_unit_handover_v2($1,$2,now()+interval '9 days',$3,'Jednotka','Nový termín','handover-test-2',$3) id",[ids.tenantId,context.unit_id,ids.membershipId])).rows[0].id;assert.notEqual(second,first);
+  await db.query("SELECT app.update_unit_handover_v2($1,$2,now()+interval '10 days',$3,'rescheduled',0,NULL,'Jednotka','Přesunutý termín',NULL,$3)",[ids.tenantId,second,ids.membershipId]);
+  assert.equal((await db.query<{status:string}>("SELECT status FROM unit_handovers WHERE tenant_id=$1 AND id=$2",[ids.tenantId,second])).rows[0].status,"planned");
+  assert.equal((await db.query<{count:number}>("SELECT count(*)::int count FROM unit_handover_events WHERE tenant_id=$1 AND handover_id=$2 AND event_type='rescheduled'",[ids.tenantId,second])).rows[0].count,1);
   await db.exec("SELECT set_config('app.commercial_status_command','on',false)");await db.query("UPDATE units SET commercial_status='sold' WHERE tenant_id=$1 AND id=$2",[ids.tenantId,context.unit_id]);
-  await db.query("SELECT app.update_unit_handover_v2($1,$2,now()+interval '9 days',$3,'completed',100,NULL,'Jednotka','Dokončeno',now(),$3)",[ids.tenantId,second,ids.membershipId]);
-  assert.equal((await db.query<{status:string;completed_at:string|null}>("SELECT status,completed_at FROM unit_handovers WHERE tenant_id=$1 AND id=$2",[ids.tenantId,second])).rows[0].status,"completed");
+  await db.query("SELECT app.update_unit_handover_v2($1,$2,now()+interval '9 days',$3,'handed_over',100,NULL,'Jednotka','Předáno',now(),$3)",[ids.tenantId,second,ids.membershipId]);
+  assert.equal((await db.query<{status:string;completed_at:string|null}>("SELECT status,completed_at FROM unit_handovers WHERE tenant_id=$1 AND id=$2",[ids.tenantId,second])).rows[0].status,"handed_over");
   assert.equal((await db.query<{commercial_status:string}>("SELECT commercial_status FROM units WHERE tenant_id=$1 AND id=$2",[ids.tenantId,context.unit_id])).rows[0].commercial_status,"handed_over");
   assert.equal((await db.query<{current_stage:string}>("SELECT current_stage FROM sales_cases WHERE tenant_id=$1 AND id=$2",[ids.tenantId,context.case_id])).rows[0].current_stage,"handover");
-  const eventCount=(await db.query<{count:number}>("SELECT count(*)::int count FROM outbox_events WHERE tenant_id=$1 AND aggregate_id=$2 AND event_type='handover.completed.v1'",[ids.tenantId,second])).rows[0].count;
-  await db.query("SELECT app.update_unit_handover_v2($1,$2,now()+interval '9 days',$3,'completed',100,NULL,'Jednotka','Dokončeno',now(),$3)",[ids.tenantId,second,ids.membershipId]);
-  assert.equal((await db.query<{count:number}>("SELECT count(*)::int count FROM outbox_events WHERE tenant_id=$1 AND aggregate_id=$2 AND event_type='handover.completed.v1'",[ids.tenantId,second])).rows[0].count,eventCount);
+  const eventCount=(await db.query<{count:number}>("SELECT count(*)::int count FROM outbox_events WHERE tenant_id=$1 AND aggregate_id=$2 AND event_type='handover.handed_over.v1'",[ids.tenantId,second])).rows[0].count;
+  await db.query("SELECT app.update_unit_handover_v2($1,$2,now()+interval '9 days',$3,'handed_over',100,NULL,'Jednotka','Předáno',now(),$3)",[ids.tenantId,second,ids.membershipId]);
+  assert.equal((await db.query<{count:number}>("SELECT count(*)::int count FROM outbox_events WHERE tenant_id=$1 AND aggregate_id=$2 AND event_type='handover.handed_over.v1'",[ids.tenantId,second])).rows[0].count,eventCount);
   await db.close();
 });
 

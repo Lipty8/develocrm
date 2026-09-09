@@ -480,6 +480,7 @@ function handoverError(error:unknown,operation:"schedule"|"update"){
   const message=error instanceof Error?error.message:"";
   if(/already has an active handover|duplicate key.*unit_handovers_one_open/i.test(message))return "Pro tuto jednotku již existuje naplánované předání.";
   if(/future/i.test(message))return "Vyberte budoucí datum a čas předání.";
+  if(/requires a new date/i.test(message))return "Pro přesunutí vyberte nový termín předání.";
   if(/sold unit/i.test(message))return "Předání lze dokončit až po dokončení kupní smlouvy.";
   if(/permission/i.test(message))return "Nemáte oprávnění spravovat předání v tomto projektu.";
   if(/unit not found/i.test(message))return "Jednotka nebyla nalezena nebo nepatří do tohoto projektu.";

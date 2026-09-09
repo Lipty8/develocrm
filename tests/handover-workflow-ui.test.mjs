@@ -12,9 +12,9 @@ test("jednotka, projekt i globální modul používají jeden formulář plánov
   assert.match(source,/defaultUnit=\{newHandoverContext\.unit\}/);
 });
 
-test("plánovací a editační formulář podporuje místo, poznámku, dokončení i zrušení",async()=>{
+test("plánovací a editační formulář podporuje místo, poznámku, předání i zrušení",async()=>{
   const source=await readFile(new URL("app/CRMApp.tsx",root),"utf8");
-  for(const value of ["Místo","Poznámka","Skutečné datum a čas předání","Dokončeno","Zrušeno","Pro tuto jednotku již existuje naplánované předání."])assert.ok(source.includes(value)||value.startsWith("Pro tuto"));
+  for(const value of ["Místo","Poznámka","Skutečné datum předání","Skutečný čas předání","Předáno","Přesunuto","Zrušeno","Pro tuto jednotku již existuje naplánované předání."])assert.ok(source.includes(value)||value.startsWith("Pro tuto"));
   assert.match(source,/handoverRepository\.update/);
   assert.match(source,/onHandoverChanged/);
   assert.match(source,/currentHandoverLabel/);
