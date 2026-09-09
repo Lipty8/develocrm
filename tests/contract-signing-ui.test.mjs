@@ -42,7 +42,10 @@ test("timeline a hlavní smluvní CTA používají stejnou projekci aktivního o
   assert.match(service,/getNextContractAction\(\{hasActiveSalesCase:true,contracts,salesStage:unit\.sales_stage\}\)/);
   assert.match(app,/workflow=\{salesProcess\}/);
   assert.match(app,/<Badge>\{salesProcess\.commercialStatusLabel\}<\/Badge>/);
-  assert.match(app,/nextContractAction\?\.kind==="create_contract"/);
+  assert.match(app,/nextContractAction=\{nextContractAction\}/);
+  assert.match(app,/action\?\.kind==="create_contract"/);
+  assert.match(app,/Vytvořit dokument/);
+  assert.doesNotMatch(app,/> Otevřít smlouvy</);
   assert.match(app,/const refreshUnitWorkflow = \(\) => \{ refreshCommercial\(\); refreshCatalog\(\); refreshClients\(\);/);
 });
 

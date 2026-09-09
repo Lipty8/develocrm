@@ -30,6 +30,15 @@ test("Contracts use a compact hybrid list and a real tabbed detail",async()=>{
   assert.match(app,/Samostatný workflow dokumentu, nikoli obchodní stav jednotky/);
 });
 
+test("obecný modul Dokumenty nevytváří smlouvy, dodatky ani předávací protokoly",async()=>{
+  const [app,repository]=await Promise.all([read("app/CRMApp.tsx"),read("app/repositories/document-repository.ts")]);
+  assert.match(repository,/workflowManagedDocumentTypes=new Set\(\["reservation_contract","future_purchase_contract","purchase_contract","amendment","handover_protocol"\]\)/);
+  assert.match(repository,/standaloneDocumentTypeOptions=documentTypeOptions\.filter/);
+  assert.match(app,/<StandaloneDocumentCreateModal/);
+  assert.match(app,/Smlouvy, dodatky a předávací protokoly vznikají ve svém obchodním procesu/);
+  assert.doesNotMatch(app,/page === "contracts" \? searchParams\.get\("view"\)==="documents"\?"Nový dokument":"Nová smlouva"/);
+});
+
 test("document backend uses concrete links, RLS, audit and outbox",async()=>{
   const [migration,repository,api]=await Promise.all([read("backend/migrations/0010_document_workspace.sql"),read("backend/src/documents/repository.ts"),read("backend/src/app.ts")]);
   for(const table of ["document_types","sales_case_documents","document_events"])assert.match(migration,new RegExp(`CREATE TABLE ${table}`));

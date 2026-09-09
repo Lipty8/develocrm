@@ -26,6 +26,9 @@ export const documentTypeOptions=[
   {code:"photo_documentation",name:"Fotodokumentace"},{code:"other",name:"Jiné"},
 ];
 
+const workflowManagedDocumentTypes=new Set(["reservation_contract","future_purchase_contract","purchase_contract","amendment","handover_protocol"]);
+export const standaloneDocumentTypeOptions=documentTypeOptions.filter(option=>!workflowManagedDocumentTypes.has(option.code));
+
 export interface DocumentRepository {
   listAll(filters?:DocumentFilters,signal?:AbortSignal):Promise<DocumentListResponse>;
   listProject(projectId:string,filters?:DocumentFilters,signal?:AbortSignal):Promise<DocumentListResponse>;

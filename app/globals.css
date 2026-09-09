@@ -277,10 +277,23 @@ h1, h2, h3, p { margin: 0; }
 .form-modal { display:flex;flex-direction:column;max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px); }
 .form-modal>.modal-head,.form-modal>.modal-foot { flex:0 0 auto; }
 .form-modal>.modal-form { min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable; }
+.contract-document-chooser{width:min(720px,100%)}
+.document-choice-groups{gap:18px}
+.document-choice-groups section{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.document-choice-groups h3{grid-column:1/-1;color:var(--muted);font-size:11px;letter-spacing:.35px;text-transform:uppercase}
+.document-choice-groups section>button{min-width:0;display:grid;grid-template-columns:28px minmax(0,1fr) 16px;gap:9px;align-items:center;padding:11px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink);text-align:left}
+.document-choice-groups section>button:not(:disabled):hover{border-color:#bdd8cd;background:var(--green-soft)}
+.document-choice-groups section>button>svg:first-child{color:var(--green)}
+.document-choice-groups section>button>span{min-width:0}
+.document-choice-groups section>button strong,.document-choice-groups section>button small{display:block}
+.document-choice-groups section>button strong{font-size:12px}
+.document-choice-groups section>button small{margin-top:4px;color:var(--muted);font-size:10.5px;line-height:1.35}
+.document-choice-groups section>button:disabled{cursor:not-allowed;background:#f7f8f7;color:#7f8984;opacity:.82}
+.document-choice-groups section>button:disabled>svg{color:#9aa39f}
 .month-year-picker { display:grid;grid-template-columns:1fr 1fr;gap:11px;margin:0;padding:0;border:0; }
 .month-year-picker legend { grid-column:1/-1;margin-bottom:0;color:#55615b;font-size:9px;font-weight:650; }
 .month-year-picker label>span { font-size:8.5px;color:var(--muted); }
-@media(max-width:650px){.modal-layer{padding:10px}.form-modal{max-height:calc(100vh - 20px);max-height:calc(100dvh - 20px)}}
+@media(max-width:650px){.modal-layer{padding:10px}.form-modal{max-height:calc(100vh - 20px);max-height:calc(100dvh - 20px)}.document-choice-groups section{grid-template-columns:1fr}}
 @media(max-width:760px){.project-detail-hero{grid-template-columns:1fr}.month-year-picker{grid-template-columns:1fr}}
 
 /* Project hierarchy */
