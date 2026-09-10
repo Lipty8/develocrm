@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Columns3, RotateCcw, X } from "lucide-react";
 import {
   defaultVisibleColumns,
@@ -78,27 +79,55 @@ export function useTableColumns(tableId: string, columns: readonly TableColumnDe
 export function TableColumnMenu({ columns, state }: { columns: readonly TableColumnDefinition[]; state: TableColumnState }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<React.CSSProperties>({});
+
+  const placePopover = () => {
+    const trigger = rootRef.current?.getBoundingClientRect();
+    if (!trigger) return;
+    const mobile = window.innerWidth <= 720;
+    if (mobile) {
+      setPosition({ left: 16, right: 16, bottom: 16, top: "auto", width: "auto" });
+      return;
+    }
+    const width = Math.min(320, window.innerWidth - 32);
+    const estimatedHeight = Math.min(520, Math.floor(window.innerHeight * .7), columns.length * 42 + 92);
+    const top = trigger.bottom + estimatedHeight + 16 > window.innerHeight
+      ? Math.max(16, trigger.top - estimatedHeight - 8)
+      : trigger.bottom + 8;
+    setPosition({
+      position: "fixed",
+      width,
+      left: Math.max(16, Math.min(trigger.right - width, window.innerWidth - width - 16)),
+      top,
+      right: "auto",
+    });
+  };
 
   useEffect(() => {
     if (!open) return;
     const close = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (!rootRef.current?.contains(target) && !popoverRef.current?.contains(target)) setOpen(false);
     };
     const escape = (event: KeyboardEvent) => event.key === "Escape" && setOpen(false);
+    const reposition = () => placePopover();
     document.addEventListener("mousedown", close);
     document.addEventListener("keydown", escape);
+    window.addEventListener("resize", reposition);
     return () => {
       document.removeEventListener("mousedown", close);
       document.removeEventListener("keydown", escape);
+      window.removeEventListener("resize", reposition);
     };
-  }, [open]);
+  }, [columns.length, open]);
 
   return <div className="table-column-config" ref={rootRef}>
-    <button className={`secondary-button compact table-column-trigger ${open ? "active" : ""}`} type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open} aria-haspopup="dialog"><Columns3 size={16}/> Sloupce</button>
-    {open && <div className="table-column-popover" role="dialog" aria-label="Nastavení viditelných sloupců">
+    <button className={`secondary-button compact table-column-trigger ${open ? "active" : ""}`} type="button" onClick={() => { if(!open)placePopover();setOpen((value) => !value); }} aria-expanded={open} aria-haspopup="dialog"><Columns3 size={16}/> Sloupce</button>
+    {open && createPortal(<div ref={popoverRef} className="table-column-popover table-column-popover-portal" style={position} role="dialog" aria-label="Nastavení viditelných sloupců">
       <div className="table-column-popover-head"><strong>Sloupce</strong><button className="ghost-icon" type="button" onClick={() => setOpen(false)} aria-label="Zavřít nastavení sloupců"><X size={16}/></button></div>
       <div className="table-column-options">{columns.map((column) => <label key={column.id} className={column.required ? "required" : ""}><input type="checkbox" checked={state.isVisible(column.id)} disabled={column.required} onChange={() => state.toggle(column.id)}/><span>{column.label}</span>{column.required && <small>povinný</small>}</label>)}</div>
       <button className="table-column-reset" type="button" onClick={state.reset}><RotateCcw size={14}/> Obnovit výchozí sloupce</button>
-    </div>}
+    </div>, document.body)}
   </div>;
 }

@@ -56,7 +56,7 @@ export type CatalogAccessoryRecord = AccessoryAssignmentRecord & {
 export type MembershipOption = { id:string; name:string };
 export type ProjectStructureOption = { id:string; projectId:string; project:string; name:string; kind:string };
 export type ProjectRecord = { backendId?:string; name:string; sourceName?:string; code:string; location:string; address?:string|null; description?:string|null; projectCompany?:string|null; defaultCurrency?:string; plannedUnitCount?:number|null; note?:string|null; progress:number; units:number; available:number; preReserved:number; reserved:number; sold:number; handedOver:number; attention:number; color:"sage"|"sand"|"slate"; stage:string; stageCode?:string|null; lifecycleStatus?:string; revenue:string; buildings:string[]; manager:string; managerMembershipId?:string|null; plannedHandover:string; plannedCompletionFrom?:string|null; plannedCompletionTo?:string|null; coverImageUrl?:string|null };
-export type TaskRecord = { id:string|number; title:string; description?:string; object:string; objectType?:string; objectId?:string; projectId?:string|null; project:string; due:string; dueAt?:string|null; priority:string; owner:string; assigneeId?:string|null; done:boolean; updatedAt?:string };
+export type TaskRecord = { id:string|number; title:string; description?:string; object:string; objectType?:string; objectId?:string; projectId?:string|null; project:string; due:string; dueAt?:string|null; priority:string; owner:string; assigneeId?:string|null; done:boolean; createdAt?:string; updatedAt?:string };
 
 export type InterestHistoryRecord = { date: string; project: string; unit: string; type: string; result: string };
 export type ClientActivityRecord = { id:string;type:string;note:string;occurredAt:string;author:string };

@@ -87,7 +87,7 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   if(serverDataMode()==="api")return forwardApiTasks(request,"PATCH");
   try {
-    const payload = await request.json() as { id?: string; completed?: boolean;archive?:boolean };
+    const payload = await request.json() as { id?: string; completed?: boolean;archive?:boolean;title?:string;description?:string;projectId?:string;unitId?:string;partyId?:string;contractId?:string;objectLabel?:string;assigneeMembershipId?:string;priority?:string;dueAt?:string;status?:string };
     if (!payload.id) return Response.json({ error: "Chybí úkol" }, { status: 400 });
     const current = await actor();
     const db = getDb();
@@ -95,8 +95,15 @@ export async function PATCH(request: Request) {
     if (!existing) return Response.json({ error: "Úkol nebyl nalezen" }, { status: 404 });
     // Preview admin may complete any task; regular production permissions are
     // enforced by the PostgreSQL repository and project scope.
-    const completed = payload.completed !== false;
-    const [updated] = await db.update(tasks).set({ state: completed ? "completed" : "open", completedAt: completed ? new Date().toISOString() : null, updatedAt: new Date().toISOString() }).where(and(eq(tasks.id, payload.id), eq(tasks.tenantId, DEMO_TENANT_ID))).returning();
+    const isEdit=typeof payload.title==="string";
+    const completed=isEdit?payload.status==="completed":payload.completed!==false;
+    const [updated] = await db.update(tasks).set(isEdit?{
+      title:payload.title?.trim()||existing.title,description:payload.description?.trim()||null,
+      objectType:payload.unitId?"unit":payload.partyId?"party":payload.contractId?"contract":"project",
+      objectId:payload.unitId||payload.partyId||payload.contractId||payload.projectId||existing.objectId,
+      assignedToUserId:payload.assigneeMembershipId||existing.assignedToUserId,priority:payload.priority||existing.priority,
+      dueAt:payload.dueAt||null,state:completed?"completed":"open",completedAt:completed?new Date().toISOString():null,updatedAt:new Date().toISOString(),
+    }:{ state:payload.archive?"cancelled":completed?"completed":"open", completedAt:payload.archive?null:completed?new Date().toISOString():null, updatedAt:new Date().toISOString() }).where(and(eq(tasks.id, payload.id), eq(tasks.tenantId, DEMO_TENANT_ID))).returning();
     return Response.json({ task: updated, actor: current.id });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Úkol nelze aktualizovat" }, { status: 500 });
@@ -118,7 +125,10 @@ async function forwardApiTasks(request:Request,method:"GET"|"POST"|"PATCH"){
     const id=String(body.id??"");
     if(!id)return Response.json({error:"Chybí úkol"},{status:400});
     if(body.archive===true)return forwardBackendMutation(request,{method:"PATCH",target:`/v1/tasks/${encodeURIComponent(id)}/archive`,body:JSON.stringify({}),unavailableMessage:"Úkoly nejsou dostupné bez společného backendu"});
-    return forwardBackendMutation(request,{method:"PATCH",target:`/v1/tasks/${encodeURIComponent(id)}/completion`,body:JSON.stringify({completed:body.completed}),unavailableMessage:"Úkoly nejsou dostupné bez společného backendu"});
+    if(typeof body.title!=="string")return forwardBackendMutation(request,{method:"PATCH",target:`/v1/tasks/${encodeURIComponent(id)}/completion`,body:JSON.stringify({completed:body.completed}),unavailableMessage:"Úkoly nejsou dostupné bez společného backendu"});
+    const response=await forwardBackendMutation(request,{method:"PATCH",target:`/v1/tasks/${encodeURIComponent(id)}`,body:JSON.stringify(body),unavailableMessage:"Úkoly nejsou dostupné bez společného backendu"});
+    const payload=await response.json().catch(()=>({}));
+    return Response.json(response.ok?{task:payload}:payload,{status:response.status,headers:{"x-correlation-id":response.headers.get("x-correlation-id")??""}});
   }
   const response=await forwardBackendMutation(request,{method:"POST",target:"/v1/tasks",body:JSON.stringify(body),unavailableMessage:"Úkoly nejsou dostupné bez společného backendu"});
   const payload=await response.json().catch(()=>({}));
