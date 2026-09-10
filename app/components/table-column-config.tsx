@@ -16,6 +16,11 @@ export type TableColumnDefinition = {
   defaultVisible?: boolean;
   required?: boolean;
   align?: "center" | "action";
+  sortable?: boolean;
+  filterable?: boolean;
+  filterType?: "text" | "enum" | "number-range" | "date-range" | "relation" | "boolean";
+  accessor?: string;
+  formatter?: "text" | "number" | "money" | "date" | "date-time" | "status" | "relation";
 };
 
 export function tableColumnClassName(columns: readonly TableColumnDefinition[], id: string, extra = "") {
@@ -31,6 +36,10 @@ type TableColumnState = {
 };
 
 const TableColumnUserContext = createContext("anonymous");
+
+export function useTablePreferenceUserKey() {
+  return useContext(TableColumnUserContext);
+}
 
 export function TableColumnPreferenceProvider({ userKey, children }: { userKey?: string | null; children: React.ReactNode }) {
   return <TableColumnUserContext.Provider value={userKey || "anonymous"}>{children}</TableColumnUserContext.Provider>;

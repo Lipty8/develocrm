@@ -1,4 +1,13 @@
-export type SortDirection = "asc" | "desc";
+export type SortDirection = "asc" | "desc" | "none";
+
+export function nextSortDirection(direction?: SortDirection): SortDirection {
+  if (!direction || direction === "none") return "asc";
+  return direction === "asc" ? "desc" : "none";
+}
+
+export function parseSortDirection(value: string | null, fallback: Exclude<SortDirection, "none"> = "asc"): SortDirection {
+  return value === "asc" || value === "desc" || value === "none" ? value : fallback;
+}
 
 export function stableSort<T>(
   rows: T[],
@@ -6,6 +15,7 @@ export function stableSort<T>(
   direction: SortDirection,
   stableKey: (row: T) => string,
 ): T[] {
+  if (direction === "none") return [...rows];
   const multiplier = direction === "asc" ? 1 : -1;
   return rows
     .map((row, index) => ({ row, index }))

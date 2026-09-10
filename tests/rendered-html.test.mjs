@@ -51,7 +51,8 @@ test("keeps unit filters combinable and project clients in one table", async () 
   for (const label of ["Budova / etapa", "Podlaží", "Obchodní stav", "Dispozice", "Plocha m²", "Aktuální cena"]) {
     assert.match(app, new RegExp(label.replace("²", "\\u00b2")));
   }
-  assert.match(app, /function TableColumnFilter/);
+  const sharedFilters = await readFile(new URL("../app/components/table-column-filter.tsx", import.meta.url), "utf8");
+  assert.match(sharedFilters, /function TableColumnFilter/);
   assert.match(app, /function MultiSelectFilter/);
   assert.match(app, /type="checkbox"/);
   assert.match(app, /aria-expanded=/);
@@ -59,11 +60,11 @@ test("keeps unit filters combinable and project clients in one table", async () 
   assert.match(app, /buildingFilter\.includes\(unit\.building\)/);
   assert.match(app, /projectFilter\.some/);
   assert.match(app, /projectMatchesName/);
-  assert.match(app, /paymentRepository\.list\(\{query,sort,direction\}/);
+  assert.match(app, /paymentRepository\.list\(\{query,sort,direction:paymentDirection\}/);
   assert.match(app, /data-table unit-table filter-table/);
   assert.match(app, /data-table client-table filter-table/);
   assert.match(app, /data-table payment-table filter-table/);
-  assert.match(app, /column-filter-heading/);
+  assert.match(sharedFilters, /column-filter-heading/);
   assert.match(app, /Filtrovat jméno nebo název/);
   assert.match(app, /aria-label="Filtrovat platbu"/);
   assert.match(app, /Vybrat všech .* výsledků aktuálního filtru/);
