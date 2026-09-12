@@ -1,0 +1,115 @@
+# DeveloCRM Security Phase 0
+
+Status: implemented in source and verified locally on 11 September 2026. Azure probe, diagnostic and metric-alert configuration is active. Application source changes are not published by this document.
+
+## Media authorization
+
+R2 object keys are locators only. They no longer grant access.
+
+1. The browser obtains a delegated Entra token through the existing MSAL flow.
+2. The BFF forwards that token and the configured workspace header to the API.
+3. The API resolves the Entra identity to an active user and membership.
+4. `MediaRepository` resolves the media owner from PostgreSQL metadata and evaluates `media.read` or `media.manage` for the owning project.
+5. Only after the API authorizes the request does the BFF read or write the R2 object.
+
+`media_assets` stores tenant, project, optional unit, entity type and UUID, media kind, storage key, file name, MIME type, uploader and upload time. Composite foreign keys prevent cross-tenant and cross-project ownership. RLS and FORCE RLS are enabled. A partial unique index permits only one active cover or floorplan per entity while preserving replaced versions.
+
+For uploads, the client supplies only the target entity UUID and media kind. The backend derives tenant, project, unit and uploader from the authenticated context. If metadata persistence fails after an R2 write, the BFF deletes that new object. Replaced metadata remains historical and inactive.
+
+Production media routes contain no `develocrm-demo`, `iva@develo.example` or demo-user authorization path. Browser-only preview requires an authenticated ChatGPT user and an explicit `DEVELOCRM_PREVIEW_TENANT_ID`.
+
+## Safe API errors and logs
+
+All backend error responses use one public envelope:
+
+```json
+{
+  "code": "FORBIDDEN",
+  "message": "Nemáte oprávnění provést tuto operaci.",
+  "error": "Nemáte oprávnění provést tuto operaci.",
+  "correlationId": "request-id"
+}
+```
+
+The mapper suppresses SQL, constraint, driver, connection and stack details. Authentication failures do not expose verifier messages. The correlation ID is returned in the response header and body.
+
+Backend request logs contain method, route template, status, latency, correlation ID and error type. Authorization, cookies, error messages and stacks are redacted. The request serializer removes query strings, so media keys and filter values are not written to the ordinary request log. Request and response bodies are not logged.
+
+## Dependencies and SBOM
+
+Production audit before hardening: 2 critical, 25 high and 11 moderate advisories.
+
+Changes were deliberately limited to compatible versions and targeted transitive overrides:
+
+- `fastify` 5.10.0 → 5.12.1
+- `next` 16.2.6 → 16.3.3
+- patched overrides for `baseline-browser-mapping`, both supported `brace-expansion` lines, `browserslist`, both supported `fast-uri` lines, `find-my-way` and `nanoid`
+
+Production audit after hardening: 0 critical, 0 high and 1 moderate advisory. The remaining advisory is `uuid@8.3.2` through `exceljs`; the published fix requires a major dependency jump to UUID 11 and is intentionally deferred rather than forced into Phase 0.
+
+The CycloneDX production SBOM is stored in `security/sbom.cdx.json` and can be regenerated with:
+
+```sh
+pnpm sbom --sbom-format cyclonedx --prod --out security/sbom.cdx.json
+```
+
+The machine-readable before/after result is stored in `security/dependency-audit-summary.json`.
+
+## Azure probes and monitoring
+
+Container App `ca-develocrm-api-pilot` has:
+
+- liveness: `GET /health`, port 3001, 30-second interval;
+- readiness: `GET /ready`, port 3001, 10-second interval, including a database ping.
+
+Revision `ca-develocrm-api-pilot--0000025` was verified `Healthy`, `Running`, one replica. Both public endpoints returned HTTP 200.
+
+The following enabled severity-2 Azure Monitor metric alerts exist in `rg-develocrm-pilot`:
+
+- `develocrm-api-5xx`
+- `develocrm-api-readiness`
+- `develocrm-api-no-replicas`
+- `develocrm-api-restarts`
+- `develocrm-api-latency`
+- `develocrm-auth-401-spike`
+- `develocrm-auth-403-spike`
+- `develocrm-pg-cpu`
+- `develocrm-pg-memory`
+- `develocrm-pg-storage`
+- `develocrm-pg-connections-failed`
+
+No notification receiver was available in repository or Azure configuration. An Action Group e-mail, Teams webhook or incident-system receiver is still a required operational input; alerts currently remain visible in Azure Monitor without outbound notification.
+
+PostgreSQL diagnostic setting `develocrm-phase0` sends `PostgreSQLLogs`, sessions, database transactions, table statistics and all metrics to `log-develocrm-pilot`. `log_statement=none` and `log_min_duration_statement=-1`; SQL text logging and Query Store SQL-text categories were not enabled.
+
+The reproducible Container Apps probe definition is `infra/azure/containerapp-api-phase0.yaml`.
+
+## Restore validation
+
+A point-in-time restore for `2026-09-11T17:43:27Z` into the isolated temporary server `pg-develocrm-p0-restore-0911` completed in approximately seven minutes. The pilot server and its backup settings were not changed.
+
+The source and restore were compared with transactions forced to read-only. Both contained 36 applied migrations through `0036_handover_status_and_history.sql`. Counts matched exactly for all checked data sets: 1 tenant, 2 project records, 19 units, 49 accessories, 52 accessory assignments, 15 parties, 13 sales cases, 11 contracts, 11 contract versions, 7 payment obligations, 6 payment transactions, 4 handovers, 1 task, 202 audit records and 200 outbox events; both also contained zero documents and zero project-structure records.
+
+After validation, the temporary firewall rule was removed from the pilot server and Azure confirmed that `pg-develocrm-p0-restore-0911` no longer exists. The temporary restore server and all firewall rules owned by the validation were therefore cleaned up.
+
+## Verification
+
+- Backend TypeScript build: pass.
+- Backend tests: 158/158 pass, including clean migration chain, RLS/FORCE RLS, cross-tenant/project scenarios, all business blocks and Phase 0 media authorization.
+- Frontend production build and UX tests: 120/120 pass.
+- ESLint: 0 errors, 12 existing warnings.
+- Published-preview authenticated reload and navigation: pass; no browser console warnings or errors observed.
+- Current production endpoints `/health` and `/ready`: HTTP 200.
+
+The authorization evidence is indexed in `security/authorization-matrix.md`.
+
+## Release checklist
+
+1. Supply and attach an Azure Monitor Action Group receiver.
+2. Build and deploy the backend image containing migration `0037_security_phase0_media.sql` and the protected media endpoints.
+3. Run migrations through the existing migration image/job before shifting traffic.
+4. Publish the matching Sites build with `DEVELOCRM_API_URL`, `DEVELOCRM_TENANT_ID` and existing Entra settings; do not enable browser/demo fallback.
+5. Run authenticated media tests in the published build: no token 401, no permission 403, other project/tenant 403 or 404, authorized 200, random key 404, upload and replacement.
+6. Confirm 5xx/readiness/restart/auth alerts in Azure Monitor and attach the Action Group.
+7. Re-run the full backend and frontend regression suites.
+8. Stop before Security Phase 1.

@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
+import Fastify, { type FastifyError, type FastifyInstance, type FastifyRequest } from "fastify";
 import type { EntraIdentity } from "./auth/entra.js";
 import { EntraTokenVerifier } from "./auth/entra.js";
 import type { Database } from "./database.js";
@@ -17,11 +17,22 @@ import { HandoverRepository } from "./handovers/repository.js";
 import { PaymentRepository } from "./payments/repository.js";
 import { PaymentService } from "./payments/service.js";
 import { ClientChangeRepository } from "./client-changes/repository.js";
+import { MediaAccessError, MediaRepository, type MediaEntityType, type MediaKind } from "./media/repository.js";
+import { mapApiError } from "./http/api-error.js";
 
 const verifiedIdentities = new WeakMap<FastifyRequest, EntraIdentity>();
 
 export function buildApp(dependencies: { database: Database; verifier: EntraTokenVerifier; corsAllowedOrigins?:Set<string> }): FastifyInstance {
-  const app = Fastify({ logger: true,trustProxy:true });
+  const app = Fastify({
+    logger: {
+      redact: { paths:["req.headers.authorization","req.headers.cookie","request.headers.authorization","request.headers.cookie"], censor:"[REDACTED]" },
+      serializers:{
+        req:(value:FastifyRequest)=>({method:value.method,path:value.url.split("?",1)[0]}),
+        err:(value:FastifyError)=>({type:value.name,message:"[REDACTED]",stack:"[REDACTED]"}),
+      },
+    },
+    trustProxy:true,
+  });
   const repository = new IamRepository(dependencies.database);
   const inventory = new InventoryRepository(dependencies.database);
   const inventoryImports = new InventoryImportService(dependencies.database);
@@ -37,6 +48,22 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
   const paymentRepository = new PaymentRepository(dependencies.database);
   const paymentService = new PaymentService(dependencies.database);
   const clientChangeRepository = new ClientChangeRepository(dependencies.database);
+  const mediaRepository = new MediaRepository(dependencies.database);
+
+  app.setErrorHandler((error,request,reply)=>{
+    const normalized=error instanceof Error?error:new Error("Unknown request failure");
+    const reportedStatus=!!error&&typeof error==="object"&&"statusCode" in error&&typeof error.statusCode==="number"?error.statusCode:500;
+    request.log.error({event:"http.unhandled_error",correlationId:request.id,errorName:normalized.name,statusCode:reportedStatus},"request failed");
+    const statusCode=reportedStatus>=400?reportedStatus:500;
+    return reply.code(statusCode).send(mapApiError(normalized,statusCode,request.id));
+  });
+  app.addHook("preSerialization",async(request,reply,payload)=>{
+    if(reply.statusCode<400||request.url.startsWith("/ready"))return payload;
+    return mapApiError(payload,reply.statusCode,request.id);
+  });
+  app.addHook("onResponse",async(request,reply)=>{
+    request.log.info({event:"http.request.complete",correlationId:request.id,method:request.method,route:request.routeOptions.url,statusCode:reply.statusCode,responseTimeMs:reply.elapsedTime},"request complete");
+  });
 
   const rateWindows=new Map<string,{startedAt:number;count:number}>();
   app.addHook("onRequest",async(request,reply)=>{
@@ -56,10 +83,8 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
     try{
       verifiedIdentities.set(request,await dependencies.verifier.verify(request.headers.authorization));
     }catch(error){
-      return reply.code(401).send({
-        error:error instanceof Error?error.message:"Neplatné přihlášení",
-        correlationId:request.id,
-      });
+      request.log.warn({event:"auth.rejected",correlationId:request.id,errorName:error instanceof Error?error.name:"Error"},"authentication rejected");
+      return reply.code(401).send(mapApiError(new Error("authentication rejected"),401,request.id));
     }
   });
   app.get("/health", async () => ({ status: "ok", service: "develocrm-api" }));
@@ -179,7 +204,7 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
   app.post<{Body:{projectId:string;unitId:string;partyId:string;title:string;description?:string;sourceType:"individual"|"catalog";catalogItemCode?:string;category:string;surchargeAmount?:number|null;currency?:string;requestedAt:string;dueAt?:string|null}}>("/v1/client-changes",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await clientChangeRepository.create({...context,...request.body}));}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Klientskou změnu nelze vytvořit",correlationId:request.id});}});
   app.patch<{Params:{changeId:string};Body:{reason:string}}>("/v1/client-changes/:changeId/archive",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.send(await clientChangeRepository.archive({...context,changeId:request.params.changeId,reason:request.body.reason}));}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Klientskou změnu nelze archivovat",correlationId:request.id});}});
   app.get<{Querystring:{scope?:"mine"|"all"|"completed"}}>("/v1/tasks",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return{tasks:await taskRepository.list({...context,scope:request.query.scope??"mine"})};}catch(error){return reply.code(403).send({error:error instanceof Error?error.message:"Úkoly nelze načíst"});}});
-  app.get<{Querystring:{projectId?:string;unitId?:string;status?:string;ownerId?:string;query?:string;sort?:string;direction?:"asc"|"desc"}}>("/v1/handovers",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return handoverRepository.list({...context,...request.query});}catch(error){return reply.code(403).send({error:"Předání nelze načíst",correlationId:request.id});}});
+  app.get<{Querystring:{projectId?:string;unitId?:string;status?:string;ownerId?:string;query?:string;sort?:string;direction?:"asc"|"desc"}}>("/v1/handovers",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return handoverRepository.list({...context,...request.query});}catch{return reply.code(403).send({error:"Předání nelze načíst",correlationId:request.id});}});
   app.post<{Body:{unitId:string;scheduledAt:string;responsibleMembershipId:string;place?:string|null;note?:string|null;idempotencyKey:string}}>("/v1/handovers",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await handoverRepository.schedule({...context,...request.body}));}catch(error){request.log.error({err:error,correlationId:request.id},"handover scheduling failed");return reply.code(permissionError(error)?403:409).send({error:handoverError(error,"schedule"),correlationId:request.id});}});
   app.patch<{Params:{handoverId:string};Body:{scheduledAt:string;responsibleMembershipId:string;status:string;readiness:number;attention?:string|null;place?:string|null;note?:string|null;completedAt?:string|null}}>("/v1/handovers/:handoverId",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.send(await handoverRepository.update({...context,handoverId:request.params.handoverId,...request.body}));}catch(error){request.log.error({err:error,correlationId:request.id},"handover update failed");return reply.code(permissionError(error)?403:409).send({error:handoverError(error,"update"),correlationId:request.id});}});
   app.get<{Querystring:{projectId?:string;unitId?:string;partyId?:string;contractId?:string;salesCaseId?:string;status?:string;query?:string;sort?:string;direction?:"asc"|"desc"}}>("/v1/payments",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return paymentRepository.list({...context,...request.query});}catch(error){return reply.code(403).send({error:error instanceof Error?error.message:"Platby nelze načíst"});}});
@@ -191,10 +216,12 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
   app.patch<{Params:{taskId:string};Body:{projectId:string;unitId?:string;partyId?:string;contractId?:string;title:string;description?:string;priority:string;dueAt?:string;assigneeMembershipId:string;status:"open"|"completed"}}>("/v1/tasks/:taskId",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.send(await taskRepository.update({...context,taskId:request.params.taskId,...request.body}));}catch(error){request.log.warn({err:error,correlationId:request.id,taskId:request.params.taskId},"task update failed");return reply.code(permissionError(error)?403:409).send({error:permissionError(error)?"Nemáte oprávnění upravit tento úkol.":"Úkol se nepodařilo upravit.",correlationId:request.id});}});
   app.patch<{Params:{taskId:string};Body:{completed:boolean}}>("/v1/tasks/:taskId/completion",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return taskRepository.complete({...context,taskId:request.params.taskId,completed:request.body.completed});}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Úkol nelze aktualizovat"});}});
   app.patch<{Params:{taskId:string}}>("/v1/tasks/:taskId/archive",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return taskRepository.archive({...context,taskId:request.params.taskId});}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Úkol nelze archivovat"});}});
-  app.post<{Params:{projectId:string};Body:{url:string;mimeType:string;source?:string;externalId?:string}}>("/v1/projects/:projectId/cover",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.send(await dependencies.database.withContext({tenantId:context.tenantId,userId:context.userId},async client=>(await client.query("SELECT app.set_project_cover($1,$2,$3,$4,$5,$6,$7) id",[context.tenantId,request.params.projectId,request.body.url,request.body.mimeType,request.body.source??"crm",request.body.externalId??null,context.membershipId])).rows[0]));}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Titulní obrázek nelze uložit"});}});
-  app.post<{Params:{unitId:string};Body:{url:string;mimeType:string;source?:string;externalId?:string}}>("/v1/units/:unitId/floorplan",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.send(await dependencies.database.withContext({tenantId:context.tenantId,userId:context.userId},async client=>(await client.query("SELECT app.set_unit_floorplan($1,$2,$3,$4,$5,$6,$7) id",[context.tenantId,request.params.unitId,request.body.url,request.body.mimeType,request.body.source??"crm",request.body.externalId??null,context.membershipId])).rows[0]));}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Půdorys nelze uložit"});}});
-  app.get<{Params:{projectId:string}}>("/v1/projects/:projectId/media",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return dependencies.database.withContext({tenantId:context.tenantId,userId:context.userId},async client=>{const row=(await client.query<{id:string;cover_image_url:string|null;cover_image_mime_type:string|null}>("SELECT id,cover_image_url,cover_image_mime_type FROM projects WHERE tenant_id=$1 AND id=$2 AND app.has_project_permission(tenant_id,$3,id,'project.read')",[context.tenantId,request.params.projectId,context.membershipId])).rows[0];return{media:row?.cover_image_url?[{id:row.id,entityType:'project',entityId:row.id,kind:'cover',fileName:'Titulní obrázek',mimeType:row.cover_image_mime_type,url:row.cover_image_url}]:[]};});}catch(error){return reply.code(403).send({error:error instanceof Error?error.message:"Média nelze načíst"});}});
-  app.get<{Params:{unitId:string}}>("/v1/units/:unitId/media",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return dependencies.database.withContext({tenantId:context.tenantId,userId:context.userId},async client=>{const row=(await client.query<{id:string;floorplan_image_url:string|null;floorplan_image_mime_type:string|null}>("SELECT unit.id,unit.floorplan_image_url,unit.floorplan_image_mime_type FROM units unit WHERE unit.tenant_id=$1 AND unit.id=$2 AND app.has_project_permission(unit.tenant_id,$3,unit.project_id,'unit.read')",[context.tenantId,request.params.unitId,context.membershipId])).rows[0];return{media:row?.floorplan_image_url?[{id:row.id,entityType:'unit',entityId:row.id,kind:'floorplan',fileName:'Půdorys',mimeType:row.floorplan_image_mime_type,url:row.floorplan_image_url}]:[]};});}catch(error){return reply.code(403).send({error:error instanceof Error?error.message:"Média nelze načíst"});}});
+  app.post<{Body:{entityType:MediaEntityType;entityId:string;kind:MediaKind}}>("/v1/media/uploads/authorize",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return mediaRepository.authorizeUpload({...context,...request.body});}catch(error){return reply.code(mediaStatus(error)).send({error:"Médium nelze nahrát"});}});
+  app.get<{Querystring:{key:string}}>("/v1/media/access",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});if(!request.query.key)return reply.code(400).send({error:"Chybí identifikace souboru"});return{media:await mediaRepository.getByStorageKey({...context,storageKey:request.query.key})};}catch(error){return reply.code(mediaStatus(error)).send({error:"Médium není dostupné"});}});
+  app.post<{Params:{projectId:string};Body:{url:string;mimeType:string;storageKey:string;fileName:string}}>("/v1/projects/:projectId/cover",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return{media:await mediaRepository.register({...context,entityType:"project",entityId:request.params.projectId,kind:"cover",...request.body})};}catch(error){return reply.code(mediaStatus(error)).send({error:"Titulní obrázek nelze uložit"});}});
+  app.post<{Params:{unitId:string};Body:{url:string;mimeType:string;storageKey:string;fileName:string}}>("/v1/units/:unitId/floorplan",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return{media:await mediaRepository.register({...context,entityType:"unit",entityId:request.params.unitId,kind:"floorplan",...request.body})};}catch(error){return reply.code(mediaStatus(error)).send({error:"Půdorys nelze uložit"});}});
+  app.get<{Params:{projectId:string}}>("/v1/projects/:projectId/media",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});const media=await mediaRepository.getForEntity({...context,entityType:"project",entityId:request.params.projectId,kind:"cover"});return{media:media?[mediaDto(media)]:[]};}catch(error){return reply.code(mediaStatus(error)).send({error:"Média nelze načíst"});}});
+  app.get<{Params:{unitId:string}}>("/v1/units/:unitId/media",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});const media=await mediaRepository.getForEntity({...context,entityType:"unit",entityId:request.params.unitId,kind:"floorplan"});return{media:media?[mediaDto(media)]:[]};}catch(error){return reply.code(mediaStatus(error)).send({error:"Média nelze načíst"});}});
 
   app.patch<{Params:{projectId:string};Body:{name:string;location?:string|null;lifecycleStatus:string;managerMembershipId?:string|null;plannedHandoverFrom?:string|null;plannedHandoverTo?:string|null}}>("/v1/projects/:projectId",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.send(await inventory.updateProject({...context,projectId:request.params.projectId,...request.body}));}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Projekt nelze upravit"});}
@@ -477,6 +504,10 @@ function headerValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 function permissionError(error:unknown){return error instanceof Error&&/permission|required|oprávnění/i.test(error.message);}
+function mediaStatus(error:unknown){if(error instanceof MediaAccessError)return error.reason==="forbidden"?403:error.reason==="invalid"?400:404;if(permissionError(error))return 403;return error instanceof Error&&/duplicate|constraint|conflict/i.test(error.message)?409:500;}
+function mediaDto(media:{id:string;entityType:MediaEntityType;entityId:string;kind:MediaKind;fileName:string;mimeType:string;storageKey:string;uploadedAt:string;uploadedByUserId:string|null}){
+  return{id:media.id,entityType:media.entityType,entityId:media.entityId,kind:media.kind,fileName:media.fileName,mimeType:media.mimeType,url:`/api/media/file/${encodeURIComponent(media.storageKey)}`,uploadedAt:media.uploadedAt,uploadedBy:media.uploadedByUserId??undefined};
+}
 function handoverError(error:unknown,operation:"schedule"|"update"){
   const message=error instanceof Error?error.message:"";
   if(/already has an active handover|duplicate key.*unit_handovers_one_open/i.test(message))return "Pro tuto jednotku již existuje naplánované předání.";

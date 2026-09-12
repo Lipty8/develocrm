@@ -1,0 +1,23 @@
+{
+  "generatedAt": "2026-09-11T17:00:00Z",
+   "scope": "production",
+  "before": {
+    "critical": 2,
+    "high": 25,
+    "moderate": 11
+  },
+  "after": {
+    "critical": 0,
+    "high": 0,
+    "moderate": 1
+  },
+  "remaining": [
+    {
+      "package": "uuid",
+      "version": "8.3.2",
+      "via": "exceljs@4.4.0",
+      "severity": "moderate",
+      "reason": "The published patched line requires uuid >=11.1.1; a forced major transitive replacement was intentionally not applied in Security Phase 0."
+    }
+  ]
+}

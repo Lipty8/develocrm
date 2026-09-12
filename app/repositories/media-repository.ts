@@ -8,6 +8,13 @@ export interface MediaRepository {
   upload(entityType: "project" | "unit", entityId: string, kind: "cover" | "floorplan", file: File): Promise<MediaLink>;
 }
 
+async function materializeAuthenticatedMedia(media: MediaLink, signal?: AbortSignal): Promise<MediaLink> {
+  const response=await apiFetch(media.url,{signal,cache:"no-store"});
+  if(!response.ok)throw new Error(response.status===403?"Nemáte oprávnění zobrazit toto médium.":"Médium se nepodařilo načíst.");
+  const blob=await response.blob();
+  return {...media,url:URL.createObjectURL(blob),mimeType:blob.type||media.mimeType};
+}
+
 async function prepareMediaUpload(file: File, kind: MediaKind): Promise<File> {
   const validation = validateMediaFile(file, kind);
   if (validation.isPdf) return file;
@@ -42,7 +49,8 @@ class ApiMediaRepository implements MediaRepository {
     const response = await apiFetch(`/api/media?entityType=${entityType}&entityId=${encodeURIComponent(entityId)}`, { signal, cache: "no-store" });
     if (!response.ok) return null;
     const payload = await response.json() as { media: MediaLink[] };
-    return payload.media[0] ?? null;
+    const media=payload.media[0];
+    return media?materializeAuthenticatedMedia(media,signal):null;
   }
   async upload(entityType: "project" | "unit", entityId: string, kind: "cover" | "floorplan", file: File) {
     const prepared = await prepareMediaUpload(file, kind);
@@ -51,7 +59,7 @@ class ApiMediaRepository implements MediaRepository {
     const response = await apiFetch("/api/media", { method: "POST", body: form });
     const payload = await response.json().catch(() => ({})) as { media?: MediaLink; error?: string; correlationId?: string };
     if (!response.ok || !payload.media) throw new Error(payload.error || "Půdorys se nepodařilo uložit. Zkuste to prosím znovu.");
-    return payload.media;
+    return materializeAuthenticatedMedia(payload.media);
   }
 }
 

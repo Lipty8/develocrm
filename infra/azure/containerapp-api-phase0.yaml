@@ -1,0 +1,50 @@
+properties:
+  template:
+    containers:
+      - name: ca-develocrm-api-pilot
+        image: acrdevelocrmpilot9a4c6e.azurecr.io/develocrm-api:tasks-000b70a
+        resources:
+          cpu: 0.5
+          memory: 1Gi
+        env:
+          - name: DATABASE_URL
+            secretRef: database-url
+          - name: DEVELOCRM_ENV
+            value: pilot
+          - name: PORT
+            value: "3001"
+          - name: ENTRA_CLIENT_ID
+            value: ca183eb5-def3-43d6-b83f-892c0fa220e1
+          - name: ENTRA_ALLOWED_TENANT_IDS
+            value: cda1a5b3-a396-497a-8ac2-f0eed7c336a2
+          - name: CORS_ALLOWED_ORIGINS
+            value: https://develocrm-v1-preview.lipty8.chatgpt.site
+          - name: DEVELOCRM_SEED_PROFILE
+            value: none
+          - name: ENTRA_REQUIRED_SCOPE
+            value: access_as_user
+        probes:
+          - type: Liveness
+            httpGet:
+              path: /health
+              port: 3001
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          - type: Readiness
+            httpGet:
+              path: /ready
+              port: 3001
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+    scale:
+      minReplicas: 1
+      maxReplicas: 2
+      pollingInterval: 30
+      cooldownPeriod: 300
