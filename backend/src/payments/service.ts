@@ -11,4 +11,7 @@ export class PaymentService{
   reverse(input:Context&{transactionId:string;reason:string}){
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{id:string}>("SELECT app.reverse_payment($1,$2,$3,$4) id",[input.tenantId,input.transactionId,input.reason,input.membershipId])).rows[0]);
   }
+  refund(input:Context&{obligationId:string;sourceTransactionId:string;amount:number;refundedAt:string;reason:string;idempotencyKey:string}){
+    return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{id:string}>("SELECT app.create_payment_refund($1,$2,$3,$4,$5,$6,$7,$8) id",[input.tenantId,input.obligationId,input.sourceTransactionId,input.amount,input.refundedAt,input.reason,input.idempotencyKey,input.membershipId])).rows[0]);
+  }
 }
