@@ -15,4 +15,9 @@ test("návrat do aplikace obnoví session, data i metadata obrázků",async()=>{
   assert.match(app,/setCommercialReloadKey/);
   assert.match(app,/setClientReloadKey/);
   assert.match(app,/setUrl\(null\)/);
+  for(const readinessFlag of ["identityReady","catalogReady","clientDataReady","commercialDataReady"]){
+    assert.match(app,new RegExp(`!${readinessFlag}`));
+  }
+  assert.match(app,/Načítám pracovní prostor…/);
+  assert.match(app,/Vaše data nebyla nahrazena lokální kopií/);
 });

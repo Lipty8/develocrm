@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { MoreHorizontal } from "lucide-react";
 
@@ -17,7 +17,7 @@ export function RowActionMenu({ label, actions }: { label: string; actions: RowA
   const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<React.CSSProperties>({});
 
-  const place = () => {
+  const place = useCallback(() => {
     const trigger = triggerRef.current?.getBoundingClientRect();
     if (!trigger) return;
     const width = 230;
@@ -31,7 +31,7 @@ export function RowActionMenu({ label, actions }: { label: string; actions: RowA
       left: Math.max(12, Math.min(trigger.right - width, window.innerWidth - width - 12)),
       top,
     });
-  };
+  }, [actions.length]);
 
   useEffect(() => {
     if (!open) return;
@@ -57,12 +57,14 @@ export function RowActionMenu({ label, actions }: { label: string; actions: RowA
     document.addEventListener("mousedown", close);
     document.addEventListener("keydown", keyboard);
     window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
     return () => {
       document.removeEventListener("mousedown", close);
       document.removeEventListener("keydown", keyboard);
       window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
     };
-  }, [actions.length, open]);
+  }, [open, place]);
 
   return <>
     <button ref={triggerRef} type="button" className="ghost-icon row-action-trigger" aria-label={label} aria-expanded={open} aria-haspopup="menu" onClick={(event) => { event.stopPropagation(); setOpen(value => !value); }}><MoreHorizontal size={18}/></button>

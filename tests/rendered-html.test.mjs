@@ -84,7 +84,7 @@ test("unit detail exposes persistent commercial context", async () => {
   assert.match(app, /label: "Klientské změny"/);
   assert.doesNotMatch(app, /unit-tab-new/);
   assert.match(app, /Individuální změna/);
-  assert.match(app, /Ceník standardních změn/);
+  assert.match(app, /Položka z ceníku/);
   assert.match(app, /Související dokumenty/);
   assert.match(app, /Historie zájmu/);
   assert.match(app, /Každá změna je samostatný auditovatelný záznam/);

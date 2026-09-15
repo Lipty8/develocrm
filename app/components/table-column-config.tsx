@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Columns3, RotateCcw, X } from "lucide-react";
 import {
@@ -91,7 +91,7 @@ export function TableColumnMenu({ columns, state }: { columns: readonly TableCol
   const popoverRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<React.CSSProperties>({});
 
-  const placePopover = () => {
+  const placePopover = useCallback(() => {
     const trigger = rootRef.current?.getBoundingClientRect();
     if (!trigger) return;
     const mobile = window.innerWidth <= 720;
@@ -111,7 +111,7 @@ export function TableColumnMenu({ columns, state }: { columns: readonly TableCol
       top,
       right: "auto",
     });
-  };
+  }, [columns.length]);
 
   useEffect(() => {
     if (!open) return;
@@ -124,12 +124,14 @@ export function TableColumnMenu({ columns, state }: { columns: readonly TableCol
     document.addEventListener("mousedown", close);
     document.addEventListener("keydown", escape);
     window.addEventListener("resize", reposition);
+    window.addEventListener("scroll", reposition, true);
     return () => {
       document.removeEventListener("mousedown", close);
       document.removeEventListener("keydown", escape);
       window.removeEventListener("resize", reposition);
+      window.removeEventListener("scroll", reposition, true);
     };
-  }, [columns.length, open]);
+  }, [open, placePopover]);
 
   return <div className="table-column-config" ref={rootRef}>
     <button className={`secondary-button compact table-column-trigger ${open ? "active" : ""}`} type="button" onClick={() => { if(!open)placePopover();setOpen((value) => !value); }} aria-expanded={open} aria-haspopup="dialog"><Columns3 size={16}/> Sloupce</button>

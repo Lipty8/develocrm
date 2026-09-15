@@ -7,7 +7,7 @@ const read=path=>readFile(new URL(path,root),"utf8");
 
 test("global Documents workspace exposes filters, detail, versions, history and concrete contexts",async()=>{
   const [app,repository,route]=await Promise.all([read("app/CRMApp.tsx"),read("app/repositories/document-repository.ts"),read("app/api/documents/route.ts")]);
-  for(const component of ["DocumentsPage","DocumentDetail","DocumentCreateModal","DocumentEditModal","DocumentVersionModal","ClientDocuments"])assert.match(app,new RegExp(`function ${component}`));
+  for(const component of ["DocumentsPage","DocumentDetail","StandaloneDocumentCreateModal","DocumentEditModal","DocumentVersionModal","ClientDocuments"])assert.match(app,new RegExp(`function ${component}`));
   assert.match(app,/Typ dokumentu/);
   assert.match(app,/Historie dokumentu/);
   assert.match(app,/Fyzické verze/);
