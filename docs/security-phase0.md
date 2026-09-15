@@ -1,6 +1,6 @@
 # DeveloCRM Security Phase 0
 
-Status: implemented in source and verified locally on 11 September 2026. Azure probe, diagnostic and metric-alert configuration is active. Application source changes are not published by this document.
+Status: **CLOSED**. Implemented, deployed and verified in the pilot environment. Migration `0037_security_phase0_media.sql`, the matching backend and the matching Sites frontend were verified on 13 September 2026. Azure probes, diagnostics, metric alerts and outbound e-mail notification are active.
 
 ## Media authorization
 
@@ -62,7 +62,7 @@ Container App `ca-develocrm-api-pilot` has:
 - liveness: `GET /health`, port 3001, 30-second interval;
 - readiness: `GET /ready`, port 3001, 10-second interval, including a database ping.
 
-Revision `ca-develocrm-api-pilot--0000025` was verified `Healthy`, `Running`, one replica. Both public endpoints returned HTTP 200.
+Revision `ca-develocrm-api-pilot--security-p0-5392da9` was verified `Healthy` and `Running`. Both public endpoints returned HTTP 200.
 
 The following enabled severity-2 Azure Monitor metric alerts exist in `rg-develocrm-pilot`:
 
@@ -78,7 +78,9 @@ The following enabled severity-2 Azure Monitor metric alerts exist in `rg-develo
 - `develocrm-pg-storage`
 - `develocrm-pg-connections-failed`
 
-No notification receiver was available in repository or Azure configuration. An Action Group e-mail, Teams webhook or incident-system receiver is still a required operational input; alerts currently remain visible in Azure Monitor without outbound notification.
+All listed alerts use the enabled Action Group `ag-develocrm-pilot-alerts` (`dcrm-pilot`). Its `AdamLiptak` e-mail receiver is enabled for `adam.liptak@immobuilding.cz` and uses Azure Common Alert Schema. The Action Group is tagged for DeveloCRM, the pilot environment and Security Phase 0.
+
+Notification routing was verified on 13 September 2026 with a temporary severity-4 metric alert against the Container App replica metric. The alert entered the `Fired` state and invoked the configured Action Group without changing application or database state. The temporary alert rule was deleted after the test. Azure confirms dispatch through the alert pipeline; final mailbox receipt remains verifiable only by the recipient.
 
 PostgreSQL diagnostic setting `develocrm-phase0` sends `PostgreSQLLogs`, sessions, database transactions, table statistics and all metrics to `log-develocrm-pilot`. `log_statement=none` and `log_min_duration_statement=-1`; SQL text logging and Query Store SQL-text categories were not enabled.
 
@@ -103,13 +105,13 @@ After validation, the temporary firewall rule was removed from the pilot server 
 
 The authorization evidence is indexed in `security/authorization-matrix.md`.
 
-## Release checklist
+## Closure checklist
 
-1. Supply and attach an Azure Monitor Action Group receiver.
-2. Build and deploy the backend image containing migration `0037_security_phase0_media.sql` and the protected media endpoints.
-3. Run migrations through the existing migration image/job before shifting traffic.
-4. Publish the matching Sites build with `DEVELOCRM_API_URL`, `DEVELOCRM_TENANT_ID` and existing Entra settings; do not enable browser/demo fallback.
-5. Run authenticated media tests in the published build: no token 401, no permission 403, other project/tenant 403 or 404, authorized 200, random key 404, upload and replacement.
-6. Confirm 5xx/readiness/restart/auth alerts in Azure Monitor and attach the Action Group.
-7. Re-run the full backend and frontend regression suites.
-8. Stop before Security Phase 1.
+1. Action Group e-mail receiver supplied and attached: complete.
+2. Backend image containing migration `0037_security_phase0_media.sql` and protected media endpoints deployed: complete.
+3. Migration executed through the dedicated migration image/job before backend traffic shift: complete.
+4. Matching Sites build published with production API, tenant and Entra settings and without browser/demo fallback: complete.
+5. Authenticated and unauthorized media scenarios verified: complete.
+6. API, readiness, replica, restart, latency, authentication and PostgreSQL alerts connected to the Action Group: complete.
+7. Source regression verification and published-preview smoke tests: complete.
+8. Security Phase 1 was not started.
