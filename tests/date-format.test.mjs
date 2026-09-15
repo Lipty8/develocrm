@@ -5,6 +5,7 @@ import test from "node:test";
 const {
   formatPragueDate,
   formatPragueDateTime,
+  formatPragueDateTimeExact,
   formatPragueMonthYear,
 } = await import("../app/lib/date-format.ts");
 
@@ -16,6 +17,12 @@ test("UTC čas se v zimě převede do Europe/Prague bez sekund", () => {
 
 test("UTC čas se v létě převede do Europe/Prague bez sekund", () => {
   assert.equal(formatPragueDateTime("2026-07-15T10:30:45.123Z"), "15. 7. 2026 12:30");
+});
+
+test("administrátorský tooltip zachová sekundy, ale nikdy milisekundy ani ISO", () => {
+  const exact=formatPragueDateTimeExact("2026-07-15T10:30:45.987Z");
+  assert.equal(exact,"15. 7. 2026 12:30:45");
+  assert.doesNotMatch(exact,/T|Z|\.987/);
 });
 
 test("samotné datum a měsíc s rokem mají český formát", () => {

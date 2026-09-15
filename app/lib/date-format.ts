@@ -43,6 +43,21 @@ export function formatPragueDateTime(value: DateValue): string {
   }).format(date);
 }
 
+/** Administrátorský diagnostický detail: přesnost na sekundy, nikdy raw ISO ani milisekundy. */
+export function formatPragueDateTimeExact(value: DateValue): string {
+  const date = validDate(value);
+  if (!date) return "—";
+  return new Intl.DateTimeFormat("cs-CZ", {
+    timeZone: PRAGUE_TIME_ZONE,
+    day: "numeric",
+    month: "numeric",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(date);
+}
+
 export function formatPragueMonthYear(value: DateValue): string {
   const date = validDate(value);
   if (!date) return "—";

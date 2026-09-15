@@ -25,6 +25,9 @@ export interface CommercialRepository {
   decidePrice(input:{proposalId:string;decision:"approved"|"rejected";reason:string;actorName?:string}):Promise<void>;
   transitionContract(input: { contractId: string; to: string; reason: string; actorName?: string }): Promise<void>;
   createContract(input:{salesCaseId:string;type:"rs"|"sbk"|"ks"|"amendment";reference:string;title:string;parentContractId?:string;idempotencyKey:string;paymentCalculationType?:"percentage"|"fixed";paymentInputValue?:number;paymentDueAt?:string}):Promise<ContractCreateResult>;
+  createAddendum(input:{baseContractId:string;title?:string;idempotencyKey:string}):Promise<{id:string;versionId:string;amendmentNumber:number;reference:string}>;
+  addContractNote(input:{contractId:string;text:string}):Promise<{id:string}>;
+  archiveContractNote(input:{noteId:string;reason:string}):Promise<void>;
   getNextContractAction(unitId:string,signal?:AbortSignal):Promise<UnitNextContractAction>;
   createNextContract(input:ContextualContractInput):Promise<ContractCreateResult>;
   createContractVersion(input:{contractId:string;name:string;source?:string;basedOnVersionId?:string}):Promise<{id:string}>;
@@ -132,6 +135,9 @@ class ApiCommercialRepository implements CommercialRepository {
   async createContract(input:{salesCaseId:string;type:"rs"|"sbk"|"ks"|"amendment";reference:string;title:string;parentContractId?:string;idempotencyKey:string;paymentCalculationType?:"percentage"|"fixed";paymentInputValue?:number;paymentDueAt?:string}){
     const response=await apiFetch("/api/commercial/contracts",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});if(response.ok)return response.json() as Promise<{id:string;versionId:string;paymentObligationId:string|null;paymentAmount:number|null}>;const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??"Smlouvu nelze vytvořit");
   }
+  async createAddendum(input:{baseContractId:string;title?:string;idempotencyKey:string}){const response=await apiFetch(`/api/commercial/contracts/${encodeURIComponent(input.baseContractId)}/addenda`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});if(response.ok)return response.json() as Promise<{id:string;versionId:string;amendmentNumber:number;reference:string}>;const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??"Dodatek nelze vytvořit");}
+  async addContractNote(input:{contractId:string;text:string}){const response=await apiFetch(`/api/commercial/contracts/${encodeURIComponent(input.contractId)}/notes`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text:input.text})});if(response.ok)return response.json() as Promise<{id:string}>;const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??"Poznámku nelze uložit");}
+  async archiveContractNote(input:{noteId:string;reason:string}){const response=await apiFetch(`/api/commercial/contract-notes/${encodeURIComponent(input.noteId)}/archive`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({reason:input.reason})});if(response.ok)return;const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??"Poznámku nelze archivovat");}
   async getNextContractAction(unitId:string,signal?:AbortSignal){
     const response=await apiFetch(`/api/commercial/units/${encodeURIComponent(unitId)}/next-contract-action`,{signal,cache:"no-store"});
     if(response.ok)return response.json() as Promise<UnitNextContractAction>;

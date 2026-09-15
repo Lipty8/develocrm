@@ -17,12 +17,13 @@ test("unit preview and unit tasks do not expose synthetic pilot data",async()=>{
   assert.match(app,/task\.objectType==="unit"/);
 });
 
-test("obsolete duplicate document form and placeholder CTAs stay removed",async()=>{
+test("obsolete duplicate document form stays removed and contract notes use the governed flow",async()=>{
   const app=await read("app/CRMApp.tsx");
   assert.doesNotMatch(app,/function DocumentCreateModal\(/);
   assert.doesNotMatch(app,/Ceník se připravuje/);
   assert.doesNotMatch(app,/notify\("Nová smlouva/);
-  assert.doesNotMatch(app,/> Přidat poznámku<\/button>/);
+  assert.match(app,/function ContractNoteModal\(/);
+  assert.match(app,/commercialRepository\.addContractNote/);
   assert.match(app,/function StandaloneDocumentCreateModal\(/);
 });
 

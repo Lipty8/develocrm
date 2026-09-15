@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { PRAGUE_TIME_ZONE } from "./date-format";
 
-export { formatPragueDate, formatPragueDateTime, formatPragueMonthYear, formatPragueTime, PRAGUE_TIME_ZONE } from "./date-format";
+export { formatPragueDate, formatPragueDateTime, formatPragueDateTimeExact, formatPragueMonthYear, formatPragueTime, PRAGUE_TIME_ZONE } from "./date-format";
 export type Clock = { now(): Date };
 export const systemClock: Clock = { now: () => new Date() };
 
