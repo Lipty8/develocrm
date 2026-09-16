@@ -128,6 +128,9 @@ test("vratka respektuje stav RS, skutečnou úhradu, oprávnění a volitelnou p
   const activeDb=await database();
   const active=await createRs(activeDb,"refund-active");
   const activeTransaction=(await activeDb.query<{id:string}>("SELECT app.record_payment($1,$2,100000,now(),NULL,NULL,NULL,NULL,$3,$4) id",[tenant,active.payment_obligation_id,"active-payment-0001",member])).rows[0].id;
+  const activeRepository=new PaymentRepository({withContext:async(_context:{tenantId:string;userId:string},operation:(client:PGlite)=>Promise<unknown>)=>operation(activeDb)} as never);
+  const activeProjection=(await activeRepository.list({tenantId:tenant,userId:user,membershipId:member})).payments.find((payment:{id:string})=>payment.id===active.payment_obligation_id) as {refundable:number;refundAllowed:boolean};
+  assert.equal(activeProjection.refundable,0);assert.equal(activeProjection.refundAllowed,false);
   await assert.rejects(activeDb.query("SELECT app.create_payment_refund($1,$2,$3,1000,now(),NULL,$4,$5)",[tenant,active.payment_obligation_id,activeTransaction,"active-refund-0001",member]),/cancelled RS/i);
   await activeDb.close();
 
@@ -144,6 +147,8 @@ test("vratka respektuje stav RS, skutečnou úhradu, oprávnění a volitelnou p
   const beforeRefund=await repository.list({tenantId:tenant,userId:user,membershipId:member});
   const projectedBefore=beforeRefund.payments.find((payment:{id:string})=>payment.id===paid.payment_obligation_id) as {refundable:number;refundAllowed:boolean};
   assert.equal(projectedBefore.refundable,250000);assert.equal(projectedBefore.refundAllowed,true);
+  assert.equal((await repository.list({tenantId:tenant,userId:user,membershipId:member,projectId:"00000000-0000-4000-8000-000000000099"})).payments.length,0);
+  await assert.rejects(paidDb.query("SELECT app.create_payment_refund($1,$2,$3,1000,now(),NULL,$4,$5)",["00000000-0000-4000-8000-000000000098",paid.payment_obligation_id,paidTransaction,"foreign-tenant-01",member]),/received payment allocation/i);
   await assert.rejects(paidDb.query("SELECT app.create_payment_refund($1,$2,$3,1000,now(),NULL,$4,$5)",[tenant,paid.payment_obligation_id,paidTransaction,"no-permission-01","d3000000-0000-4000-8000-000000000004"]),/permission required/i);
   const refund=(await paidDb.query<{id:string}>("SELECT app.create_payment_refund($1,$2,$3,250000,now(),NULL,$4,$5) id",[tenant,paid.payment_obligation_id,paidTransaction,"optional-note-01",member])).rows[0];
   assert.equal((await paidDb.query<{reason:string}>("SELECT reason FROM payment_refunds WHERE id=$1",[refund.id])).rows[0].reason,"Bez poznámky");
