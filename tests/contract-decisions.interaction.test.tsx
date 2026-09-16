@@ -5,7 +5,7 @@ import {JSDOM} from "jsdom";
 import {RowActionMenu} from "../app/components/row-action-menu";
 import {TableColumnMenu,TableColumnPreferenceProvider,useTableColumns,type TableColumnDefinition} from "../app/components/table-column-config";
 import {TableColumnFilter} from "../app/components/table-column-filter";
-import {ContractAddendumModal,ContractNoteModal,FormModal,PaymentRefundForm} from "../app/CRMApp";
+import {ContractAddendumModal,ContractNoteModal,FormModal,PaymentRefundForm,paymentRefundAvailability} from "../app/CRMApp";
 
 let cleanup:()=>void;
 let render:typeof import("@testing-library/react").render;
@@ -88,7 +88,7 @@ test("poznámkový modal provede reálný vstup a předá očištěný text muta
   await waitFor(()=>assert.equal(saved,"Interní informace"));
 });
 
-test("modal dodatku předá název a vratka vyžaduje potvrzenou samostatnou operaci",async()=>{
+test("modal dodatku předá název a vratka dovolí volitelnou poznámku",async()=>{
   const user=userEvent.setup({document});let addendumTitle:string|undefined;
   const contract={id:"contract-1",reference:"DEJ-417-RS",title:"RS",type:"RS"} as never;
   render(<ContractAddendumModal contract={contract} close={()=>{}} save={async title=>{addendumTitle=title;}}/>);
@@ -97,10 +97,17 @@ test("modal dodatku předá název a vratka vyžaduje potvrzenou samostatnou ope
   await waitFor(()=>assert.equal(addendumTitle,"Dodatek ke kupujícím"));
   cleanup();
   let refund:Record<string,unknown>|undefined;window.confirm=()=>true;
-  const payment={id:"obligation-1",unit:"417",contractReference:"DEJ-417-RS",transactions:[{id:"transaction-1",amount:100000,paidAt:"2026-09-15T08:00:00Z",sourceType:"manual",refunds:[]}]} as never;
+  const payment={id:"obligation-1",unit:"417",client:"Jan Novák",paid:100000,refunded:0,refundable:100000,refundAllowed:true,contractReference:"DEJ-417-RS",transactions:[{id:"transaction-1",amount:100000,paidAt:"2026-09-15T08:00:00Z",sourceType:"manual",refunds:[]}]} as never;
   render(<PaymentRefundForm payment={payment} busy={false} error="" cancel={()=>{}} save={async value=>{refund=value;}}/>);
-  const reason=screen.getByRole("textbox",{name:"Důvod"});await user.type(reason,"Vráceno klientovi");
+  assert.ok(screen.getByText("ZBÝVÁ MOŽNÉ VRÁTIT"));
   await user.click(screen.getByRole("button",{name:"Potvrdit vratku"}));
   await waitFor(()=>assert.equal(refund?.sourceTransactionId,"transaction-1"));
-  assert.equal(refund?.amount,100000);assert.equal(refund?.reason,"Vráceno klientovi");assert.equal(typeof refund?.idempotencyKey,"string");
+  assert.equal(refund?.amount,100000);assert.equal(refund?.reason,undefined);assert.equal(typeof refund?.idempotencyKey,"string");
+});
+
+test("CTA vratky používá serverovou projekci oprávnění a zbývající částky",()=>{
+  const base={paid:150000,refunded:50000,refundable:100000,refundAllowed:true} as never;
+  assert.deepEqual(paymentRefundAvailability(base),{refunded:50000,refundable:100000,available:true});
+  assert.equal(paymentRefundAvailability({...base,refundAllowed:false} as never).available,false);
+  assert.equal(paymentRefundAvailability({...base,refundable:0} as never).available,false);
 });

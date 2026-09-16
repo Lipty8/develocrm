@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 import test from "node:test";
 import {PGlite} from "@electric-sql/pglite";
+import {PaymentRepository} from "../src/payments/repository.js";
 
 const tenant="d0000000-0000-4000-8000-000000000001";
 const user="d1000000-0000-4000-8000-000000000001";
@@ -24,7 +25,7 @@ async function database(){
     "0021_contract_external_signature.sql","0022_rs_signature_reservation.sql","0023_atomic_party_prereservation.sql",
     "0024_unit_payment_and_contract_workflow.sql","0028_contract_workflow_and_buyer_assignment.sql","0029_contract_party_assignments.sql",
     "0030_contract_assignment_workflow.sql","0031_accessory_pricing_and_contract_references.sql","0035_manual_payment_recording.sql",
-    "0038_contract_addenda_notes_and_refunds.sql",
+    "0038_contract_addenda_notes_and_refunds.sql","0039_payment_refund_availability.sql",
   ])await db.exec(await source(`../migrations/${name}`));
   await db.exec(`INSERT INTO role_assignments(tenant_id,membership_id,role_id,assigned_by_user_id) VALUES('${tenant}','${member}','d4000000-0000-4000-8000-000000000001','${user}') ON CONFLICT DO NOTHING`);
   await db.exec(`SET ROLE develocrm_app;SELECT set_config('app.user_id','${user}',false);SELECT set_config('app.tenant_id','${tenant}',false);`);
@@ -121,4 +122,34 @@ test("zrušená zaplacená RS zachová úhradu a umožní explicitní částečn
   assert.equal((await db.query<{count:number}>("SELECT count(*)::int count FROM audit_log WHERE action='payment.refund_created' AND metadata->>'obligationId'=$1",[base.payment_obligation_id])).rows[0].count,2);
   assert.equal((await db.query<{count:number}>("SELECT count(*)::int count FROM outbox_events WHERE event_type='payment.refund_created.v1' AND payload->>'obligationId'=$1",[base.payment_obligation_id])).rows[0].count,2);
   await db.close();
+});
+
+test("vratka respektuje stav RS, skutečnou úhradu, oprávnění a volitelnou poznámku",async()=>{
+  const activeDb=await database();
+  const active=await createRs(activeDb,"refund-active");
+  const activeTransaction=(await activeDb.query<{id:string}>("SELECT app.record_payment($1,$2,100000,now(),NULL,NULL,NULL,NULL,$3,$4) id",[tenant,active.payment_obligation_id,"active-payment-0001",member])).rows[0].id;
+  await assert.rejects(activeDb.query("SELECT app.create_payment_refund($1,$2,$3,1000,now(),NULL,$4,$5)",[tenant,active.payment_obligation_id,activeTransaction,"active-refund-0001",member]),/cancelled RS/i);
+  await activeDb.close();
+
+  const unpaidDb=await database();
+  const unpaid=await createRs(unpaidDb,"refund-unpaid");await sign(unpaidDb,unpaid.contract_id,unpaid.version_id);await unpaidDb.query("SELECT app.transition_contract_status($1,$2,'cancelled','Ukončeno bez úhrady',$3)",[tenant,unpaid.contract_id,member]);
+  await assert.rejects(unpaidDb.query("SELECT app.create_payment_refund($1,$2,$3,1000,now(),NULL,$4,$5)",[tenant,unpaid.payment_obligation_id,"00000000-0000-4000-8000-000000000099","unpaid-refund-01",member]),/received payment allocation/i);
+  await unpaidDb.close();
+
+  const paidDb=await database();
+  const paid=await createRs(paidDb,"refund-permission");await sign(paidDb,paid.contract_id,paid.version_id);
+  const paidTransaction=(await paidDb.query<{id:string}>("SELECT app.record_payment($1,$2,250000,now(),NULL,NULL,NULL,NULL,$3,$4) id",[tenant,paid.payment_obligation_id,"full-payment-0001",member])).rows[0].id;
+  await paidDb.query("SELECT app.transition_contract_status($1,$2,'cancelled','Klient odstoupil',$3)",[tenant,paid.contract_id,member]);
+  const repository=new PaymentRepository({withContext:async(_context:{tenantId:string;userId:string},operation:(client:PGlite)=>Promise<unknown>)=>operation(paidDb)} as never);
+  const beforeRefund=await repository.list({tenantId:tenant,userId:user,membershipId:member});
+  const projectedBefore=beforeRefund.payments.find((payment:{id:string})=>payment.id===paid.payment_obligation_id) as {refundable:number;refundAllowed:boolean};
+  assert.equal(projectedBefore.refundable,250000);assert.equal(projectedBefore.refundAllowed,true);
+  await assert.rejects(paidDb.query("SELECT app.create_payment_refund($1,$2,$3,1000,now(),NULL,$4,$5)",[tenant,paid.payment_obligation_id,paidTransaction,"no-permission-01","d3000000-0000-4000-8000-000000000004"]),/permission required/i);
+  const refund=(await paidDb.query<{id:string}>("SELECT app.create_payment_refund($1,$2,$3,250000,now(),NULL,$4,$5) id",[tenant,paid.payment_obligation_id,paidTransaction,"optional-note-01",member])).rows[0];
+  assert.equal((await paidDb.query<{reason:string}>("SELECT reason FROM payment_refunds WHERE id=$1",[refund.id])).rows[0].reason,"Bez poznámky");
+  assert.equal((await paidDb.query<{refundable:string}>("SELECT (app.payment_obligation_paid($1,$2)-COALESCE(sum(amount),0))::text refundable FROM payment_refunds WHERE obligation_id=$2",[tenant,paid.payment_obligation_id])).rows[0].refundable,"0.00");
+  const afterRefund=await repository.list({tenantId:tenant,userId:user,membershipId:member});
+  const projectedAfter=afterRefund.payments.find((payment:{id:string})=>payment.id===paid.payment_obligation_id) as {refundable:number;refundAllowed:boolean};
+  assert.equal(projectedAfter.refundable,0);assert.equal(projectedAfter.refundAllowed,false);
+  await paidDb.close();
 });
