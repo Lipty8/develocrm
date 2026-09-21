@@ -5,7 +5,7 @@ import {JSDOM} from "jsdom";
 import {RowActionMenu} from "../app/components/row-action-menu";
 import {TableColumnMenu,TableColumnPreferenceProvider,useTableColumns,type TableColumnDefinition} from "../app/components/table-column-config";
 import {TableColumnFilter} from "../app/components/table-column-filter";
-import {ContractAddendumModal,ContractNoteModal,FormModal,PaymentRefundForm,paymentRefundAvailability} from "../app/CRMApp";
+import {ContractAddendumModal,ContractNoteModal,FormModal,PaymentDetailModal,PaymentRefundForm,paymentRefundAvailability} from "../app/CRMApp";
 
 let cleanup:()=>void;
 let render:typeof import("@testing-library/react").render;
@@ -101,10 +101,30 @@ test("modal dodatku předá název a vratka dovolí volitelnou poznámku",async(
   render(<PaymentRefundForm payment={payment} busy={false} error="" cancel={()=>{}} save={async value=>{refund=value;}}/>);
   assert.ok(screen.getByText("K VRÁCENÍ"));
   assert.equal(screen.getByRole("textbox",{name:"Částka vratky"}).getAttribute("value"),"100 000");
-  assert.ok(screen.getByText(/CRM neposílá peníze ani nevytváří bankovní příkaz/));
+  assert.ok(screen.getByRole("note").textContent?.includes("Peníze nejsou prostřednictvím DeveloCRM odesílány."));
   await user.click(screen.getByRole("button",{name:"Potvrdit vratku"}));
   await waitFor(()=>assert.equal(refund?.sourceTransactionId,"transaction-1"));
   assert.equal(refund?.amount,100000);assert.equal(refund?.reason,undefined);assert.equal(typeof refund?.idempotencyKey,"string");
+});
+
+test("detail platby zvýrazní vratku, zkrátí souhrn a rozliší historii",()=>{
+  const payment={id:"obligation-1",project:"Rezidence Dejvice",unit:"417",client:"Jan Novák",label:"Rezervační poplatek",amount:2471000,paid:2471000,refunded:500000,refundable:1971000,refundAllowed:true,status:"paid",dueAt:"2026-09-15",contractReference:"DEJ-417-RS",contractType:"rs",contractStatus:"cancelled",transactions:[{id:"transaction-1",amount:2471000,paidAt:"2026-09-15T08:00:00Z",sourceType:"manual",note:"Připsáno",refunds:[{id:"refund-1",amount:500000,refundedAt:"2026-09-16T08:00:00Z",reason:"Vráceno klientovi"}]}]} as never;
+  const {container}=render(<PaymentDetailModal payment={payment} close={()=>{}} openUnit={()=>{}} canRecord={false} canReverse={false} saved={()=>{}}/>);
+  const summary=container.querySelector(".payment-refund-overview");
+  assert.ok(summary);
+  assert.doesNotMatch(summary.textContent??"",/ČISTĚ PŘIJATO/i);
+  assert.ok(summary.querySelector(".refund-due-summary")?.textContent?.includes("1 971 000"));
+  assert.equal(summary.querySelectorAll(".badge").length,1);
+  assert.ok(screen.getByText(/Nevrácená platba z ukončené rezervace/));
+  assert.ok(container.querySelector(".payment-history article strong")?.textContent?.includes("Úhrada +2 471 000 Kč"));
+  assert.ok(container.querySelector(".refund-history strong")?.textContent?.includes("Vratka −500 000 Kč"));
+  assert.ok(screen.getByRole("button",{name:"Vytvořit vratku"}));
+});
+
+test("vratka předvyplní nižší z částky transakce a celkového zůstatku",()=>{
+  const payment={id:"obligation-2",unit:"417",client:"Jan Novák",paid:2471000,refunded:500000,refundable:1971000,refundAllowed:true,contractReference:"DEJ-417-RS",transactions:[{id:"transaction-2",amount:2471000,paidAt:"2026-09-15T08:00:00Z",sourceType:"manual",refunds:[]}]} as never;
+  render(<PaymentRefundForm payment={payment} busy={false} error="" cancel={()=>{}} save={()=>{}}/>);
+  assert.equal(screen.getByRole("textbox",{name:"Částka vratky"}).getAttribute("value"),"1 971 000");
 });
 
 test("CTA vratky používá serverovou projekci oprávnění a zbývající částky",()=>{
