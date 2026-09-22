@@ -102,7 +102,7 @@ import { parseSortDirection, stableSort, type SortDirection } from "./lib/sortin
 import { adminRepository, type AdminRole, type AdminSnapshot, type AdminUser } from "./repositories/admin-repository";
 import { handoverRepository, type HandoverRecord } from "./repositories/handover-repository";
 import { profileRepository, type ProfileInput } from "./repositories/profile-repository";
-import { addCalendarDays, formatPragueDate, formatPragueTime, localDateKey } from "./lib/date-time";
+import { addCalendarDays, addPragueCalendarDaysKey, formatPragueDate, formatPragueTime, localDateKey } from "./lib/date-time";
 import {matchesTaskPeriod, type TaskPeriod} from "./lib/task-period";
 import { paymentRepository, paymentStatusLabel, type ImportPreviewRow, type PaymentRecord, type PaymentStatus } from "./repositories/payment-repository";
 import { projectSalesAggregation, projectSalesPerformanceCount, projectSalesPerformancePercent } from "./lib/project-sales-performance";
@@ -316,6 +316,8 @@ export default function CRMApp() {
   const [search, setSearch] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const [taskRows, setTaskRows] = useState(initialTasks);
+  const [notificationTasks,setNotificationTasks]=useState<TaskRecord[]>([]);
+  const [notificationHandovers,setNotificationHandovers]=useState<HandoverRecord[]>([]);
   const [notificationPayments,setNotificationPayments]=useState<PaymentRecord[]>([]);
   const [taskOpenCount,setTaskOpenCount]=useState(initialTasks.filter(item=>!item.done&&item.owner==="Iva").length);
   const [taskScope,setTaskScope]=useState<"mine"|"all"|"completed">("mine");
@@ -480,6 +482,8 @@ export default function CRMApp() {
 
   useEffect(()=>{const controller=new AbortController();taskRepository.list(taskScope,identitySession.user.displayName,controller.signal).then(saved=>{setTaskRows(saved);if(taskScope==="mine")setTaskOpenCount(saved.filter(item=>!item.done).length);else void taskRepository.list("mine",identitySession.user.displayName,controller.signal).then(mine=>setTaskOpenCount(mine.filter(item=>!item.done).length));}).catch(()=>{if(clientUsesBrowserAdapter()){const fallback=taskScope==="completed"?initialTasks.filter(item=>item.done):taskScope==="all"?initialTasks:initialTasks.filter(item=>!item.done&&item.owner==="Iva");setTaskRows(fallback);setTaskOpenCount(initialTasks.filter(item=>!item.done&&item.owner==="Iva").length);}else{setTaskRows([]);setTaskOpenCount(0);}}).finally(()=>setTaskLoading(false));return()=>controller.abort();},[taskScope,taskReloadKey,identitySession.user.displayName]);
   useEffect(()=>{const controller=new AbortController();paymentRepository.list({},controller.signal).then(result=>setNotificationPayments(result.payments)).catch(()=>setNotificationPayments([]));return()=>controller.abort();},[commercialReloadKey]);
+  useEffect(()=>{const controller=new AbortController();taskRepository.list("mine",identitySession.user.displayName,controller.signal).then(setNotificationTasks).catch(()=>setNotificationTasks([]));return()=>controller.abort();},[taskReloadKey,identitySession.user.displayName]);
+  useEffect(()=>{const controller=new AbortController();handoverRepository.list({},controller.signal).then(setNotificationHandovers).catch(()=>setNotificationHandovers([]));return()=>controller.abort();},[handoverReloadKey]);
 
   const filteredUnits = useMemo(() => {
     void catalogVersion;
@@ -517,11 +521,12 @@ export default function CRMApp() {
     return [...projectResults,...unitResults, ...clientResults,...contractResults,...documentResults];
   }, [search, catalogVersion, clientDataVersion]);
 
-  const notifications=useMemo(()=>{void commercialDataVersion;return [
-    ...taskRows.filter(item=>!item.done).slice(0,4).map(item=>({id:`task-${item.id}`,title:item.title,detail:`Úkol · ${item.due}`,page:"tasks" as Page})),
-    ...contracts.filter(item=>["sent","negotiation","approved"].includes(normalizeContractStatus(item.statusCode??item.state))).slice(0,3).map(item=>({id:`contract-${item.id??item.reference??item.unit}`,title:`${item.type} ${item.reference??item.id??item.unit}`,detail:`${contractStatusLabel(item.statusCode??item.state)} · ${item.unit}`,contract:item})),
-    ...notificationPayments.filter(item=>item.status==="overdue").slice(0,2).map(item=>({id:`payment-${item.id}`,title:`Platba po splatnosti · ${item.unit}`,detail:item.client,page:"payments" as Page}))
-  ];},[taskRows,notificationPayments,commercialDataVersion]);
+  void commercialDataVersion;
+  const notifications=useMemo(()=>{const now=new Date();const today=localDateKey(now);const horizon=addPragueCalendarDaysKey(now,7);return [
+    ...notificationTasks.filter(item=>!item.done).sort((a,b)=>String(a.dueAt??"").localeCompare(String(b.dueAt??""))).slice(0,4).map(item=>({id:`task-${item.id}`,title:matchesTaskPeriod(item.dueAt,"overdue",now)?`Úkol po termínu · ${item.title}`:matchesTaskPeriod(item.dueAt,"week",now)?`Blíží se termín · ${item.title}`:`Přiřazený úkol · ${item.title}`,detail:`Úkol · ${item.due}`,page:"tasks" as Page})),
+    ...notificationPayments.filter(item=>item.status==="overdue").slice(0,3).map(item=>({id:`payment-${item.id}`,title:`Platba po splatnosti · ${item.unit}`,detail:item.client,page:"payments" as Page})),
+    ...notificationHandovers.filter(item=>item.status==="planned"&&localDateKey(new Date(item.scheduledAt))>=today&&localDateKey(new Date(item.scheduledAt))<=horizon).sort((a,b)=>a.scheduledAt.localeCompare(b.scheduledAt)).slice(0,3).map(item=>({id:`handover-${item.id}`,title:`Blíží se předání · ${item.unit}`,detail:formatPragueDateTime(item.scheduledAt),page:"handovers" as Page}))
+  ];},[notificationTasks,notificationPayments,notificationHandovers]);
   const unreadCount=notifications.filter(item=>!readNotifications.has(item.id)).length;
   const markNotification=(id:string)=>setReadNotifications(current=>{const next=new Set(current).add(id);localStorage.setItem("develocrm-read-notifications",JSON.stringify([...next]));return next;});
 
