@@ -5,7 +5,7 @@ import {JSDOM} from "jsdom";
 import {RowActionMenu} from "../app/components/row-action-menu";
 import {TableColumnMenu,TableColumnPreferenceProvider,useTableColumns,type TableColumnDefinition} from "../app/components/table-column-config";
 import {TableColumnFilter} from "../app/components/table-column-filter";
-import {ContractAddendumModal,ContractNoteModal,FormModal,PaymentDetailModal,PaymentRefundForm,paymentRefundAvailability} from "../app/CRMApp";
+import {ClientChangeStatusModal,ContractAddendumModal,ContractNoteModal,FormModal,PaymentDetailModal,PaymentRefundForm,paymentRefundAvailability} from "../app/CRMApp";
 
 let cleanup:()=>void;
 let render:typeof import("@testing-library/react").render;
@@ -86,6 +86,21 @@ test("poznámkový modal provede reálný vstup a předá očištěný text muta
   await user.type(screen.getByRole("textbox",{name:"Poznámka"}),"  Interní informace  ");
   await user.click(screen.getByRole("button",{name:"Uložit poznámku"}));
   await waitFor(()=>assert.equal(saved,"Interní informace"));
+});
+
+test("klientská změna nabízí pouze povolený další stav, vyžádá důvod zamítnutí a ukáže historii",async()=>{
+  const user=userEvent.setup({document});let transition:readonly string[]=[];
+  const change={id:"change-1",title:"Výběr povrchu",unitCode:"417",partyName:"Jan Novák",status:"pending_approval",history:[{id:"event-1",fromStatus:"pricing",toStatus:"pending_approval",note:"Naceněno",actor:"Test Admin",occurredAt:"2026-09-20T08:00:00Z"}]} as never;
+  render(<ClientChangeStatusModal change={change} close={()=>{}} saved={async(status,note)=>{transition=[status,note];}}/>);
+  assert.ok(screen.getByText(/Naceněno/));
+  const select=screen.getByRole("combobox",{name:"Nový stav"});
+  assert.deepEqual(Array.from(select.querySelectorAll("option")).map(option=>option.value),["approved","rejected","pricing"]);
+  await user.selectOptions(select,"rejected");
+  await user.click(screen.getByRole("button",{name:"Uložit stav"}));
+  assert.ok(await screen.findByText("Doplňte důvod zamítnutí nebo zrušení."));
+  await user.type(screen.getByRole("textbox",{name:"Poznámka (povinná)"}),"Klient nesouhlasí");
+  await user.click(screen.getByRole("button",{name:"Uložit stav"}));
+  await waitFor(()=>assert.deepEqual(transition,["rejected","Klient nesouhlasí"]));
 });
 
 test("modal dodatku předá název a vratka dovolí volitelnou poznámku",async()=>{
