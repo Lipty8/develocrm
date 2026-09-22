@@ -91,16 +91,17 @@ test("poznámkový modal provede reálný vstup a předá očištěný text muta
 test("klientská změna nabízí pouze povolený další stav, vyžádá důvod zamítnutí a ukáže historii",async()=>{
   const user=userEvent.setup({document});let transition:readonly string[]=[];
   const change={id:"change-1",title:"Výběr povrchu",unitCode:"417",partyName:"Jan Novák",status:"pending_approval",history:[{id:"event-1",fromStatus:"pricing",toStatus:"pending_approval",note:"Naceněno",actor:"Test Admin",occurredAt:"2026-09-20T08:00:00Z"}]} as never;
-  render(<ClientChangeStatusModal change={change} close={()=>{}} saved={async(status,note)=>{transition=[status,note];}}/>);
+  render(<ClientChangeStatusModal change={change} memberships={[{id:"assignee-1",name:"Projektový manažer"}]} close={()=>{}} saved={async(status,note,assignee)=>{transition=[status,note,assignee??""];}}/>);
   assert.ok(screen.getByText(/Naceněno/));
   const select=screen.getByRole("combobox",{name:"Nový stav"});
   assert.deepEqual(Array.from(select.querySelectorAll("option")).map(option=>option.value),["approved","rejected","pricing"]);
   await user.selectOptions(select,"rejected");
-  await user.click(screen.getByRole("button",{name:"Uložit stav"}));
+  await user.click(screen.getByRole("button",{name:"Uložit změnu"}));
   assert.ok(await screen.findByText("Doplňte důvod zamítnutí nebo zrušení."));
   await user.type(screen.getByRole("textbox",{name:"Poznámka (povinná)"}),"Klient nesouhlasí");
-  await user.click(screen.getByRole("button",{name:"Uložit stav"}));
-  await waitFor(()=>assert.deepEqual(transition,["rejected","Klient nesouhlasí"]));
+  await user.selectOptions(screen.getByRole("combobox",{name:"Odpovědná osoba"}),"assignee-1");
+  await user.click(screen.getByRole("button",{name:"Uložit změnu"}));
+  await waitFor(()=>assert.deepEqual(transition,["rejected","Klient nesouhlasí","assignee-1"]));
 });
 
 test("detail reklamace umožní změnit stav a řešitele a ukáže historii",async()=>{

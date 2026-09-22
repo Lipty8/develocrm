@@ -43,5 +43,21 @@ test("klientská změna prochází řízeným schválením, uchovává historii 
     assert.equal((await db.query<{count:number}>("SELECT count(*)::int count FROM audit_log WHERE entity_id=$1 AND action='client_change.status_changed'",[created])).rows[0].count,3);
     assert.equal((await db.query<{count:number}>("SELECT count(*)::int count FROM outbox_events WHERE aggregate_id=$1 AND event_type='client_change.status_changed.v1'",[created])).rows[0].count,3);
     await assert.rejects(repository.transition({...input,status:"approved"}),/invalid client change transition/);
+    const assigned=await repository.create({...input,projectId:context.project_id,unitId:context.unit_id,partyId:context.party_id,title:"Elektro zásuvka",description:"Změna umístění",sourceType:"individual",category:"Elektro",requestedAt:"2026-09-22",assigneeMembershipId:ids.membershipId});
+    assert.equal(assigned.assigneeMembershipId,ids.membershipId);
+    assert.equal(assigned.history[0].eventType,"assignee_changed");
+    const stage=await repository.transitionV2({...input,changeId:assigned.id,status:"pricing",assigneeMembershipId:ids.membershipId,idempotencyKey:"pricing-request-1"});
+    assert.equal(stage.status,"pricing");
+    assert.equal(stage.assigneeName,"Test Admin");
+    assert.equal(stage.history.length,2);
+    assert.equal((await repository.transitionV2({...input,changeId:assigned.id,status:"pricing",assigneeMembershipId:ids.membershipId,idempotencyKey:"pricing-request-1"})).history.length,2);
+    const unassigned=await repository.transitionV2({...input,changeId:assigned.id,status:"pricing",assigneeMembershipId:null,idempotencyKey:"unassign-request-1"});
+    assert.equal(unassigned.assigneeMembershipId,null);
+    assert.equal(unassigned.history[0].eventType,"assignee_changed");
+    const noted=await repository.transitionV2({...input,changeId:assigned.id,status:"pricing",assigneeMembershipId:null,note:"Klient upřesnil výběr",idempotencyKey:"note-request-1"});
+    assert.equal(noted.history[0].eventType,"note_added");
+    assert.equal(noted.history[0].note,"Klient upřesnil výběr");
+    assert.equal((await repository.transitionV2({...input,changeId:assigned.id,status:"pricing",assigneeMembershipId:null,note:"Klient upřesnil výběr",idempotencyKey:"note-request-1"})).history.length,4);
+    await assert.rejects(repository.transitionV2({...input,changeId:assigned.id,status:"completed",assigneeMembershipId:null,idempotencyKey:"invalid-request-1"}),/invalid client change transition/);
   } finally { await db.close(); }
 });
