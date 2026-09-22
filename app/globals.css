@@ -627,6 +627,14 @@ h1, h2, h3, p { margin: 0; }
 .readiness-card > p { font-size: 12px; }
 .checklist-summary > span, .checklist-summary strong { font-size: 11.5px; }
 .task-tabs > button:not(.filter-button) { font-size: 13px; }
+.task-period-filters { display: flex; flex: 0 0 auto; gap: 4px; align-items: center; padding-left: 8px; border-left: 1px solid var(--line); }
+.task-period-filters button { height: 32px; padding: 0 10px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--muted); font: inherit; font-size: 12px; font-weight: 650; white-space: nowrap; cursor: pointer; }
+.task-period-filters button:hover { background: var(--surface-soft); color: var(--ink); }
+.task-period-filters button.active { border-color: #cfe3da; background: var(--green-soft); color: var(--green-dark); }
+.change-status-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; background: var(--surface-soft); border-radius: 10px; }
+.change-status-history { display: grid; gap: 10px; margin-top: 12px; }
+.change-status-history > div { display: grid; gap: 3px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.change-status-history span, .change-status-history small { color: var(--muted); font-size: 12px; }
 .task-section-label { font-size: 11.5px; }
 .task-main-copy strong { font-size: 13px; }
 .task-main-copy small { font-size: 11.5px; }
