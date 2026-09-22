@@ -2,7 +2,7 @@
 
 ## Verdikt
 
-Fáze 1 zatím **není nasazená ani provozně ověřená**. Lokální implementace a regresní testy pokryly základní obchodní cestu i nové interní workflow, ale pilotní Azure backend stále běží na revizi `ca-develocrm-api-pilot--refund-7ac7b88`. Nové migrace 0040–0042 a matching backend/frontend se do pilotu nedostaly. SharePoint není v Container App nakonfigurován a schválené šablony pro generování Word dokumentů nejsou v repozitáři; tyto schopnosti proto nelze prohlásit za hotové. Pilotní obchodní data nebyla při této práci měněna.
+Fáze 1 zatím **není nasazená ani provozně ověřená**. Lokální implementace a regresní testy pokryly základní obchodní cestu i nové interní workflow, ale pilotní Azure backend stále běží na revizi `ca-develocrm-api-pilot--refund-7ac7b88`. Nové migrace 0040–0042 a matching backend/frontend se do pilotu nedostaly. Cílový SharePoint web a tři Word vzory byly 22. 9. dodány, ale backendová identita nemá přidělenou Graph aplikační roli a generování Word není implementováno; dokumentové schopnosti proto nelze prohlásit za hotové. Pilotní obchodní data nebyla při této práci měněna.
 
 ## Výchozí stav a doplněné práce
 
@@ -13,7 +13,7 @@ Výchozí commit byl `b69999be52819f4bd1a47754c03e5be37505dea2` (uzavřený refu
 | Dashboard, projekty, jednotky, příslušenství, klienti | Částečně | Existující implementace; nová verze neověřená v publikovaném pilotu. |
 | Předrezervace, sales cases, RS, SBK, KS, verze, dodatky, postoupení | Částečně | Doménová cesta otestovaná na izolované DB; celý průchod běžným publikovaným UI ještě neověřen. |
 | Platby, vratky | Hotovo v dosavadním pilotu | Refund workflow nebyl v této práci měněn. |
-| Dokumenty, SharePoint, generování Word | Chybí pro cílový rozsah | Existuje Graph adapter a metadata model, ale backend jej nepoužívá jako produkční úložiště. Chybí externí Microsoft nastavení a schválené šablony. |
+| Dokumenty, SharePoint, generování Word | Chybí pro cílový rozsah | Existuje Graph adapter a metadata model, ale backend jej nepoužívá jako produkční úložiště. Cílový web a vzory jsou dodané; zbývá oprávnění backendové identity, integrace a řízené mapování Word vzorů. |
 | Předání | Částečně | Doménová cesta otestovaná; předávací protokol / dokumentace závisí na dokumentové integraci. |
 | Klientské změny | Částečně | Přidán řízený stav, odpovědná osoba, poznámky a historie. Přílohy dosud chybí. Fakturace je otevřené business rozhodnutí. |
 | Reklamace | Částečně | Přidán jednoduchý řízený workflow s odpovědnou osobou, termínem a historií. Fotografie/přílohy dosud chybí. |
@@ -47,7 +47,9 @@ Výchozí commit byl `b69999be52819f4bd1a47754c03e5be37505dea2` (uzavřený refu
 
 ## Externí vstupy a business otázka
 
-Pro SharePoint je třeba potvrdit cílový SharePoint site/drive/folder model, oprávnění aplikace nebo managed identity v Microsoft Graph a schválené RS/SBK/KS Word šablony včetně mapování polí. V aktuální Azure Container App jsou pouze `DATABASE_URL`, pilotní/Entra/CORS proměnné; žádná Graph/SharePoint konfigurace. Bez těchto vstupů nelze ověřit reálný upload, verze souborů ani generování dokumentů. Secrets nepatří do tohoto reportu.
+SharePoint web `https://immobusiness1.sharepoint.com/sites/DeveloCRM` existuje. Odkaz od vlastníka produktu míří do knihovny `Dejvice TEST`; read-only Graph kontrola potvrdila, že v jejím kořeni jsou vzory RS, SBK a KS. Lokální DOCX mají běžný obsah, ale žádné Word content controls ani zjevné strojové zástupné značky; při generování je nutné nejdřív vytvořit a ověřit řízené mapování polí bez změny právního textu. Zatím není potvrzeno, zda jsou poskytnuté vzory finálně schválené pro automatické generování a zda `Dejvice TEST` má být pouze testovací, nebo i ostrou knihovnou.
+
+Pilotní Container App má přiřazenou user-assigned identity `id-develocrm-api-pilot`, ale read-only kontrola jejího Entra service principal vrátila prázdné Graph app-role assignments. Současný účet nemá oprávnění číst site permissions (`accessDenied`), takže site grant nelze potvrdit. Správce Microsoft 365 musí identitě povolit `Sites.Selected` a přidělit jí `write` jen k určenému webu. V Container App zatím není Graph/SharePoint konfigurace. Bez tohoto přístupu nelze ověřit reálný upload, verze ani generování. Secrets nepatří do tohoto reportu.
 
 Otevřená business otázka: mají se schválené klientské změny ve Fázi 1 pouze evidovat, nebo mají automaticky zakládat platební povinnost? Doporučení: zatím pouze evidence, protože pravidla ceny, schvalování a splatnosti nejsou specifikována; finanční zápis by mohl reálně ovlivnit pilotní účetnictví.
 
