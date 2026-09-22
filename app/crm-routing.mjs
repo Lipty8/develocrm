@@ -1,5 +1,5 @@
-export const projectTabSlugs = ["overview", "units", "cellars", "parking", "clients", "contracts", "payments", "changes", "handovers", "documents"];
-export const unitTabSlugs = ["overview", "contracts", "payments", "changes", "documents", "handover", "tasks", "history"];
+export const projectTabSlugs = ["overview", "units", "cellars", "parking", "clients", "contracts", "payments", "changes", "complaints", "handovers", "documents"];
+export const unitTabSlugs = ["overview", "contracts", "payments", "changes", "complaints", "documents", "handover", "tasks", "history"];
 
 const pagePaths = {
   dashboard: "/dashboard",

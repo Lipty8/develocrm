@@ -5,7 +5,7 @@ import {JSDOM} from "jsdom";
 import {RowActionMenu} from "../app/components/row-action-menu";
 import {TableColumnMenu,TableColumnPreferenceProvider,useTableColumns,type TableColumnDefinition} from "../app/components/table-column-config";
 import {TableColumnFilter} from "../app/components/table-column-filter";
-import {ClientChangeStatusModal,ContractAddendumModal,ContractNoteModal,FormModal,PaymentDetailModal,PaymentRefundForm,paymentRefundAvailability} from "../app/CRMApp";
+import {ClientChangeStatusModal,ComplaintDetailModal,ContractAddendumModal,ContractNoteModal,FormModal,PaymentDetailModal,PaymentRefundForm,paymentRefundAvailability} from "../app/CRMApp";
 
 let cleanup:()=>void;
 let render:typeof import("@testing-library/react").render;
@@ -101,6 +101,21 @@ test("klientská změna nabízí pouze povolený další stav, vyžádá důvod 
   await user.type(screen.getByRole("textbox",{name:"Poznámka (povinná)"}),"Klient nesouhlasí");
   await user.click(screen.getByRole("button",{name:"Uložit stav"}));
   await waitFor(()=>assert.deepEqual(transition,["rejected","Klient nesouhlasí"]));
+});
+
+test("detail reklamace umožní změnit stav a řešitele a ukáže historii",async()=>{
+  const user=userEvent.setup({document});let saved:Record<string,unknown>|undefined;
+  const complaint={id:"complaint-1",title:"Vadná podlaha",unitCode:"417",partyName:"Jan Novák",description:"Poškozená podlahová krytina",status:"new",assigneeMembershipId:null,dueAt:null,history:[{id:"event-1",fromStatus:null,toStatus:"new",note:null,actor:"Test Admin",occurredAt:"2026-09-20T08:00:00Z"}]} as never;
+  render(<ComplaintDetailModal complaint={complaint} memberships={[{id:"assignee-1",name:"Správce reklamací"}]} close={()=>{}} save={async input=>{saved=input;}}/>);
+  assert.ok(screen.getByText("Poškozená podlahová krytina"));
+  assert.ok(screen.getByText("Historie"));
+  await user.selectOptions(screen.getByRole("combobox",{name:"Stav"}),"in_progress");
+  await user.selectOptions(screen.getByRole("combobox",{name:"Odpovědná osoba"}),"assignee-1");
+  await user.type(screen.getByRole("textbox",{name:"Poznámka k postupu"}),"Převzato");
+  await user.click(screen.getByRole("button",{name:"Uložit reklamaci"}));
+  await waitFor(()=>assert.equal(saved?.status,"in_progress"));
+  assert.equal(saved?.assigneeMembershipId,"assignee-1");
+  assert.equal(saved?.note,"Převzato");
 });
 
 test("modal dodatku předá název a vratka dovolí volitelnou poznámku",async()=>{

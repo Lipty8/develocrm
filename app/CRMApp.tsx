@@ -85,6 +85,7 @@ import { mediaRepository, type MediaLink } from "./repositories/media-repository
 import { mediaAccept, validateMediaFile } from "./lib/media-validation";
 import { taskRepository } from "./repositories/task-repository";
 import { clientChangeRepository, type ClientChangeRecord, type NewClientChangeInput } from "./repositories/client-change-repository";
+import { complaintRepository, type ComplaintRecord, type NewComplaintInput } from "./repositories/complaint-repository";
 import { activityRepository, recordPreviewActivity, type TimelineRecord } from "./repositories/activity-repository";
 import { documentRepository, documentTypeOptions, standaloneDocumentTypeOptions, previewConnection, type DocumentConnectionState, type DocumentRecord, type DocumentStatus, type NewDocumentInput } from "./repositories/document-repository";
 import { clientRoute, contractRoute, documentRoute, listParam, pageRoute, parseCrmRoute, projectRoute, unitRoute, updateSearch } from "./crm-routing.mjs";
@@ -121,8 +122,8 @@ import { entraAuth } from "./lib/entra-auth";
 import { clientUsesBrowserAdapter } from "./lib/data-mode";
 
 type Page = "dashboard" | "projects" | "clients" | "contracts" | "documents" | "payments" | "handovers" | "tasks" | "admin";
-type UnitTab = "overview" | "contracts" | "payments" | "changes" | "documents" | "handover" | "tasks" | "history";
-type ProjectTab = "overview" | "units" | "cellars" | "parking" | "clients" | "contracts" | "payments" | "changes" | "handovers" | "documents";
+type UnitTab = "overview" | "contracts" | "payments" | "changes" | "complaints" | "documents" | "handover" | "tasks" | "history";
+type ProjectTab = "overview" | "units" | "cellars" | "parking" | "clients" | "contracts" | "payments" | "changes" | "complaints" | "handovers" | "documents";
 
 const navItems: { id: Page; label: string; icon: typeof Home }[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -988,6 +989,7 @@ function ProjectDetail({ project, tab, onTab, onBack, notify, openClient,openCon
     { id: "contracts", label: "Smlouvy", icon: FileText, count: projectContracts.length },
     { id: "payments", label: "Platby", icon: CircleDollarSign, count: projectPayments.length },
     { id: "changes", label: "Klientské změny", icon: SlidersHorizontal, count: 0 },
+    { id: "complaints", label: "Reklamace", icon: AlertTriangle },
     { id: "handovers", label: "Předání", icon: KeyRound, count: projectHandovers.length },
     { id: "documents", label: "Dokumenty", icon: FolderOpen },
   ];
@@ -1025,6 +1027,7 @@ function ProjectDetail({ project, tab, onTab, onBack, notify, openClient,openCon
       {tab === "contracts" && <ProjectContracts project={project} openUnit={unitListProps.openUnit} openContract={openContract} />}
       {tab === "payments" && <ProjectPayments project={project} openUnit={unitListProps.openUnit} openClient={openClient} openContract={openContract} canRecord={canRecordPayment} onChanged={()=>paymentRepository.list({projectId:backendEntityId(project.backendId)??undefined}).then(result=>setProjectPayments(result.payments))} />}
       {tab === "changes" && <ProjectClientChanges project={project} openUnit={unitListProps.openUnit} notify={notify} />}
+      {tab === "complaints" && <ComplaintsWorkspace project={project} memberships={scopedCatalog?.memberships??[]} openUnit={unitListProps.openUnit} notify={notify}/>}
       {tab === "handovers" && <ProjectHandovers project={project} rows={projectHandovers} openUnit={unitListProps.openUnit} onNew={onNewHandover} />}
       {tab === "documents" && <ProjectDocuments project={project} />}
     </div>
@@ -1624,7 +1627,7 @@ function UnitDetail({ unit, tab, onTab, onBack,openProjects,openProject, notify,
   const currentHandover=unitHandovers.find(record=>record.status==="planned")??unitHandovers.find(record=>record.status==="handed_over");
   const currentHandoverLabel=currentHandover?handoverStatusLabel(currentHandover.status):"Neplánováno";
   const tabs: { id: UnitTab; label: string; icon: typeof Home; count?: number }[] = [
-    { id: "overview", label: "Přehled", icon: LayoutDashboard }, { id: "contracts", label: "Smlouvy", icon: FileText, count: contracts.filter(contract=>contract.unit===unit.id).length||undefined }, { id: "payments", label: "Platby", icon: CircleDollarSign }, { id: "changes", label: "Klientské změny", icon: SlidersHorizontal }, { id: "documents", label: "Dokumenty", icon: FolderOpen }, { id: "handover", label: "Předání", icon: KeyRound }, { id: "tasks", label: "Úkoly", icon: ClipboardCheck }, { id: "history", label: "Historie", icon: History },
+    { id: "overview", label: "Přehled", icon: LayoutDashboard }, { id: "contracts", label: "Smlouvy", icon: FileText, count: contracts.filter(contract=>contract.unit===unit.id).length||undefined }, { id: "payments", label: "Platby", icon: CircleDollarSign }, { id: "changes", label: "Klientské změny", icon: SlidersHorizontal }, { id: "complaints", label: "Reklamace", icon: AlertTriangle }, { id: "documents", label: "Dokumenty", icon: FolderOpen }, { id: "handover", label: "Předání", icon: KeyRound }, { id: "tasks", label: "Úkoly", icon: ClipboardCheck }, { id: "history", label: "Historie", icon: History },
   ];
   return (
     <div className="unit-detail">
@@ -1645,6 +1648,7 @@ function UnitDetail({ unit, tab, onTab, onBack,openProjects,openProject, notify,
       {tab === "contracts" && <UnitContracts unit={unit} openContract={openContract} nextContractAction={nextContractAction} onNewContract={onNewContract} onAddendum={onAddendum} onWorkflow={onContractWorkflow} onChangeBuyer={onChangeBuyer} />}
       {tab === "payments" && <UnitPayments unit={unit} canRecord={Boolean(canRecordPayment)} onChanged={onPaymentChanged} />}
       {tab === "changes" && <UnitClientChanges unit={unit} notify={notify} />}
+      {tab === "complaints" && <UnitComplaints unit={unit} memberships={handoverMemberships} notify={notify}/>}
       {tab === "documents" && <UnitDocuments unit={unit} />}
       {tab === "handover" && <UnitHandover unit={unit} notify={notify} onNew={onNewHandover} version={handoverVersion} memberships={handoverMemberships} onChanged={onHandoverChanged} />}
       {tab === "tasks" && <UnitTasks unit={unit} owner={taskOwner} openTask={openTask} />}
@@ -1762,7 +1766,7 @@ return <>{content}{creating&&<NewClientChangeModal project={project} fixedUnit={
 export function ClientChangeStatusModal({change,close,saved}:{change:ClientChangeRecord;close:()=>void;saved:(status:string,note:string)=>Promise<void>}){
   const available=clientChangeNextStatuses[change.status]??[];
   const [status,setStatus]=useState(available[0]??"");const [note,setNote]=useState("");
-  return <FormModal title={change.title} subtitle={`${change.unitCode} · ${change.partyName}`} close={close} saveLabel="Uložit stav" onSave={async()=>{if(!status)throw new Error("Tuto změnu již nelze posunout do dalšího stavu.");if(["rejected","cancelled"].includes(status)&&note.trim().length<3)throw new Error("Doplňte důvod zamítnutí nebo zrušení.");await saved(status,note.trim());}}>
+  return <FormModal title={change.title} subtitle={`${change.unitCode} · ${change.partyName}`} close={close} saveLabel={available.length?"Uložit stav":"Zavřít"} onSave={async()=>{if(!status){close();return;}if(["rejected","cancelled"].includes(status)&&note.trim().length<3)throw new Error("Doplňte důvod zamítnutí nebo zrušení.");await saved(status,note.trim());}}>
     <div className="change-status-summary"><span>Aktuální stav</span><Badge tone={clientChangeStatusTones[change.status]??"neutral"}>{clientChangeStatusLabels[change.status]??"Neznámý stav"}</Badge></div>
     {available.length>0?<><label><span>Nový stav</span><select value={status} onChange={event=>setStatus(event.target.value)}>{available.map(value=><option key={value} value={value}>{clientChangeStatusLabels[value]}</option>)}</select></label><label><span>Poznámka{["rejected","cancelled"].includes(status)?" (povinná)":" (volitelná)"}</span><textarea rows={3} value={note} onChange={event=>setNote(event.target.value)}/></label></>:<p>Klientská změna je v konečném stavu.</p>}
     <div className="change-status-history"><strong>Historie stavů</strong>{change.history.length?change.history.map(event=><div key={event.id}><span>{formatPragueDateTime(event.occurredAt)} · {event.actor}</span><strong>{clientChangeStatusLabels[event.fromStatus]??"Předchozí stav"} → {clientChangeStatusLabels[event.toStatus]??"Nový stav"}</strong>{event.note&&<small>{event.note}</small>}</div>):<p>Další změna stavu zatím nebyla zaznamenána.</p>}</div>
@@ -1776,6 +1780,29 @@ function NewClientChangeModal({project,fixedUnit,close,save}:{project:ProjectRec
 }
 
 function UnitClientChanges({unit,notify}:{unit:UnitRecord;notify:(message:string)=>void}){const project=projects.find(item=>unitBelongsToProject(unit,item));if(!project)return <PilotEmptyState title="Klientské změny" detail="Projekt jednotky se nepodařilo určit."/>;return <ClientChangesWorkspace project={project} unit={unit} openUnit={()=>undefined} notify={notify}/>;}
+
+const complaintStatusLabels:Record<ComplaintRecord["status"],string>={new:"Nová",in_progress:"Řeší se",resolved:"Vyřešena"};
+function UnitComplaints({unit,memberships,notify}:{unit:UnitRecord;memberships:MembershipOption[];notify:(message:string)=>void}){const project=projects.find(item=>unitBelongsToProject(unit,item));if(!project)return <PilotEmptyState title="Reklamace" detail="Projekt jednotky se nepodařilo určit."/>;return <ComplaintsWorkspace project={project} unit={unit} memberships={memberships} openUnit={()=>undefined} notify={notify}/>;}
+function ComplaintsWorkspace({project,unit,memberships,openUnit,notify}:{project:ProjectRecord;unit?:UnitRecord;memberships:MembershipOption[];openUnit:(unit:UnitRecord)=>void;notify:(message:string)=>void}){
+  const [rows,setRows]=useState<ComplaintRecord[]>([]);const [loading,setLoading]=useState(true);const [error,setError]=useState("");const [creating,setCreating]=useState(false);const [selected,setSelected]=useState<ComplaintRecord|null>(null);const [reload,setReload]=useState(0);
+  const projectId=backendEntityId(project.backendId);const unitId=unit?backendEntityId(unit.backendId):null;
+  useEffect(()=>{if(!projectId)return;const controller=new AbortController();complaintRepository.list({projectId,unitId:unitId??undefined},controller.signal).then(value=>{setRows(value);setError("");}).catch(problem=>{if((problem as Error).name!=="AbortError")setError("Reklamace nelze načíst. Zkuste to prosím znovu.");}).finally(()=>setLoading(false));return()=>controller.abort();},[projectId,unitId,reload]);
+  const projectUnits=units.filter(item=>unitBelongsToProject(item,project));
+  const table=<div className="unit-table-wrap"><table className="data-table"><thead><tr><th>Reklamace</th>{!unit&&<th>Jednotka</th>}<th>Klient</th><th>Odpovědná osoba</th><th>Termín</th><th>Stav</th><th/></tr></thead><tbody>{rows.map(row=><tr key={row.id}><td><strong>{row.title}</strong></td>{!unit&&<td><button className="unit-link" onClick={()=>{const target=projectUnits.find(item=>item.backendId===row.unitId);if(target)openUnit(target);}}>{row.unitCode}</button></td>}<td>{row.partyName}</td><td>{row.assigneeName??"—"}</td><td>{row.dueAt?formatPragueDate(row.dueAt):"—"}</td><td><Badge tone={row.status==="resolved"?"success":row.status==="in_progress"?"warning":"neutral"}>{complaintStatusLabels[row.status]}</Badge></td><td><button className="ghost-icon" aria-label={`Otevřít reklamaci ${row.title}`} onClick={()=>setSelected(row)}><ChevronRight size={17}/></button></td></tr>)}</tbody></table>{loading&&<div className="empty-filter-state">Načítám reklamace…</div>}{error&&<div className="empty-filter-state">{error}</div>}{!loading&&!error&&!rows.length&&<div className="empty-filter-state">Zatím bez reklamací.</div>}</div>;
+  const content=unit?<section className="card detail-tab-card"><div className="tab-card-header"><h2>Reklamace jednotky {unit.id}</h2><button className="primary-button" onClick={()=>setCreating(true)}><Plus size={16}/> Nová reklamace</button></div>{table}</section>:<ProjectModuleFrame label="Reklamace" summary={<span className="compact-result-count"><strong>{rows.length}</strong> reklamací</span>} action="Nová reklamace" onAction={()=>setCreating(true)}>{table}</ProjectModuleFrame>;
+  return <>{content}{creating&&<NewComplaintModal project={project} fixedUnit={unit} memberships={memberships} close={()=>setCreating(false)} save={async input=>{await complaintRepository.create(input);setCreating(false);setReload(value=>value+1);notify("Reklamace byla založena");}}/>}{selected&&<ComplaintDetailModal complaint={selected} memberships={memberships} close={()=>setSelected(null)} save={async input=>{const updated=await complaintRepository.transition(selected.id,input);setSelected(updated);setReload(value=>value+1);notify("Reklamace byla aktualizována");}}/>}</>;
+}
+
+export function NewComplaintModal({project,fixedUnit,memberships,close,save}:{project:ProjectRecord;fixedUnit?:UnitRecord;memberships:MembershipOption[];close:()=>void;save:(input:NewComplaintInput)=>Promise<void>}){
+  const projectUnits=units.filter(item=>unitBelongsToProject(item,project));const [unitCode,setUnitCode]=useState(fixedUnit?.id??projectUnits[0]?.id??"");const selectedUnit=projectUnits.find(item=>item.id===unitCode);const buyerIds=new Set((unitCommercialContexts[unitCode]?.buyers??[]).map(item=>item.partyId));const candidates=clients.filter(client=>buyerIds.has(client.id)||client.units.includes(unitCode));
+  const [partyId,setPartyId]=useState("");const [title,setTitle]=useState("");const [description,setDescription]=useState("");const [assignee,setAssignee]=useState("");const [dueAt,setDueAt]=useState("");const key=useRef(crypto.randomUUID());const effectivePartyId=candidates.some(item=>item.id===partyId)?partyId:candidates[0]?.id??"";
+  return <FormModal title="Nová reklamace" close={close} saveLabel="Založit reklamaci" onSave={async()=>{const projectId=backendEntityId(project.backendId);const unitId=backendEntityId(selectedUnit?.backendId);if(!projectId||!unitId||!effectivePartyId)throw new Error("Vyberte jednotku s klientem.");if(title.trim().length<2||description.trim().length<3)throw new Error("Doplňte název a popis reklamace.");await save({projectId,unitId,partyId:effectivePartyId,title:title.trim(),description:description.trim(),assigneeMembershipId:assignee||null,dueAt:dueAt||null,idempotencyKey:key.current});}}><label><span>Jednotka</span><select value={unitCode} disabled={Boolean(fixedUnit)} onChange={event=>{setUnitCode(event.target.value);setPartyId("");}}>{projectUnits.map(item=><option key={item.id} value={item.id}>{item.id}</option>)}</select></label><label><span>Klient</span><select value={effectivePartyId} onChange={event=>setPartyId(event.target.value)}><option value="">Vyberte klienta</option>{candidates.map(client=><option key={client.id} value={client.id}>{client.name}</option>)}</select></label><label><span>Název</span><input value={title} onChange={event=>setTitle(event.target.value)}/></label><label><span>Popis vady</span><textarea rows={4} value={description} onChange={event=>setDescription(event.target.value)}/></label><div className="form-row"><label><span>Odpovědná osoba</span><select value={assignee} onChange={event=>setAssignee(event.target.value)}><option value="">Nepřiřazeno</option>{memberships.map(member=><option key={member.id} value={member.id}>{member.name}</option>)}</select></label><label><span>Termín</span><input type="date" value={dueAt} onChange={event=>setDueAt(event.target.value)}/></label></div></FormModal>;
+}
+
+export function ComplaintDetailModal({complaint,memberships,close,save}:{complaint:ComplaintRecord;memberships:MembershipOption[];close:()=>void;save:(input:{status:ComplaintRecord["status"];note:string;assigneeMembershipId:string|null;dueAt:string|null;idempotencyKey:string})=>Promise<void>}){
+  const [status,setStatus]=useState<ComplaintRecord["status"]>(complaint.status);const [assignee,setAssignee]=useState(complaint.assigneeMembershipId??"");const [dueAt,setDueAt]=useState(complaint.dueAt?.slice(0,10)??"");const [note,setNote]=useState("");const key=useRef(crypto.randomUUID());
+  return <FormModal title={complaint.title} subtitle={`${complaint.unitCode} · ${complaint.partyName}`} close={close} saveLabel="Uložit reklamaci" onSave={async()=>{await save({status,note:note.trim(),assigneeMembershipId:assignee||null,dueAt:dueAt||null,idempotencyKey:key.current});key.current=crypto.randomUUID();setNote("");}}><p>{complaint.description}</p><div className="form-row"><label><span>Stav</span><select value={status} onChange={event=>setStatus(event.target.value as ComplaintRecord["status"])}><option value="new" disabled={complaint.status!=="new"}>Nová</option><option value="in_progress">Řeší se</option><option value="resolved">Vyřešena</option></select></label><label><span>Odpovědná osoba</span><select value={assignee} onChange={event=>setAssignee(event.target.value)}><option value="">Nepřiřazeno</option>{memberships.map(member=><option key={member.id} value={member.id}>{member.name}</option>)}</select></label></div><label><span>Termín</span><input type="date" value={dueAt} onChange={event=>setDueAt(event.target.value)}/></label><label><span>Poznámka k postupu</span><textarea rows={3} value={note} onChange={event=>setNote(event.target.value)}/></label><div className="change-status-history"><strong>Historie</strong>{complaint.history.map(event=><div key={event.id}><span>{formatPragueDateTime(event.occurredAt)} · {event.actor}</span><strong>{complaintStatusLabels[event.toStatus as ComplaintRecord["status"]]??"Změna stavu"}</strong>{event.note&&<small>{event.note}</small>}</div>)}</div></FormModal>;
+}
 
 function UnitDocuments({ unit }: { unit:UnitRecord }) {
   const [documents,setDocuments]=useState<DocumentRecord[]>([]);const [connection,setConnection]=useState<DocumentConnectionState>(previewConnection);const [loading,setLoading]=useState(true);const [category,setCategory]=useState("");
