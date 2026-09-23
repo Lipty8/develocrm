@@ -11,7 +11,8 @@ export type CatalogUnit = {
   id: string; code: string; projectId: string; projectName: string; structureId:string|null; structureName: string | null;
   layout: string | null; areaM2: number; usableAreaM2: number | null; floorLabel: string | null; orientation: string | null;
   balconyM2: number | null; terraceM2: number | null; gardenM2: number | null;
-  commercialStatus: string; constructionStatus: string | null;
+  commercialStatus: string; businessStatus:"available"|"in_negotiation"|"sold"; constructionStatus: string | null;
+  currentBuyers:Array<{partyId:string;name:string;role:"buyer"|"co_buyer";isPrimary:boolean;share:number|null}>;
   unitPrice: number | null; accessoryPrice: number; totalPrice: number | null;
   updatedAt: string;
   accessories: Array<{ id: string; assignmentId:string; code: string; type: string; category: string; areaM2: number | null; relation:string|null; amount:number; amountNet:number|null; currency:string }>;
@@ -41,6 +42,15 @@ export class InventoryRepository {
 
   async getCatalog(input: { tenantId: string; userId: string; membershipId: string; projectId?:string }) {
     return this.database.withContext({ tenantId: input.tenantId, userId: input.userId }, async (client) => {
+      const businessProjection = await client.query<{available:boolean}>(
+        `SELECT to_regprocedure('app.unit_business_projection(uuid,uuid)') IS NOT NULL AS available`,
+      );
+      const businessBucket = businessProjection.rows[0]?.available
+        ? "projection.sales_bucket"
+        : "CASE WHEN unit.commercial_status='available' THEN 'available' WHEN unit.commercial_status IN ('sold','handed_over') THEN 'sold' ELSE 'in_negotiation' END";
+      const businessCountJoin = businessProjection.rows[0]?.available
+        ? "CROSS JOIN LATERAL app.unit_business_projection(unit.tenant_id,unit.id) projection"
+        : "";
       const projects = await client.query<{
         id: string; code: string; name: string; location: string | null; lifecycle_status: string;
         manager: string | null; manager_membership_id:string|null; planned_handover_from: string | null; planned_handover_to: string | null;
@@ -62,10 +72,11 @@ export class InventoryRepository {
            ORDER BY event.effective_at DESC, event.recorded_at DESC, event.id DESC LIMIT 1
          ) construction ON true
          LEFT JOIN LATERAL (
-           SELECT jsonb_object_agg(grouped.commercial_status, grouped.amount) AS counts
-           FROM (SELECT unit.commercial_status, count(*)::int amount FROM units unit
+           SELECT jsonb_object_agg(grouped.sales_bucket, grouped.amount) AS counts
+           FROM (SELECT ${businessBucket} sales_bucket, count(*)::int amount FROM units unit
+                 ${businessCountJoin}
                  WHERE unit.tenant_id = project.tenant_id AND unit.project_id = project.id AND unit.archived_at IS NULL
-                 GROUP BY unit.commercial_status) grouped
+                 GROUP BY ${businessBucket}) grouped
          ) status_counts ON true
          WHERE project.tenant_id = $1 AND project.archived_at IS NULL
            AND ($3::uuid IS NULL OR project.id=$3)
@@ -90,21 +101,28 @@ export class InventoryRepository {
              AND EXISTS(SELECT 1 FROM unit_price_history price WHERE price.tenant_id=unit.tenant_id AND price.unit_id=unit.id AND price.valid_from<=now()) configured
          ) current_price ON true`
         : "";
+      const businessColumns=businessProjection.rows[0]?.available
+        ? "projection.effective_status business_status,projection.current_buyers,"
+        : `CASE WHEN unit.commercial_status='available' THEN 'available' WHEN unit.commercial_status IN ('sold','handed_over') THEN 'sold' ELSE 'in_negotiation' END business_status,'[]'::jsonb current_buyers,`;
+      const businessJoin=businessProjection.rows[0]?.available
+        ? "CROSS JOIN LATERAL app.unit_business_projection(unit.tenant_id,unit.id) projection"
+        : "";
       const units = await client.query<{
         id: string; code: string; project_id: string; project_name: string; structure_id:string|null; structure_name: string | null;
         layout: string | null; area_m2: string; usable_area_m2: string | null; floor_label: string | null; orientation: string | null;
         balcony_m2: string | null; terrace_m2: string | null; garden_m2: string | null;
-        commercial_status: string; construction_status: string | null; unit_price:number|null; accessory_price:number; total_price:number|null; updated_at:string; accessories: CatalogUnit["accessories"];
+        commercial_status: string; business_status:"available"|"in_negotiation"|"sold"; current_buyers:CatalogUnit["currentBuyers"]; construction_status: string | null; unit_price:number|null; accessory_price:number; total_price:number|null; updated_at:string; accessories: CatalogUnit["accessories"];
       }>(
         `SELECT unit.id, unit.code, unit.project_id,unit.structure_id, project.name AS project_name,
                 structure.name AS structure_name, unit.layout, unit.area_m2::text, unit.usable_area_m2::text,
                 unit.floor_label, unit.orientation, unit.balcony_m2::text, unit.terrace_m2::text, unit.garden_m2::text,
-                unit.commercial_status,unit.updated_at,
+                unit.commercial_status,${businessColumns}unit.updated_at,
                 ${priceColumns}
                 app.effective_unit_construction_status(unit.tenant_id, unit.id) AS construction_status,
                 COALESCE(accessory_rows.items, '[]'::jsonb) AS accessories
          FROM units unit
          JOIN projects project ON project.tenant_id=unit.tenant_id AND project.id=unit.project_id
+         ${businessJoin}
          LEFT JOIN project_structures structure
            ON structure.tenant_id=unit.tenant_id AND structure.project_id=unit.project_id AND structure.id=unit.structure_id
          ${priceJoin}
@@ -191,7 +209,7 @@ export class InventoryRepository {
           balconyM2: row.balcony_m2 === null ? null : Number(row.balcony_m2),
           terraceM2: row.terrace_m2 === null ? null : Number(row.terrace_m2),
           gardenM2: row.garden_m2 === null ? null : Number(row.garden_m2),
-          floorLabel: row.floor_label, orientation: row.orientation, commercialStatus: row.commercial_status,
+          floorLabel: row.floor_label, orientation: row.orientation, commercialStatus: row.commercial_status,businessStatus:row.business_status,currentBuyers:row.current_buyers,
           constructionStatus: row.construction_status,unitPrice:row.unit_price,accessoryPrice:row.accessory_price,totalPrice:row.total_price,updatedAt:row.updated_at, accessories: row.accessories,
         })),accessories:accessories.rows.map(row=>({id:row.id,assignmentId:row.assignment_id??undefined,code:row.code,projectId:row.project_id,projectName:row.project_name,type:row.type,category:row.category,subtype:row.subtype,location:row.location,areaM2:row.area_m2===null?null:Number(row.area_m2),available:row.available,archived:row.archived,assignmentState:row.archived?"archived":row.assignment_id===null?"available":row.assigned_unit_status==="available"?"preassigned":"assigned",assignedUnitId:row.assigned_unit_id,assignedUnitCode:row.assigned_unit_code,assignedUnitStatus:row.assigned_unit_status,assignedClient:row.assigned_client,assignmentHistory:row.assignment_history,relation:row.relation,amount:row.amount,amountNet:row.amount_net,currency:row.currency})),memberships:memberships.rows,structures:structures.rows.map(row=>({id:row.id,projectId:row.project_id,projectName:row.project_name,name:row.name,kind:row.kind})),
       };

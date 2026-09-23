@@ -2,7 +2,7 @@
 
 ## Verdikt před finálním release
 
-Aktuální zdrojový stav je **READY WITH LIMITATIONS**. V lokálně ověřené verzi není známý P0 blocker hlavního CRM provozu. Obchodní proces, alternativní smluvní cesty, platby a vratky, předání, příslušenství, klientské změny, reklamace, úkoly, oprávnění, audit a nové vazby dokumentů mají automatizované pokrytí. Finální commit s migrací 0044 však ještě není v pilotu nasazený.
+Aktuální zdrojový stav je **READY WITH LIMITATIONS**. V lokálně ověřené verzi není známý P0 blocker hlavního CRM provozu. Obchodní proces, alternativní smluvní cesty, platby a vratky, předání, příslušenství, klientské změny, reklamace, úkoly, oprávnění, audit a nové vazby dokumentů mají automatizované pokrytí. Finální release s migracemi 0044 a 0045 však ještě není v pilotu nasazený.
 
 Jediné zásadní funkční omezení mimo běžný CRM provoz je skutečná SharePoint integrace: backendová managed identity nemá Graph aplikační roli/site grant a Container App nemá cílovou Graph/SharePoint konfiguraci. CRM proto může evidovat metadata a business vazby dokumentů, ale zatím nemůže bezpečně provádět produkční upload ani generování Word dokumentů do SharePointu. Toto omezení neblokuje používání CRM pro evidenci obchodu, smluv, plateb, úkolů a předání, ale blokuje prohlášení dokumentového toku za dokončený.
 
@@ -12,8 +12,8 @@ Pilotní obchodní data nebyla během dokončování měněna.
 
 | Oblast | Stav | Poznámka |
 | --- | --- | --- |
-| Dashboard, projekty, jednotky, KPI | Připraveno | Centrální stav `Volný / V jednání / Prodaný`; dashboard a projekt používají stejné projekce. |
-| Klienti a kupující | Připraveno | Aktuální kupující vychází z řízeného obchodního vztahu, historie zůstává zachovaná. |
+| Dashboard, projekty, jednotky, KPI | Připraveno | Databázová projekce odvozuje `Volný / V jednání / Prodaný` ze současného aktivního obchodu, smluv a plateb; dashboard, projekt i tabulka jednotek používají stejný výsledek. |
+| Klienti a kupující | Připraveno | Aktuální kupující vychází z aktivních účastníků současného sales case, respektuje postoupení a nevrací historické kupující. |
 | Sklepy, parkování, wallboxy | Připraveno | Podpora volného, předpřiřazeného a přiřazeného inventáře bez vytvoření sales case. |
 | Smlouvy | Připraveno | RS, SBK, KS, verze, podpis, zrušení, dodatky a postoupení; RS i SBK jsou volitelné. |
 | Alternativní smluvní cesty | Připraveno | Automatizovaně ověřeno `RS → SBK → KS`, `RS → KS`, `SBK → KS` a přímá `KS`. |
@@ -38,24 +38,27 @@ Pilotní obchodní data nebyla během dokončování měněna.
 - `aa55fe9` — připravený Graph token provider pro user-assigned managed identity a ověření opravy KS.
 - `24904e3` — schválená business pravidla Fáze 1 a migrace 0043.
 - `0df18fa` — migrace 0044, dokumentové vazby klientských změn, reklamací a předání včetně UI, auditu a outboxu.
+- finální release — migrace 0045, centrální projekce aktuálního kupujícího a manažerského stavu jednotky a jednotná invalidace UI po mutaci.
 
 ## Migrace
 
 - Pilotní matching release `24904e3` používá migrace do 0043.
-- Finální lokální release přidává pouze aditivní migraci `0044_phase1_document_workflow_links.sql`.
+- Finální lokální release přidává aditivní migrace `0044_phase1_document_workflow_links.sql` a `0045_unit_business_projection.sql`.
 - 0044 vytváří tři vazební tabulky, projektově bezpečné cizí klíče, RLS/FORCE RLS, audit, outbox a idempotentní příkazy.
-- Migrace nemaže ani nepřepisuje existující obchodní data.
+- 0045 zavádí jedinou čtecí projekci pro aktuální kupující a KPI `Volný / V jednání / Prodaný`. Prodaná je podepsaná RS s plně uhrazeným rezervačním poplatkem, přímo podepsaná SBK/KS nebo předaná jednotka; zrušené a historické případy se nezapočítají.
+- Migrace nemažou ani nepřepisují existující obchodní data.
 
 ## Validace finálního zdrojového stavu
 
-- Backend: **172/172 testů prošlo**.
-- Frontend statické/regresní testy: **125/125 prošlo**.
-- Interaction testy: **13/13 prošlo**.
+- Backend: **175/175 testů prošlo**.
+- Frontend statické/regresní testy: **127/127 prošlo**.
+- Interaction testy: **15/15 prošlo**, včetně úspěšné i odmítnuté mutace bez browser reloadu.
 - ESLint: **0 chyb**, 3 dříve existující upozornění na `<img>`.
 - Backend production build: **prošel**.
 - Frontend production build: **prošel**; zůstává pouze neblokující upozornění na velikost chunku.
-- Čistá PGlite databáze aplikuje migrace do 0044.
-- Integračně jsou pokryté alternativní smluvní cesty, dokumentové vazby, audit, outbox a idempotence.
+- Čistá PGlite databáze aplikuje migrace do 0045.
+- Integračně jsou pokryté alternativní smluvní cesty, dokumentové vazby, audit, outbox, idempotence a 11 stavů centrální business projekce.
+- Úspěšné POST/PATCH/DELETE požadavky vyvolají jednu sdílenou invalidaci katalogu, klientů, smluv, dokumentů, plateb, předání a úkolů; dotčené obrazovky se obnoví bez ručního reloadu.
 
 ## Read-only kontrola pilotu
 
@@ -93,7 +96,7 @@ Security Phase 0 zůstává uzavřená. Health/readiness, Azure probes a alerty 
 
 1. push přesného zdrojového commitu,
 2. build immutable migration a API image z čistého `git archive`,
-3. migration job s obrazem obsahujícím 0044,
+3. migration job s obrazem obsahujícím 0044 a 0045,
 4. ověření migration jobu a dostupnosti DB,
 5. backend deploy přes immutable digest,
 6. health/readiness/logy,
@@ -116,4 +119,4 @@ Security Phase 0 zůstává uzavřená. Health/readiness, Azure probes a alerty 
 
 ## Finální klasifikace
 
-Po nasazení migrace 0044 a matching backend/frontend verze může být hlavní DeveloCRM provoz klasifikován jako **READY WITH LIMITATIONS**. Omezení se týká pouze SharePoint/Word dokumentového toku; hlavní obchodní, smluvní, finanční a provozní workflow je připravené pro interní pilot.
+Po nasazení migrací 0044 a 0045 a matching backend/frontend verze může být hlavní DeveloCRM provoz klasifikován jako **READY WITH LIMITATIONS**. Omezení se týká pouze SharePoint/Word dokumentového toku; hlavní obchodní, smluvní, finanční a provozní workflow je připravené pro interní pilot.

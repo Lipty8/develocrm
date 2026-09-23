@@ -1,6 +1,6 @@
 import { dejviceClients, dejviceContracts, dejvicePriceHistories, dejviceProject, dejviceUnitContexts, dejviceUnits } from "./dejvice-pilot-data";
 
-export type UnitStatus = "Volný" | "V jednání" | "Rezervovaná" | "SBK" | "KS" | "Předáno" | "Blokováno";
+export type UnitStatus = "Volný" | "V jednání" | "Prodaná" | "Rezervovaná" | "SBK" | "KS" | "Předáno" | "Blokováno";
 
 export type UnitRecord = {
   backendId?: string;

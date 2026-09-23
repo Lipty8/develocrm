@@ -15,6 +15,16 @@ test("dashboard i detail používají stejný sdílený výpočet prodejního v�
   assert.match(catalog, /projectSalesPerformancePercent\(\{units:unitCount,available,preReserved,reserved,sold,handedOver\}\)/);
 });
 
+test("prodejní výkon obsahuje jen prodané jednotky a katalog používá business projekci",async()=>{
+  const aggregation=await readFile(new URL("../app/lib/project-sales-performance.ts",import.meta.url),"utf8");
+  const repository=await readFile(new URL("../backend/src/inventory/repository.ts",import.meta.url),"utf8");
+  assert.match(aggregation,/performance:sold/);
+  assert.doesNotMatch(aggregation,/performance:inNegotiation\+sold/);
+  assert.match(repository,/app\.unit_business_projection\(unit\.tenant_id,unit\.id\)/);
+  assert.match(repository,/projection\.current_buyers/);
+  assert.match(catalog,/client:unit\.currentBuyers\.map/);
+});
+
 test("jednání zahrnuje předrezervované a rezervované jednotky",()=>{
   assert.match(crm,/salesAggregation\.inNegotiation/);
   assert.match(crm,/label: "V jednání"/);

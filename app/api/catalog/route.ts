@@ -6,7 +6,6 @@ import { forwardBackendMutation, type BackendMutationMethod } from "../../lib/ba
 import { projectConstructionLabel } from "../../lib/project-construction";
 import { projectCompletionLabel } from "../../lib/project-completion";
 import { projectSalesPerformancePercent } from "../../lib/project-sales-performance";
-import { unitCommercialStatusLabel } from "../../lib/unit-commercial-status";
 
 type BackendCatalog = {
   projects: Array<{
@@ -17,7 +16,8 @@ type BackendCatalog = {
   units: Array<{
     id: string; code: string; projectId:string; structureId:string|null; projectName: string; structureName: string | null; layout: string | null;
     areaM2: number; usableAreaM2: number | null; floorLabel: string | null; orientation: string | null;
-    balconyM2: number | null; terraceM2: number | null; gardenM2: number | null; commercialStatus: string;
+    balconyM2: number | null; terraceM2: number | null; gardenM2: number | null; commercialStatus: string; businessStatus:"available"|"in_negotiation"|"sold";
+    currentBuyers:Array<{partyId:string;name:string;role:"buyer"|"co_buyer";isPrimary:boolean;share:number|null}>;
     constructionStatus: string | null; unitPrice?:number|null; accessoryPrice?:number; totalPrice?:number|null;
     updatedAt:string;
     accessories: Array<{ id:string; assignmentId:string; code: string; type: string; category: string; areaM2: number | null; relation?:string|null; amount:number; amountNet:number|null; currency:string }>;
@@ -89,8 +89,8 @@ function adaptBackendCatalog(catalog: BackendCatalog, priceBreakdowns?: BackendP
   }
   const projects = catalog.projects.map((project, index): ProjectRecord => {
     const available = project.counts.available ?? 0;
-    const preReserved = project.counts.pre_reserved ?? 0;
-    const reserved = (project.counts.reserved ?? 0) + (project.counts.contracted ?? 0);
+    const preReserved = project.counts.in_negotiation ?? 0;
+    const reserved = 0;
     const sold = project.counts.sold ?? 0;
     const handedOver = project.counts.handed_over ?? 0;
     const unitCount = Object.values(project.counts).reduce((sum, count) => sum + count, 0);
@@ -113,7 +113,9 @@ function adaptBackendCatalog(catalog: BackendCatalog, priceBreakdowns?: BackendP
       layout: unit.layout ?? "—", area: unit.areaM2, floor: unit.floorLabel ?? "—",
       orientation: unit.orientation ?? "—", price: totalPrice ?? 0,basePrice:unitPrice,accessoryPrice,priceConfigured:unitPrice!==null,
       usableArea: unit.usableAreaM2 ?? undefined, balcony: unit.balconyM2, terrace: unit.terraceM2, garden: unit.gardenM2,
-      status: unitCommercialStatusLabel(unit.commercialStatus) as UnitStatus, construction: constructionLabel(unit.constructionStatus),
+      status: ({available:"Volný",in_negotiation:"V jednání",sold:"Prodaná"} as const)[unit.businessStatus] as UnitStatus,
+      client:unit.currentBuyers.map(buyer=>buyer.name).join(" a ")||undefined,
+      construction: constructionLabel(unit.constructionStatus),
       updatedAt:unit.updatedAt,
       handover: "Neplánováno",
       accessory: unit.accessories.map((item) => `${item.type} ${item.code}${item.areaM2 ? ` · ${item.areaM2} m²` : ""}`).join(" · ") || "Bez příslušenství",accessories:unit.accessories,

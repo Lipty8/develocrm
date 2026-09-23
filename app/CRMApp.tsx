@@ -78,6 +78,7 @@ import {
 } from "./crm-data";
 import { identityRepository, prototypeSession, type IdentitySession } from "./repositories/identity-repository";
 import { catalogRepository, type CatalogSnapshot as ProjectCatalogSnapshot, type InventoryEntityType, type InventoryImportPreview, type InventoryImportRow } from "./repositories/catalog-repository";
+import { DATA_MUTATED_EVENT } from "./lib/data-invalidation";
 import { clientRepository } from "./repositories/client-repository";
 import { commercialRepository, type CommercialSnapshot, type ContextualContractInput, type UnitNextContractAction } from "./repositories/commercial-repository";
 import { salesCommandRepository } from "./repositories/sales-command-repository";
@@ -293,6 +294,7 @@ export default function CRMApp() {
   const [priceProposals,setPriceProposals]=useState<NonNullable<CommercialSnapshot["priceProposals"]>>([]);
   const [commercialReloadKey, setCommercialReloadKey] = useState(0);
   const [activityReloadKey,setActivityReloadKey]=useState(0);
+  const [dataMutationVersion,setDataMutationVersion]=useState(0);
   const [page, setPage] = useState<Page>("dashboard");
   const [mobileNav, setMobileNav] = useState(false);
   const [unitDetail, setUnitDetail] = useState<UnitRecord | null>(null);
@@ -431,6 +433,21 @@ export default function CRMApp() {
     };
     window.addEventListener("develocrm:session-restored",restore);
     return()=>window.removeEventListener("develocrm:session-restored",restore);
+  },[]);
+
+  useEffect(()=>{
+    const refresh=()=>{
+      setDataMutationVersion(version=>version+1);
+      setCatalogReloadKey(key=>key+1);
+      setClientReloadKey(key=>key+1);
+      setCommercialReloadKey(key=>key+1);
+      setActivityReloadKey(key=>key+1);
+      setDocumentReloadKey(key=>key+1);
+      setHandoverReloadKey(key=>key+1);
+      setTaskReloadKey(key=>key+1);
+    };
+    window.addEventListener(DATA_MUTATED_EVENT,refresh);
+    return()=>window.removeEventListener(DATA_MUTATED_EVENT,refresh);
   },[]);
 
   useEffect(()=>{const controller=new AbortController();documentRepository.connection(controller.signal).then(setDocumentConnection).catch(()=>setDocumentConnection(previewConnection));return()=>controller.abort();},[connectionRetryKey]);
@@ -697,7 +714,7 @@ export default function CRMApp() {
           </div>
         </header>
 
-        <main className="main-content">
+        <main className="main-content" key={dataMutationVersion}>
           {unitDetail ? (
             <UnitDetail unit={unitDetail} tab={unitTab} onTab={navigateUnitTab} onBack={() => selectedProject&&router.push(projectRoute(projectRouteId(selectedProject),"units"))} openProjects={()=>router.push("/projects")} openProject={()=>selectedProject&&router.push(projectRoute(projectRouteId(selectedProject)))} notify={notify} openTask={() => setNewTaskOpen(true)} taskOwner={identitySession.user.displayName} openClient={openClient} openContract={openContract} onNewContract={can("contracts.create")?(action)=>{setNewContractContext({unit:unitDetail,action});setNewContractOpen(true);}:undefined} onAddendum={can("contract.manage")?setContractAddendumBase:undefined} onNewHandover={can("handovers.manage")?()=>setNewHandoverContext({unit:unitDetail,project:selectedProject??undefined}):undefined} handoverVersion={handoverReloadKey} handoverMemberships={catalogMemberships} onHandoverChanged={()=>{setHandoverReloadKey(key=>key+1);refreshUnitWorkflow();}} onEdit={(can("units.update")||can("unit.manage"))?()=>setUnitEdit(unitDetail):undefined} onEditPrice={(can("prices.propose")||can("price.manage"))?()=>setPriceEdit(unitDetail):undefined} priceProposals={priceProposals.filter(proposal=>proposal.unit===unitDetail.id&&proposal.status==="pending")} onDecidePrice={can("prices.approve")?async(proposalId,decision)=>{const verb=decision==="approved"?"schválit":"zamítnout";if(!window.confirm(`Opravdu ${verb} tento návrh ceny?`))return;await commercialRepository.decidePrice({proposalId,decision,reason:decision==="approved"?"Schváleno jednatelem":"Zamítnuto jednatelem",actorName:identitySession.user.displayName});notify(decision==="approved"?"Návrh ceny byl schválen":"Návrh ceny byl zamítnut");refreshCommercial();}:undefined} onManageAccessories={(can("accessories.update")||can("accessory.manage"))?()=>setAccessoryUnit(unitDetail):undefined} onEditFloorplan={(can("media.manage")||can("units.update")||can("unit.manage"))?()=>setMediaEdit({entityType:"unit",entityId:unitDetail.backendId??unitDetail.id,unitKey:unitDetail.id,kind:"floorplan",title:`Půdorys · ${unitDetail.id}`}):undefined} onSalesAction={(can("holds.create")||can("holds.cancel")||can("holds.confirm")||can("interests.manage"))?(mode)=>setSalesAction({unit:unitDetail,mode}):undefined} onChangeBuyer={can("sales_cases.manage")?()=>setBuyerChangeUnit(unitDetail):undefined} canCreateHold={can("holds.create")||can("holds.manage")} canConfirmHold={can("holds.confirm")||can("holds.manage")} canCancelHold={can("holds.cancel")||can("holds.manage")} canRecordPayment={can("payments.record")||can("payments.manage")} onPaymentChanged={()=>{refreshCommercial();refreshCatalog();setActivityReloadKey(key=>key+1);}} onContractWorkflow={(can("contracts.update")||can("contract.manage"))?setContractEdit:undefined} timelineVersion={catalogReloadKey+clientReloadKey+commercialReloadKey+activityReloadKey} />
           ) : selectedProject ? (
@@ -1014,7 +1031,7 @@ function ProjectDetail({ project, tab, onTab, onBack, notify, openClient,openCon
         <div className="project-context-visual">
           <div className="project-sale-rate-card">
             <div className="project-sale-ring" style={{ background: `conic-gradient(var(--status-sold) 0 ${soldPercent}%, var(--status-pre-reserved) ${soldPercent}% ${soldPercent+inNegotiationPercent}%, var(--status-available) ${soldPercent+inNegotiationPercent}% 100%)` }}><span><strong>{salePercent} %</strong><small>prodejnost</small></span></div>
-            <div><small>PRODEJNÍ VÝKON</small><strong>{salesPerformance} z {project.units} jednotek</strong><p>je v jednání nebo prodaných</p></div>
+            <div><small>PRODEJNÍ VÝKON</small><strong>{salesPerformance} z {project.units} jednotek</strong><p>je prodaných</p></div>
           </div>
           <div className="project-unit-distribution">
             <div className="project-distribution-head"><div><small>STAV JEDNOTEK</small><strong>Rozložení projektu</strong></div><span>{project.units} jednotek celkem</span></div>

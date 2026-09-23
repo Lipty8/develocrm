@@ -2,6 +2,7 @@
 
 import { entraAuth } from "./entra-auth";
 import { clientUsesBrowserAdapter } from "./data-mode";
+import { announceDataMutation } from "./data-invalidation";
 
 export function createApiFetch(
   auth:{getAccessToken():Promise<string|null>;refreshAccessToken?():Promise<string|null>},
@@ -39,6 +40,7 @@ export function createApiFetch(
       }
       if(response.status===401&&typeof window!=="undefined")window.dispatchEvent(new CustomEvent("develocrm:authentication-required"));
       if(mutation)console.info(JSON.stringify({event:"frontend.mutation.complete",correlationId:requestCorrelationId,method,target:targetPath,status:response.status}));
+      if(mutation&&response.ok)announceDataMutation({method,target:targetPath});
       return response;
     }catch(error){
       if(mutation)console.error(JSON.stringify({event:"frontend.mutation.transport_error",correlationId:requestCorrelationId,method,target:targetPath,errorName:error instanceof Error?error.name:"Error",errorMessage:error instanceof Error?error.message:"Transport selhal"}));
