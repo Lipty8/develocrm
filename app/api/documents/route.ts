@@ -29,9 +29,18 @@ export async function PATCH(request:Request){return forwardMutation(request,"PAT
 async function forwardMutation(request:Request,method:"POST"|"PATCH"){
   const url=new URL(request.url);const backendUrl=process.env.DEVELOCRM_API_URL?.replace(/\/$/,"");const tenantId=process.env.DEVELOCRM_TENANT_ID;const authorization=request.headers.get("authorization");
   if(serverDataMode()==="browser")return browserFallbackResponse({error:"Změna je ve vývojovém režimu uložena lokálně"},{status:503});
-  const documentId=url.searchParams.get("documentId");const target=documentId&&url.searchParams.get("action")==="version"?`/v1/documents/${encodeURIComponent(documentId)}/versions`:documentId?`/v1/documents/${encodeURIComponent(documentId)}`:"/v1/documents";
+  const documentId=url.searchParams.get("documentId");const action=url.searchParams.get("action");
   const body=await request.json() as Record<string,unknown>;
-  if(url.searchParams.get("action")==="version"&&documentId){
+  const linkTargets:Record<string,string>={client_change:"client-change-links",complaint:"complaint-links",handover:"handover-links"};
+  const linkSuffix=action==="link"?linkTargets[String(body.linkType??"")]:undefined;
+  if(action==="link"&&(!documentId||!linkSuffix))return Response.json({error:"Neplatný typ vazby dokumentu"},{status:400});
+  const target=documentId&&action==="version"?`/v1/documents/${encodeURIComponent(documentId)}/versions`:documentId&&linkSuffix?`/v1/documents/${encodeURIComponent(documentId)}/${linkSuffix}`:documentId?`/v1/documents/${encodeURIComponent(documentId)}`:"/v1/documents";
+  if(action==="link"){
+    const property=String(body.linkType)==="client_change"?"clientChangeId":String(body.linkType)==="complaint"?"complaintId":"handoverId";
+    for(const key of Object.keys(body))delete body[key];
+    body[property]=url.searchParams.get("targetId");
+  }
+  if(action==="version"&&documentId){
     body.versionIdentifier=`${documentId}-${String(body.label??Date.now())}`;
     body.versionLabel=body.label;
   }
@@ -45,5 +54,5 @@ async function forwardMutation(request:Request,method:"POST"|"PATCH"){
   return new Response(responseText,{status:response.status,headers:{"content-type":"application/json"}});
 }
 
-function backendTarget(url:URL){const params=url.searchParams;if(params.get("connection")==="sharepoint")return"/v1/document-connections/sharepoint";if(params.get("documentId"))return`/v1/documents/${encodeURIComponent(params.get("documentId")!)}`;if(params.get("projectId"))return`/v1/projects/${encodeURIComponent(params.get("projectId")!)}/documents?${copyFilters(params,["category","unitId","partyId"])}`;if(params.get("unitId"))return`/v1/units/${encodeURIComponent(params.get("unitId")!)}/documents?${copyFilters(params,["category"])}`;if(params.get("partyId"))return`/v1/parties/${encodeURIComponent(params.get("partyId")!)}/documents`;if(params.get("contractId"))return`/v1/contracts/${encodeURIComponent(params.get("contractId")!)}/documents`;return`/v1/documents?${copyFilters(params,["query","typeCode","status","projectId","partyId","unitId","contractId"])}`;}
+function backendTarget(url:URL){const params=url.searchParams;if(params.get("connection")==="sharepoint")return"/v1/document-connections/sharepoint";if(params.get("documentId"))return`/v1/documents/${encodeURIComponent(params.get("documentId")!)}`;if(params.get("clientChangeId"))return`/v1/client-changes/${encodeURIComponent(params.get("clientChangeId")!)}/documents`;if(params.get("complaintId"))return`/v1/complaints/${encodeURIComponent(params.get("complaintId")!)}/documents`;if(params.get("handoverId"))return`/v1/handovers/${encodeURIComponent(params.get("handoverId")!)}/documents`;if(params.get("projectId"))return`/v1/projects/${encodeURIComponent(params.get("projectId")!)}/documents?${copyFilters(params,["category","unitId","partyId"])}`;if(params.get("unitId"))return`/v1/units/${encodeURIComponent(params.get("unitId")!)}/documents?${copyFilters(params,["category"])}`;if(params.get("partyId"))return`/v1/parties/${encodeURIComponent(params.get("partyId")!)}/documents`;if(params.get("contractId"))return`/v1/contracts/${encodeURIComponent(params.get("contractId")!)}/documents`;return`/v1/documents?${copyFilters(params,["query","typeCode","status","projectId","partyId","unitId","contractId","clientChangeId","complaintId","handoverId"])}`;}
 function copyFilters(source:URLSearchParams,keys:string[]){const target=new URLSearchParams();for(const key of keys){const value=source.get(key);if(value)target.set(key,value);}return target.toString();}

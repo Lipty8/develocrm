@@ -447,7 +447,7 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return{documents:await documentRepository.listUnit({...context,unitId:request.params.unitId,...request.query}),connection:await documentRepository.connectionStatus(context)};}
     catch(error){return reply.code(403).send({error:error instanceof Error?error.message:"Dokumenty jednotky nelze načíst"});}
   });
-  app.get<{Querystring:{query?:string;typeCode?:string;status?:string;projectId?:string;partyId?:string;unitId?:string;contractId?:string}}>("/v1/documents",async(request,reply)=>{
+  app.get<{Querystring:{query?:string;typeCode?:string;status?:string;projectId?:string;partyId?:string;unitId?:string;contractId?:string;clientChangeId?:string;complaintId?:string;handoverId?:string}}>("/v1/documents",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return{documents:await documentRepository.listAll({...context,...request.query}),connection:await documentRepository.connectionStatus(context)};}
     catch(error){return reply.code(403).send({error:error instanceof Error?error.message:"Dokumenty nelze načíst"});}
   });
@@ -458,6 +458,18 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
   app.get<{Params:{contractId:string}}>("/v1/contracts/:contractId/documents",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return{documents:await documentRepository.listContract({...context,contractId:request.params.contractId}),connection:await documentRepository.connectionStatus(context)};}
     catch(error){return reply.code(403).send({error:error instanceof Error?error.message:"Dokumenty smlouvy nelze načíst"});}
+  });
+  app.get<{Params:{clientChangeId:string}}>("/v1/client-changes/:clientChangeId/documents",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return{documents:await documentRepository.listClientChange({...context,clientChangeId:request.params.clientChangeId}),connection:await documentRepository.connectionStatus(context)};}
+    catch(error){return reply.code(403).send({error:error instanceof Error?error.message:"Dokumenty klientské změny nelze načíst"});}
+  });
+  app.get<{Params:{complaintId:string}}>("/v1/complaints/:complaintId/documents",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return{documents:await documentRepository.listComplaint({...context,complaintId:request.params.complaintId}),connection:await documentRepository.connectionStatus(context)};}
+    catch(error){return reply.code(403).send({error:error instanceof Error?error.message:"Dokumenty reklamace nelze načíst"});}
+  });
+  app.get<{Params:{handoverId:string}}>("/v1/handovers/:handoverId/documents",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return{documents:await documentRepository.listHandover({...context,handoverId:request.params.handoverId}),connection:await documentRepository.connectionStatus(context)};}
+    catch(error){return reply.code(403).send({error:error instanceof Error?error.message:"Dokumenty předání nelze načíst"});}
   });
   app.get<{Params:{documentId:string}}>("/v1/documents/:documentId",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});const document=await documentRepository.getById({...context,documentId:request.params.documentId});return document?{document}:reply.code(404).send({error:"Dokument nebyl nalezen"});}
@@ -502,6 +514,18 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
   app.post<{Params:{documentId:string};Body:{salesCaseId:string}}>("/v1/documents/:documentId/sales-case-links",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await documentRepository.linkSalesCase({...context,documentId:request.params.documentId,salesCaseId:request.body.salesCaseId}));}
     catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Vazbu obchodního případu nelze vytvořit"});}
+  });
+  app.post<{Params:{documentId:string};Body:{clientChangeId:string}}>("/v1/documents/:documentId/client-change-links",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await documentRepository.linkClientChange({...context,documentId:request.params.documentId,clientChangeId:request.body.clientChangeId}));}
+    catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Vazbu klientské změny nelze vytvořit"});}
+  });
+  app.post<{Params:{documentId:string};Body:{complaintId:string}}>("/v1/documents/:documentId/complaint-links",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await documentRepository.linkComplaint({...context,documentId:request.params.documentId,complaintId:request.body.complaintId}));}
+    catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Vazbu reklamace nelze vytvořit"});}
+  });
+  app.post<{Params:{documentId:string};Body:{handoverId:string}}>("/v1/documents/:documentId/handover-links",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await documentRepository.linkHandover({...context,documentId:request.params.documentId,handoverId:request.body.handoverId}));}
+    catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Vazbu předání nelze vytvořit"});}
   });
 
   return app;

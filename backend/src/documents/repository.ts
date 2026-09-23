@@ -24,6 +24,9 @@ export type DocumentListItem = {
   parties: string[];
   contracts: string[];
   salesCases: string[];
+  clientChanges: string[];
+  complaints: string[];
+  handovers: string[];
 };
 
 export type DocumentDetail = DocumentListItem & {
@@ -42,6 +45,7 @@ type DocumentRow = {
   etag: string | null; sensitivity: "normal" | "sensitive"; created_at:string;updated_at: string; author: string | null; version_label: string | null;
   unit_codes: string | null; party_names: string | null; contract_refs: string | null;
   sales_case_refs:string|null;
+  client_change_refs:string|null; complaint_refs:string|null; handover_refs:string|null;
   external_drive_id?: string | null; external_item_id?: string | null; archived_at?: string | null;
 };
 
@@ -57,6 +61,9 @@ const documentSelect = `
     (SELECT string_agg(DISTINCT party.display_name, ', ' ORDER BY party.display_name) FROM party_documents link JOIN parties party ON party.tenant_id=link.tenant_id AND party.id=link.party_id WHERE link.tenant_id=document.tenant_id AND link.document_id=document.id) party_names,
     (SELECT string_agg(DISTINCT contract.reference, ', ' ORDER BY contract.reference) FROM contract_documents link JOIN contracts contract ON contract.tenant_id=link.tenant_id AND contract.project_id=link.project_id AND contract.id=link.contract_id WHERE link.tenant_id=document.tenant_id AND link.document_id=document.id) contract_refs
     ,(SELECT string_agg(DISTINCT sales_case.id::text, ', ' ORDER BY sales_case.id::text) FROM sales_case_documents link JOIN sales_cases sales_case ON sales_case.tenant_id=link.tenant_id AND sales_case.project_id=link.project_id AND sales_case.id=link.sales_case_id WHERE link.tenant_id=document.tenant_id AND link.document_id=document.id) sales_case_refs
+    ,(SELECT string_agg(DISTINCT change.title, ', ' ORDER BY change.title) FROM client_change_documents link JOIN client_changes change ON change.tenant_id=link.tenant_id AND change.project_id=link.project_id AND change.id=link.client_change_id WHERE link.tenant_id=document.tenant_id AND link.document_id=document.id) client_change_refs
+    ,(SELECT string_agg(DISTINCT complaint.title, ', ' ORDER BY complaint.title) FROM complaint_documents link JOIN complaints complaint ON complaint.tenant_id=link.tenant_id AND complaint.project_id=link.project_id AND complaint.id=link.complaint_id WHERE link.tenant_id=document.tenant_id AND link.document_id=document.id) complaint_refs
+    ,(SELECT string_agg(DISTINCT unit.code, ', ' ORDER BY unit.code) FROM handover_documents link JOIN unit_handovers handover ON handover.tenant_id=link.tenant_id AND handover.project_id=link.project_id AND handover.id=link.handover_id JOIN units unit ON unit.tenant_id=handover.tenant_id AND unit.project_id=handover.project_id AND unit.id=handover.unit_id WHERE link.tenant_id=document.tenant_id AND link.document_id=document.id) handover_refs
   FROM documents document
   JOIN projects project ON project.tenant_id=document.tenant_id AND project.id=document.project_id
   LEFT JOIN document_types document_type ON document_type.tenant_id=document.tenant_id AND document_type.id=document.document_type_id
@@ -100,6 +107,10 @@ export class DocumentRepository {
   async listContract(input:DocumentContext & {contractId:string}):Promise<DocumentListItem[]>{
     return this.listAll({...input,contractId:input.contractId});
   }
+
+  async listClientChange(input:DocumentContext & {clientChangeId:string}):Promise<DocumentListItem[]>{return this.listAll({...input,clientChangeId:input.clientChangeId});}
+  async listComplaint(input:DocumentContext & {complaintId:string}):Promise<DocumentListItem[]>{return this.listAll({...input,complaintId:input.complaintId});}
+  async listHandover(input:DocumentContext & {handoverId:string}):Promise<DocumentListItem[]>{return this.listAll({...input,handoverId:input.handoverId});}
 
   async getById(input: DocumentContext & { documentId: string }): Promise<DocumentDetail | null> {
     return this.database.withContext({ tenantId: input.tenantId, userId: input.userId }, async (client) => {
@@ -173,8 +184,11 @@ export class DocumentRepository {
   async linkParty(input: DocumentContext & { documentId:string;partyId:string }): Promise<{id:string}> { return this.command(input,client=>client.query<{id:string}>("SELECT app.link_document_to_party($1,$2,$3,$4) id",[input.tenantId,input.documentId,input.partyId,input.membershipId])); }
   async linkContract(input: DocumentContext & { documentId:string;contractId:string;contractVersionId?:string;documentVersionId?:string }): Promise<{id:string}> { return this.command(input,client=>client.query<{id:string}>("SELECT app.link_document_to_contract($1,$2,$3,$4,$5,$6) id",[input.tenantId,input.documentId,input.contractId,input.contractVersionId??null,input.documentVersionId??null,input.membershipId])); }
   async linkSalesCase(input:DocumentContext & {documentId:string;salesCaseId:string}):Promise<{id:string}>{return this.command(input,client=>client.query<{id:string}>("SELECT app.link_document_to_sales_case($1,$2,$3,$4) id",[input.tenantId,input.documentId,input.salesCaseId,input.membershipId]));}
+  async linkClientChange(input:DocumentContext & {documentId:string;clientChangeId:string}):Promise<{id:string}>{return this.command(input,client=>client.query<{id:string}>("SELECT app.link_document_to_client_change($1,$2,$3,$4) id",[input.tenantId,input.documentId,input.clientChangeId,input.membershipId]));}
+  async linkComplaint(input:DocumentContext & {documentId:string;complaintId:string}):Promise<{id:string}>{return this.command(input,client=>client.query<{id:string}>("SELECT app.link_document_to_complaint($1,$2,$3,$4) id",[input.tenantId,input.documentId,input.complaintId,input.membershipId]));}
+  async linkHandover(input:DocumentContext & {documentId:string;handoverId:string}):Promise<{id:string}>{return this.command(input,client=>client.query<{id:string}>("SELECT app.link_document_to_handover($1,$2,$3,$4) id",[input.tenantId,input.documentId,input.handoverId,input.membershipId]));}
 
-  async listAll(input:DocumentContext & {query?:string;typeCode?:string;status?:string;projectId?:string;partyId?:string;unitId?:string;contractId?:string}):Promise<DocumentListItem[]>{
+  async listAll(input:DocumentContext & {query?:string;typeCode?:string;status?:string;projectId?:string;partyId?:string;unitId?:string;contractId?:string;clientChangeId?:string;complaintId?:string;handoverId?:string}):Promise<DocumentListItem[]>{
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
       const result=await client.query<DocumentRow>(`${documentSelect}
         WHERE document.tenant_id=$1 AND document.archived_at IS NULL AND project.archived_at IS NULL
@@ -187,8 +201,11 @@ export class DocumentRepository {
           AND ($7::uuid IS NULL OR EXISTS(SELECT 1 FROM party_documents filter_link WHERE filter_link.tenant_id=document.tenant_id AND filter_link.document_id=document.id AND filter_link.party_id=$7))
           AND ($8::uuid IS NULL OR EXISTS(SELECT 1 FROM unit_documents filter_link WHERE filter_link.tenant_id=document.tenant_id AND filter_link.document_id=document.id AND filter_link.unit_id=$8))
           AND ($9::uuid IS NULL OR EXISTS(SELECT 1 FROM contract_documents filter_link WHERE filter_link.tenant_id=document.tenant_id AND filter_link.document_id=document.id AND filter_link.contract_id=$9))
+          AND ($10::uuid IS NULL OR EXISTS(SELECT 1 FROM client_change_documents filter_link WHERE filter_link.tenant_id=document.tenant_id AND filter_link.document_id=document.id AND filter_link.client_change_id=$10))
+          AND ($11::uuid IS NULL OR EXISTS(SELECT 1 FROM complaint_documents filter_link WHERE filter_link.tenant_id=document.tenant_id AND filter_link.document_id=document.id AND filter_link.complaint_id=$11))
+          AND ($12::uuid IS NULL OR EXISTS(SELECT 1 FROM handover_documents filter_link WHERE filter_link.tenant_id=document.tenant_id AND filter_link.document_id=document.id AND filter_link.handover_id=$12))
         ORDER BY document.updated_at DESC,document.name`,[
-          input.tenantId,input.membershipId,input.query??null,input.typeCode??null,input.status??null,input.projectId??null,input.partyId??null,input.unitId??null,input.contractId??null,
+          input.tenantId,input.membershipId,input.query??null,input.typeCode??null,input.status??null,input.projectId??null,input.partyId??null,input.unitId??null,input.contractId??null,input.clientChangeId??null,input.complaintId??null,input.handoverId??null,
         ]);
       return result.rows.map(mapDocument);
     });
@@ -199,6 +216,6 @@ export class DocumentRepository {
   }
 }
 
-function mapDocument(row:DocumentRow):DocumentListItem{return{id:row.id,projectId:row.project_id,projectName:row.project_name,name:row.name,category:row.category,typeCode:row.type_code,typeName:row.type_name,status:row.status_code,note:row.note,mimeType:row.mime_type,fileSize:numberOrNull(row.file_size),storageProvider:row.storage_provider,webUrl:row.web_url,etag:row.etag,sensitivity:row.sensitivity,createdAt:row.created_at,updatedAt:row.updated_at,author:row.author,version:row.version_label,units:splitList(row.unit_codes),parties:splitList(row.party_names),contracts:splitList(row.contract_refs),salesCases:splitList(row.sales_case_refs)};}
+function mapDocument(row:DocumentRow):DocumentListItem{return{id:row.id,projectId:row.project_id,projectName:row.project_name,name:row.name,category:row.category,typeCode:row.type_code,typeName:row.type_name,status:row.status_code,note:row.note,mimeType:row.mime_type,fileSize:numberOrNull(row.file_size),storageProvider:row.storage_provider,webUrl:row.web_url,etag:row.etag,sensitivity:row.sensitivity,createdAt:row.created_at,updatedAt:row.updated_at,author:row.author,version:row.version_label,units:splitList(row.unit_codes),parties:splitList(row.party_names),contracts:splitList(row.contract_refs),salesCases:splitList(row.sales_case_refs),clientChanges:splitList(row.client_change_refs),complaints:splitList(row.complaint_refs),handovers:splitList(row.handover_refs)};}
 function splitList(value:string|null):string[]{return value?value.split(", ").filter(Boolean):[];}
 function numberOrNull(value:string|number|null):number|null{return value==null?null:Number(value);}

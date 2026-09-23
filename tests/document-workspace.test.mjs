@@ -51,3 +51,20 @@ test("document backend uses concrete links, RLS, audit and outbox",async()=>{
   assert.match(api,/\/v1\/documents/);
   assert.match(api,/\/sales-case-links/);
 });
+
+test("klientské změny, reklamace a předání používají stejné řízené vazby dokumentů",async()=>{
+  const [app,repository,route,migration,api]=await Promise.all([
+    read("app/CRMApp.tsx"),read("app/repositories/document-repository.ts"),read("app/api/documents/route.ts"),
+    read("backend/migrations/0044_phase1_document_workflow_links.sql"),read("backend/src/app.ts"),
+  ]);
+  assert.match(app,/function WorkflowDocuments/);
+  for(const type of ["client_change","complaint","handover"])assert.match(app,new RegExp(`type:\"${type}\"`));
+  for(const method of ["listClientChange","listComplaint","listHandover"])assert.match(repository,new RegExp(method));
+  assert.match(repository,/action=link&targetId=/);
+  for(const routeName of ["client-change-links","complaint-links","handover-links"])assert.match(route,new RegExp(routeName));
+  for(const table of ["client_change_documents","complaint_documents","handover_documents"])assert.match(migration,new RegExp(`CREATE TABLE ${table}`));
+  assert.match(migration,/FORCE ROW LEVEL SECURITY/);
+  assert.match(migration,/INSERT INTO audit_log/);
+  assert.match(migration,/INSERT INTO outbox_events/);
+  for(const path of ["client-changes/:clientChangeId/documents","complaints/:complaintId/documents","handovers/:handoverId/documents"])assert.match(api,new RegExp(path));
+});

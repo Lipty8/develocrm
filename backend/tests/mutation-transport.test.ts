@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {forwardBackendMutation} from "../../app/lib/backend-proxy.js";
 import {POST as assignAccessory} from "../../app/api/catalog/units/[unitId]/accessories/route.js";
+import {POST as mutateDocument} from "../../app/api/documents/route.js";
 
 const originalFetch=globalThis.fetch;
 const originalApiUrl=process.env.DEVELOCRM_API_URL;
@@ -70,6 +71,24 @@ test("BFF route přiřazení příslušenství předá POST na jednotku",async()
   );
   assert.equal(response.status,201);
   assert.deepEqual(await response.json(),{id:"assignment-p9"});
+});
+
+test("BFF dokumentů předá řízenou vazbu workflow na správný backend endpoint",async()=>{
+  process.env.DEVELOCRM_API_URL="https://api.example.test";
+  process.env.DEVELOCRM_TENANT_ID="tenant-1";
+  process.env.DEVELOCRM_DATA_MODE="api";
+  globalThis.fetch=(async(input:RequestInfo|URL,init?:RequestInit)=>{
+    assert.equal(String(input),"https://api.example.test/v1/documents/document-1/handover-links");
+    assert.equal(init?.method,"POST");
+    assert.equal(new Headers(init?.headers).get("authorization"),"Bearer test-token");
+    assert.equal(String(init?.body),'{"handoverId":"handover-1"}');
+    return Response.json({id:"link-1"},{status:201});
+  }) as typeof fetch;
+  const response=await mutateDocument(new Request("https://crm.example.test/api/documents?documentId=document-1&action=link&targetId=handover-1",{
+    method:"POST",headers:{authorization:"DeveloCRM test-token","content-type":"application/json"},body:'{"linkType":"handover"}',
+  }));
+  assert.equal(response.status,201);
+  assert.deepEqual(await response.json(),{id:"link-1"});
 });
 
 test("BFF proxy převede transportní chybu na korektní 502 odpověď",async()=>{

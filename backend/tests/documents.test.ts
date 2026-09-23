@@ -22,12 +22,20 @@ const beforeSeed = [
   "0004_block_d_pricing_contracts.sql", "0005_pilot_import_compatibility.sql", "0006_crud_operations.sql",
 ];
 const afterSeed = ["0007_practical_editing_rbac.sql", "0008_completion_workflows.sql", "0009_documents_sharepoint_foundation.sql", "0010_document_workspace.sql"];
-
 async function database() {
   const db = new PGlite();
   for (const name of beforeSeed) await db.exec(await readFile(new URL(`../migrations/${name}`, import.meta.url), "utf8"));
   for (const name of ["0001_preview_block_b.sql", "0002_preview_block_c.sql", "0003_preview_block_d.sql"]) await db.exec(await readFile(new URL(`../seeds/${name}`, import.meta.url), "utf8"));
   for (const name of afterSeed) await db.exec(await readFile(new URL(`../migrations/${name}`, import.meta.url), "utf8"));
+  await db.exec(`
+    CREATE TABLE client_change_documents(tenant_id uuid,project_id uuid,client_change_id uuid,document_id uuid);
+    CREATE TABLE client_changes(tenant_id uuid,project_id uuid,id uuid,title text);
+    CREATE TABLE complaint_documents(tenant_id uuid,project_id uuid,complaint_id uuid,document_id uuid);
+    CREATE TABLE complaints(tenant_id uuid,project_id uuid,id uuid,title text);
+    CREATE TABLE handover_documents(tenant_id uuid,project_id uuid,handover_id uuid,document_id uuid);
+    CREATE TABLE unit_handovers(tenant_id uuid,project_id uuid,id uuid,unit_id uuid);
+    GRANT SELECT ON client_change_documents,client_changes,complaint_documents,complaints,handover_documents,unit_handovers TO develocrm_app;
+  `);
   return db;
 }
 
