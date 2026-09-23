@@ -1,62 +1,119 @@
-# DeveloCRM — Fáze 1 readiness (22. 9. 2026)
+# DeveloCRM — Fáze 1 readiness (23. 9. 2026)
 
-## Verdikt
+## Verdikt před finálním release
 
-Fáze 1 zatím **není nasazená ani provozně ověřená**. Lokální implementace a regresní testy pokryly základní obchodní cestu i nové interní workflow, ale pilotní Azure backend stále běží na revizi `ca-develocrm-api-pilot--refund-7ac7b88`. Nové migrace 0040–0042 a matching backend/frontend se do pilotu nedostaly. Cílový SharePoint web a tři Word vzory byly 22. 9. dodány, ale backendová identita nemá přidělenou Graph aplikační roli a generování Word není implementováno; dokumentové schopnosti proto nelze prohlásit za hotové. Pilotní obchodní data nebyla při této práci měněna.
+Aktuální zdrojový stav je **READY WITH LIMITATIONS**. V lokálně ověřené verzi není známý P0 blocker hlavního CRM provozu. Obchodní proces, alternativní smluvní cesty, platby a vratky, předání, příslušenství, klientské změny, reklamace, úkoly, oprávnění, audit a nové vazby dokumentů mají automatizované pokrytí. Finální commit s migrací 0044 však ještě není v pilotu nasazený.
 
-## Výchozí stav a doplněné práce
+Jediné zásadní funkční omezení mimo běžný CRM provoz je skutečná SharePoint integrace: backendová managed identity nemá Graph aplikační roli/site grant a Container App nemá cílovou Graph/SharePoint konfiguraci. CRM proto může evidovat metadata a business vazby dokumentů, ale zatím nemůže bezpečně provádět produkční upload ani generování Word dokumentů do SharePointu. Toto omezení neblokuje používání CRM pro evidenci obchodu, smluv, plateb, úkolů a předání, ale blokuje prohlášení dokumentového toku za dokončený.
 
-Výchozí commit byl `b69999be52819f4bd1a47754c03e5be37505dea2` (uzavřený refund UX). Již existovaly izolace tenantů, RLS/RBAC, hlavní sales/contract/payment/handovers doménové operace, audit/outbox, správa příslušenství a preview adaptér. Nepřepisoval se model úhrad ani vratek.
+Pilotní obchodní data nebyla během dokončování měněna.
 
-| Oblast | Stav pro Fázi 1 | Důvod / otevřený bod |
+## Současný stav
+
+| Oblast | Stav | Poznámka |
 | --- | --- | --- |
-| Dashboard, projekty, jednotky, příslušenství, klienti | Částečně | Existující implementace; nová verze neověřená v publikovaném pilotu. |
-| Předrezervace, sales cases, RS, SBK, KS, verze, dodatky, postoupení | Částečně | Doménová cesta otestovaná na izolované DB; celý průchod běžným publikovaným UI ještě neověřen. |
-| Platby, vratky | Hotovo v dosavadním pilotu | Refund workflow nebyl v této práci měněn. |
-| Dokumenty, SharePoint, generování Word | Chybí pro cílový rozsah | Existuje Graph adapter a metadata model, ale backend jej nepoužívá jako produkční úložiště. Cílový web a vzory jsou dodané; zbývá oprávnění backendové identity, integrace a řízené mapování Word vzorů. |
-| Předání | Částečně | Doménová cesta otestovaná; předávací protokol / dokumentace závisí na dokumentové integraci. |
-| Klientské změny | Částečně | Přidán řízený stav, odpovědná osoba, poznámky a historie. Přílohy dosud chybí. Fakturace je otevřené business rozhodnutí. |
-| Reklamace | Částečně | Přidán jednoduchý řízený workflow s odpovědnou osobou, termínem a historií. Fotografie/přílohy dosud chybí. |
-| Úkoly, interní notifikace | Částečně | Přidány pohledy po termínu/dnes/tento týden a kontextové notifikace pro moje úkoly, po splatnosti a blížící se předání; vyžaduje autentizovaný smoke. |
-| Uživatelé, role, oprávnění, audit/historie | Částečně | Existující RLS/RBAC a audit mají testy; nové operace mají doménová pravidla, ale nejsou nasazené. |
-| Vyhledávání, tabulky, filtry, navigace, session/cache | Částečně | Existující funkcionalita a regresní testy; aktuální matching preview nebylo publikováno. |
-| Data Rezidence Dejvice | Neověřeno novým release | Lokální testy používají fixture; reálná pilotní data nebyla měněna ani migrována v této práci. |
-| Interní provozní připravenost | Blokováno | Chybí koordinované migrace, backend/frontend release, health/readiness, logy a autentizovaný read-only smoke. |
+| Dashboard, projekty, jednotky, KPI | Připraveno | Centrální stav `Volný / V jednání / Prodaný`; dashboard a projekt používají stejné projekce. |
+| Klienti a kupující | Připraveno | Aktuální kupující vychází z řízeného obchodního vztahu, historie zůstává zachovaná. |
+| Sklepy, parkování, wallboxy | Připraveno | Podpora volného, předpřiřazeného a přiřazeného inventáře bez vytvoření sales case. |
+| Smlouvy | Připraveno | RS, SBK, KS, verze, podpis, zrušení, dodatky a postoupení; RS i SBK jsou volitelné. |
+| Alternativní smluvní cesty | Připraveno | Automatizovaně ověřeno `RS → SBK → KS`, `RS → KS`, `SBK → KS` a přímá `KS`. |
+| Platby a vratky | Připraveno | Předpisy, částečné úhrady, allocations, splatnost, overdue, refund decision a skutečné vratky. |
+| Předání | Připraveno | Jeden doménový objekt pro globální i jednotkový pohled, stavy a historie. |
+| Klientské změny | Připraveno pro interní pilot | Řízené stavy, odpovědná osoba, termín, poznámky, historie a vazby dokumentů. Fakturace se automaticky nezakládá. |
+| Reklamace | Připraveno pro interní pilot | Řízený stav, odpovědná osoba, termín, historie a vazby dokumentů. |
+| Úkoly a interní notifikace | Připraveno | Moje úkoly, po termínu, dnes, tento týden a kontextová upozornění. |
+| Role, RBAC, RLS, audit, outbox | Připraveno | Backendové vynucení a integrační testy včetně izolace projektu/tenantu. |
+| Dokumentová metadata a vazby | Připraveno lokálně | Dokumenty lze navázat na klientskou změnu, reklamaci a předání; migrace 0044 čeká na release. |
+| SharePoint upload a Word generování | Externě blokováno | Chybí Graph `Sites.Selected`, site-level write grant a runtime konfigurace. |
 
-## Priority
+## Implementované balíky
 
-- **P0 před označením Fáze 1 za hotovou:** bezpečně nasadit 0040–0042 a matching release; ověřit běžné UI na izolovaném testovacím obchodě; připravit reálný SharePoint/document tok a schválené Word šablony, pokud jsou generování a přílohy povinné hned od prvního dne.
-- **P1 během interního pilotu:** přílohy klientských změn a reklamací, předávací protokol, ověřené interní notifikace, rozšířený UX smoke všech pracovních rolí.
-- **P2 / odložit:** GDPR/DSAR, SaaS billing a onboarding, veřejný tenant provisioning, rozsáhlý notification framework (Fáze 2).
-
-## Lokální změny
-
-- `2b7bc32` — izolovaný end-to-end doménový test sales cesty.
+- `2b7bc32` — izolovaný integrační test hlavní obchodní cesty.
 - `638e717` — pražské termínové pohledy úkolů a UI klientských změn.
-- `a892a29` — migrace 0040, řízené stavy klientských změn s auditní historií.
+- `a892a29` — migrace 0040, řízené stavy klientských změn a auditní historie.
 - `fadba01` — migrace 0041, jednoduchý reklamační workflow.
 - `5a2bb95` — migrace 0042, odpovědná osoba a idempotentní poznámky klientské změny.
-- `7e0d6ab` — oznámení nezávislá na aktuálním filtru úkolů, včetně blížících se předání.
+- `7e0d6ab` — notifikace nezávislé na aktuálním filtru úkolů.
+- `a06f5d8` — dokumentace cílové SharePoint knihovny a šablon.
+- `aa55fe9` — připravený Graph token provider pro user-assigned managed identity a ověření opravy KS.
+- `24904e3` — schválená business pravidla Fáze 1 a migrace 0043.
+- `0df18fa` — migrace 0044, dokumentové vazby klientských změn, reklamací a předání včetně UI, auditu a outboxu.
 
-## Validace
+## Migrace
 
-- Čistá lokální PGlite databáze aplikuje migrace včetně 0040–0042; izolované scénáře klientských změn, reklamací a hlavního obchodu prošly.
-- Kompletní backendová a frontendová testovací sada prošla; frontend má 124 běžných a 13 interakčních testů. Backend a frontend production build prošly.
-- ESLint: 0 chyb, 3 dříve existující upozornění na `<img>`.
-- Reálná PostgreSQL migrace, publikovaný Sites build, autentizovaný browser smoke a pilotní datová konzistence **dosud neověřeny**.
+- Pilotní matching release `24904e3` používá migrace do 0043.
+- Finální lokální release přidává pouze aditivní migraci `0044_phase1_document_workflow_links.sql`.
+- 0044 vytváří tři vazební tabulky, projektově bezpečné cizí klíče, RLS/FORCE RLS, audit, outbox a idempotentní příkazy.
+- Migrace nemaže ani nepřepisuje existující obchodní data.
 
-## Externí vstupy a business otázka
+## Validace finálního zdrojového stavu
 
-SharePoint web `https://immobusiness1.sharepoint.com/sites/DeveloCRM` existuje. Odkaz od vlastníka produktu míří do knihovny `Dejvice TEST`; read-only Graph kontrola potvrdila, že v jejím kořeni jsou vzory RS, SBK a KS. Vlastník potvrdil, že vzory jsou schválené a knihovna `Dejvice TEST` je pouze testovací. Lokální DOCX mají běžný obsah, ale žádné Word content controls ani zjevné strojové zástupné značky; při generování je nutné nejdřív vytvořit a ověřit řízené mapování polí bez změny právního textu.
+- Backend: **172/172 testů prošlo**.
+- Frontend statické/regresní testy: **125/125 prošlo**.
+- Interaction testy: **13/13 prošlo**.
+- ESLint: **0 chyb**, 3 dříve existující upozornění na `<img>`.
+- Backend production build: **prošel**.
+- Frontend production build: **prošel**; zůstává pouze neblokující upozornění na velikost chunku.
+- Čistá PGlite databáze aplikuje migrace do 0044.
+- Integračně jsou pokryté alternativní smluvní cesty, dokumentové vazby, audit, outbox a idempotence.
 
-Kontrola vzoru KS odhalila staré údaje prodávajícího (`Rezidence Dejvice s.r.o.`, IČ `056 06 675`, vložka `267218`). Vlastník potvrdil, že jde o chybu; správné údaje podle RS a SBK jsou `Rezidence Dejvice 2 s.r.o.`, IČ `241 06 119`, vložka `439 174`. Byla vytvořena samostatná opravená kopie KS s přesně čtyřmi textovými změnami a vizuálně porovnána s původní sedmistránkovou verzí. Původní OneDrive soubor ani kopie v `Dejvice TEST` zatím nebyly přepsány. Automatické generování KS nesmí použít starou kopii v SharePointu; nejdříve je nutné uložit a schválit opravenou verzi v cílové knihovně.
+## Read-only kontrola pilotu
 
-Pilotní Container App má přiřazenou user-assigned identity `id-develocrm-api-pilot`, ale read-only kontrola jejího Entra service principal vrátila prázdné Graph app-role assignments. Současný účet nemá oprávnění číst site permissions (`accessDenied`), takže site grant nelze potvrdit. Správce Microsoft 365 musí identitě povolit `Sites.Selected` a přidělit jí `write` jen k určenému webu. V Container App zatím není Graph/SharePoint konfigurace. Bez tohoto přístupu nelze ověřit reálný upload, verze ani generování. Secrets nepatří do tohoto reportu.
+- Aktivní backend revize: `ca-develocrm-api-pilot--phase1-24904e3`.
+- Revize je Healthy a provisioning je Succeeded.
+- `/health` vrací 200.
+- `/ready` vrací 200 a databáze je dostupná.
+- Autentizovaný smoke potvrdil dashboard, projekty, Rezidenci Dejvice, jednotku 417, klienty, smlouvy, platby, předání, úkoly a dokumenty.
+- Rezidence Dejvice má 19 jednotek; read-only UI ukazuje 5 jednotek `V jednání` a 0 prodaných. Tento stav nebyl automaticky opravován ani reinterpretován.
+- V pilotu jsou dva aktivní projekty (Rezidence Dejvice a Hrdlička); Hrdlička nebyla bez důkazu považována za demo data.
+- Dokumenty korektně zobrazují stav „SharePoint nepřipojen“ místo předstírání funkční integrace.
 
-Lokálně je připraven provider pro Graph token ze spravované identity Azure Container Apps. Používá konkrétní user-assigned client ID, krátkou časovou cache a při chybě selže uzavřeně; nedrží žádný Graph secret. Tři izolované testy tokenového toku prošly. Provider zatím není zapojen do serveru ani nasazen, protože chybí Graph role/site grant, cílová konfigurace a samotná řízená dokumentová operace. Pouhá existence provideru neznamená funkční SharePoint integraci.
+## SharePoint a vzory
 
-Otevřená business otázka: mají se schválené klientské změny ve Fázi 1 pouze evidovat, nebo mají automaticky zakládat platební povinnost? Doporučení: zatím pouze evidence, protože pravidla ceny, schvalování a splatnosti nejsou specifikována; finanční zápis by mohl reálně ovlivnit pilotní účetnictví.
+Cílový web a testovací knihovna jsou dostupné přihlášenému uživateli. V knihovně `Dejvice TEST` jsou vzory RS, SBK a KS.
 
-## Deployment
+Kontrola KS odhalila staré údaje prodávajícího. Opravená verze nyní používá:
 
-Nic z výše uvedených nových commitů nebylo pushnuto ani nasazeno. Azure read-only kontrola ukázala běžící revizi `ca-develocrm-api-pilot--refund-7ac7b88`; nebyla spuštěna žádná migrace ani změna pilotních obchodních dat. Koordinovaný release vyžaduje nejdříve audit SQL migrací na PostgreSQL, následně migration job, matching backend a matching Sites frontend, pak health/readiness/logy a autentizovaný read-only smoke. Nelze bezpečně nasadit jen frontend.
+- `Rezidence Dejvice 2 s.r.o.`
+- IČ `241 06 119`
+- vložku `439 174`
+
+Opravený DOCX byl vyrenderován a vizuálně ověřen na všech sedmi stranách. Přímý SharePoint konektor však vrací `403 Access denied` a bezpečné browserové nahrání je blokované systémovým file-pickerem této relace; cílový soubor proto zatím nebyl automaticky přepsán.
+
+Backendová user-assigned identity `id-develocrm-api-pilot` nemá žádný Graph app-role assignment. Správce Microsoft 365 musí:
+
+1. přidělit managed identity aplikační oprávnění Microsoft Graph `Sites.Selected`,
+2. udělit této identitě `write` pouze k webu `/sites/DeveloCRM`,
+3. dodat do Container App cílovou site/library konfiguraci bez secrets,
+4. následně ověřit upload, otevření, verze a generování na testovacím dokumentu.
+
+## Provozní readiness
+
+Security Phase 0 zůstává uzavřená. Health/readiness, Azure probes a alerty jsou aktivní. Finální release musí být proveden koordinovaně v pořadí:
+
+1. push přesného zdrojového commitu,
+2. build immutable migration a API image z čistého `git archive`,
+3. migration job s obrazem obsahujícím 0044,
+4. ověření migration jobu a dostupnosti DB,
+5. backend deploy přes immutable digest,
+6. health/readiness/logy,
+7. matching Sites frontend,
+8. autentizovaný read-only smoke bez změny pilotních obchodních dat.
+
+## Zbývající rizika
+
+### Neblokuje zahájení interního CRM provozu
+
+- SharePoint upload/generování ještě není aktivní; soubory je nutné do udělení oprávnění spravovat mimo CRM.
+- Opravenou KS je nutné ručně nebo po obnovení konektoru uložit do testovací knihovny.
+- 3 lint upozornění na `<img>` a velikost frontendového chunku jsou technický dluh, ne provozní blocker.
+
+### Blokuje úplné prohlášení dokumentové části Fáze 1 za hotovou
+
+- chybějící Graph `Sites.Selected` a site-level grant,
+- chybějící runtime zapojení SharePoint adapteru,
+- neověřený řízený Word generation flow nad schválenými šablonami.
+
+## Finální klasifikace
+
+Po nasazení migrace 0044 a matching backend/frontend verze může být hlavní DeveloCRM provoz klasifikován jako **READY WITH LIMITATIONS**. Omezení se týká pouze SharePoint/Word dokumentového toku; hlavní obchodní, smluvní, finanční a provozní workflow je připravené pro interní pilot.
