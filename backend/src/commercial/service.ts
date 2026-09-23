@@ -7,8 +7,19 @@ export class CommercialService{
   private command<T extends QueryResultRow>(context:Context,sql:string,parameters:unknown[]){return this.database.withContext({tenantId:context.tenantId,userId:context.userId},async client=>(await client.query<T>(sql,parameters)).rows[0]);}
   recordPrice(input:Context&{unitId:string;priceType:string;amount:number;currency:string;validFrom:string;reason:string}){return this.command<{id:string}>(input,"SELECT app.propose_unit_price($1,$2,$3,$4,$5,$6,$7,$8) id",[input.tenantId,input.unitId,input.priceType,input.amount,input.currency,input.validFrom,input.reason,input.membershipId]);}
   decidePrice(input:Context&{proposalId:string;decision:"approved"|"rejected";reason:string}){return this.command<{id:string|null}>(input,"SELECT app.decide_unit_price_proposal($1,$2,$3,$4,$5) id",[input.tenantId,input.proposalId,input.decision,input.reason,input.membershipId]);}
-  createContract(input:Context&{salesCaseId:string;type:string;reference:string;title:string;parentContractId?:string;idempotencyKey:string;paymentCalculationType?:"percentage"|"fixed";paymentInputValue?:number;paymentDueAt?:string}){return this.command<{id:string;versionId:string;paymentObligationId:string|null;paymentAmount:number|null}>(input,`SELECT contract_id id,version_id "versionId",payment_obligation_id "paymentObligationId",payment_amount::float8 "paymentAmount"
-    FROM app.create_contract_with_payment($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,[input.tenantId,input.salesCaseId,input.type,input.reference,input.title,input.membershipId,input.parentContractId??null,input.idempotencyKey,input.paymentCalculationType??null,input.paymentInputValue??null,input.paymentDueAt??null]);}
+  async createContract(input:Context&{salesCaseId:string;type:string;reference:string;title:string;parentContractId?:string;idempotencyKey:string;paymentCalculationType?:"percentage"|"fixed";paymentInputValue?:number;paymentDueAt?:string}){
+    return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
+      if(["rs","sbk","ks"].includes(input.type)){
+        const salesCase=(await client.query<{current_stage:string|null}>("SELECT current_stage FROM sales_cases WHERE tenant_id=$1 AND id=$2 AND status='active' FOR UPDATE",[input.tenantId,input.salesCaseId])).rows[0];
+        if(!salesCase)throw new Error("active sales case is required");
+        const contracts=(await client.query<ContractWorkflowFact>("SELECT id,contract_type type,current_status status FROM contracts WHERE tenant_id=$1 AND sales_case_id=$2 AND contract_type IN ('rs','sbk','ks') ORDER BY created_at DESC,id DESC",[input.tenantId,input.salesCaseId])).rows;
+        const action=getNextContractAction({hasActiveSalesCase:true,contracts,salesStage:salesCase.current_stage});
+        if(action.kind!=="create_contract"||!action.allowedContractTypes.includes(input.type as "rs"|"sbk"|"ks"))throw new Error("Zvolený typ smlouvy nyní nelze vytvořit");
+      }
+      return (await client.query<{id:string;versionId:string;paymentObligationId:string|null;paymentAmount:number|null}>(`SELECT contract_id id,version_id "versionId",payment_obligation_id "paymentObligationId",payment_amount::float8 "paymentAmount"
+        FROM app.create_contract_with_payment($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,[input.tenantId,input.salesCaseId,input.type,input.reference,input.title,input.membershipId,input.parentContractId??null,input.idempotencyKey,input.paymentCalculationType??null,input.paymentInputValue??null,input.paymentDueAt??null])).rows[0];
+    });
+  }
   createAddendum(input:Context&{baseContractId:string;title?:string;idempotencyKey:string}){return this.command<{id:string;versionId:string;amendmentNumber:number;reference:string}>(input,`SELECT contract_id id,version_id "versionId",amendment_number "amendmentNumber",reference FROM app.create_contract_addendum($1,$2,$3,$4,$5)`,[input.tenantId,input.baseContractId,input.title??null,input.membershipId,input.idempotencyKey]);}
   addNote(input:Context&{contractId:string;text:string}){return this.command<{id:string}>(input,"SELECT app.add_contract_note($1,$2,$3,$4) id",[input.tenantId,input.contractId,input.text,input.membershipId]);}
   archiveNote(input:Context&{noteId:string;reason:string}){return this.command<{id:string}>(input,"SELECT app.archive_contract_note($1,$2,$3,$4) id",[input.tenantId,input.noteId,input.reason,input.membershipId]);}
@@ -31,7 +42,7 @@ export class CommercialService{
       return{...salesProcess.nextContractAction,unitId:unit.id,unitCode:unit.code,salesCaseId:unit.sales_case_id,buyerNames:buyers,salesProcess};
     });
   }
-  async createNextContract(input:Context&{unitId:string;idempotencyKey:string;paymentCalculationType?:"percentage"|"fixed";paymentInputValue?:number;paymentDueAt?:string}){
+  async createNextContract(input:Context&{unitId:string;type:"rs"|"sbk"|"ks";idempotencyKey:string;paymentCalculationType?:"percentage"|"fixed";paymentInputValue?:number;paymentDueAt?:string}){
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1))",[`${input.tenantId}:${input.unitId}:next-contract`]);
       const unit=(await client.query<{code:string;sales_case_id:string|null;sales_stage:string|null}>(`SELECT unit.code,active_case.id sales_case_id,active_case.current_stage sales_stage
@@ -43,13 +54,13 @@ export class CommercialService{
       if(!unit?.sales_case_id)throw new Error("active sales case and contract.manage permission required");
       const contracts=(await client.query<ContractWorkflowFact>(`SELECT id,contract_type type,current_status status FROM contracts WHERE tenant_id=$1 AND sales_case_id=$2 AND contract_type IN ('rs','sbk','ks') ORDER BY created_at DESC,id DESC`,[input.tenantId,unit.sales_case_id])).rows;
       const action=getNextContractAction({hasActiveSalesCase:true,contracts,salesStage:unit.sales_stage});
-      if(action.kind!=="create_contract")throw new Error("Další smlouvu nyní nelze vytvořit");
-      const identity=contextualContractIdentity(action.contractType,unit.code);
-      const hasPayment=action.contractType==="rs"||action.contractType==="sbk";
+      if(action.kind!=="create_contract"||!action.allowedContractTypes.includes(input.type))throw new Error("Zvolený typ smlouvy nyní nelze vytvořit");
+      const identity=contextualContractIdentity(input.type,unit.code);
+      const hasPayment=input.type==="rs"||input.type==="sbk";
       if(hasPayment&&(!input.paymentCalculationType||!input.paymentInputValue||!input.paymentDueAt))throw new Error("payment terms are required for the next contract");
-      const created=(await client.query<{id:string;versionId:string;paymentObligationId:string|null;paymentAmount:number|null}>(`SELECT contract_id id,version_id "versionId",payment_obligation_id "paymentObligationId",payment_amount::float8 "paymentAmount" FROM app.create_contract_with_payment($1,$2,$3,$4,$5,$6,NULL,$7,$8,$9,$10)`,[input.tenantId,unit.sales_case_id,action.contractType,identity.reference,identity.title,input.membershipId,input.idempotencyKey,input.paymentCalculationType??null,input.paymentInputValue??null,input.paymentDueAt??null])).rows[0];
+      const created=(await client.query<{id:string;versionId:string;paymentObligationId:string|null;paymentAmount:number|null}>(`SELECT contract_id id,version_id "versionId",payment_obligation_id "paymentObligationId",payment_amount::float8 "paymentAmount" FROM app.create_contract_with_payment($1,$2,$3,$4,$5,$6,NULL,$7,$8,$9,$10)`,[input.tenantId,unit.sales_case_id,input.type,identity.reference,identity.title,input.membershipId,input.idempotencyKey,input.paymentCalculationType??null,input.paymentInputValue??null,input.paymentDueAt??null])).rows[0];
       const saved=(await client.query<{reference:string;title:string}>("SELECT reference,title FROM contracts WHERE tenant_id=$1 AND id=$2",[input.tenantId,created.id])).rows[0];
-      return{...created,type:action.contractType,reference:saved.reference,title:saved.title};
+      return{...created,type:input.type,reference:saved.reference,title:saved.title};
     });
   }
   async createContractAssignment(input:Context&{unitId:string;buyers?:Array<{partyId:string;role:"buyer"|"co_buyer";isPrimary:boolean;share?:number|null}>;newParty?:{kind:"individual"|"organization";salutation?:string;firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;email?:string;phone?:string;duplicateOverride?:boolean};effectiveAt:string;note?:string;idempotencyKey:string}){
@@ -73,7 +84,7 @@ export class CommercialService{
     });
   }
   createVersion(input:Context&{contractId:string;name:string;source:string;basedOnVersionId?:string;generationPayload?:unknown}){const source=["manual","generated","imported"].includes(input.source)?input.source:"manual";return this.command<{id:string}>(input,"SELECT app.create_contract_version($1,$2,$3,$4,$5,$6,$7::jsonb) id",[input.tenantId,input.contractId,input.name,source,input.membershipId,input.basedOnVersionId??null,JSON.stringify(input.generationPayload??{})]);}
-  transition(input:Context&{contractId:string;to:string;reason:string}){const reason=input.reason.trim()||"Změna stavu smlouvy";return this.command<{id:string}>(input,"SELECT app.transition_contract_status($1,$2,$3,$4,$5) id",[input.tenantId,input.contractId,input.to,reason,input.membershipId]);}
+  transition(input:Context&{contractId:string;to:string;reason:string;refundDecisions?:Array<{obligationId:string;decision:"none"|"partial"|"full";amount?:number}>;idempotencyKey?:string}){const reason=input.reason.trim()||"Změna stavu smlouvy";return this.command<{id:string}>(input,"SELECT app.transition_contract_status_with_refund_decisions($1,$2,$3,$4,$5::jsonb,$6,$7) id",[input.tenantId,input.contractId,input.to,reason,JSON.stringify(input.refundDecisions??[]),input.idempotencyKey??`transition:${input.contractId}:${input.to}:${crypto.randomUUID()}`,input.membershipId]);}
   sign(input:Context&{contractPartyId:string;versionId:string;reason:string}){return this.command<{completed:boolean}>(input,"SELECT app.record_contract_party_signature($1,$2,$3,$4,$5) completed",[input.tenantId,input.contractPartyId,input.versionId,input.membershipId,input.reason]);}
   signContract(input:Context&{contractId:string;versionId:string;signedAt:string;note?:string}){return this.command<{completed:boolean;alreadySigned:boolean;versionId:string}>(input,`SELECT completed,"already_signed" "alreadySigned","version_id" "versionId"
     FROM app.sign_contract_externally($1,$2,$3,$4,$5,$6)`,[input.tenantId,input.contractId,input.versionId,input.signedAt,input.membershipId,input.note??null]);}

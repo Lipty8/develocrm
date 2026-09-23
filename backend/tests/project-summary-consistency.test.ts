@@ -7,9 +7,9 @@ import { getCommercialSalesBucket, isUnitCommerciallyAvailable } from "../../app
 
 test("projektové souhrny používají jednotnou definici prodejního výkonu", () => {
   const dejvice = { units: 19, available: 16, preReserved: 1, reserved: 2, sold: 0, handedOver: 0 };
-  assert.deepEqual(projectSalesAggregation(dejvice),{available:16,preReservation:1,sold:2,performance:2});
-  assert.equal(projectSalesPerformanceCount(dejvice), 2);
-  assert.equal(projectSalesPerformancePercent(dejvice), 11);
+  assert.deepEqual(projectSalesAggregation(dejvice),{available:16,inNegotiation:3,sold:0,performance:3});
+  assert.equal(projectSalesPerformanceCount(dejvice), 3);
+  assert.equal(projectSalesPerformancePercent(dejvice), 16);
 });
 
 test("rezervovaná jednotka je obchodně prodaná a není dostupná", () => {

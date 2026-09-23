@@ -239,7 +239,7 @@ export const dejviceUnits=[
     "garden": null,
     "price": 13770000,
     "priceNet": 12294643,
-    "status": "Předrezervace",
+    "status": "V jednání",
     "construction": "Bez stavebního stavu",
     "handover": "Neplánováno",
     "client": "Petr Macháček",
@@ -486,7 +486,7 @@ export const dejviceClients=[
         "date": "Datum neuvedeno",
         "project": "Rezidence Dejvice",
         "unit": "312",
-        "type": "Předrezervace",
+        "type": "V jednání",
         "result": "Aktuální"
       }
     ]
@@ -514,7 +514,7 @@ export const dejviceClients=[
         "date": "Datum neuvedeno",
         "project": "Rezidence Dejvice",
         "unit": "311",
-        "type": "Předrezervace",
+        "type": "V jednání",
         "result": "Aktuální"
       }
     ]
@@ -543,14 +543,14 @@ export const dejviceClients=[
         "date": "Datum neuvedeno",
         "project": "Rezidence Dejvice",
         "unit": "314",
-        "type": "Předrezervace",
+        "type": "V jednání",
         "result": "Historická"
       },
       {
         "date": "Datum neuvedeno",
         "project": "Rezidence Dejvice",
         "unit": "209",
-        "type": "Předrezervace",
+        "type": "V jednání",
         "result": "Historická"
       }
     ]
@@ -578,7 +578,7 @@ export const dejviceClients=[
         "date": "10. 4. 2026",
         "project": "Rezidence Dejvice",
         "unit": "311",
-        "type": "Předrezervace",
+        "type": "V jednání",
         "result": "Historická"
       }
     ]
@@ -606,7 +606,7 @@ export const dejviceClients=[
         "date": "23. 4. 2026",
         "project": "Rezidence Dejvice",
         "unit": "315",
-        "type": "Předrezervace",
+        "type": "V jednání",
         "result": "Historická"
       }
     ]
@@ -634,7 +634,7 @@ export const dejviceClients=[
         "date": "Datum neuvedeno",
         "project": "Rezidence Dejvice",
         "unit": "210",
-        "type": "Předrezervace",
+        "type": "V jednání",
         "result": "Historická"
       }
     ]
@@ -662,7 +662,7 @@ export const dejviceClients=[
         "date": "23. 6. 2026",
         "project": "Rezidence Dejvice",
         "unit": "205",
-        "type": "Předrezervace",
+        "type": "V jednání",
         "result": "Aktuální / v řešení"
       }
     ]
@@ -708,7 +708,7 @@ export const dejviceUnitContexts={
         "date": "23. 6. 2026",
         "partyId": "de700000-0000-4000-8000-000000000010",
         "name": "Tomáš Ošťádal",
-        "type": "Předrezervace",
+        "type": "V jednání",
         "result": "Aktuální / v řešení"
       }
     ],
@@ -756,7 +756,7 @@ export const dejviceUnitContexts={
         "date": "Datum neuvedeno",
         "partyId": "de700000-0000-4000-8000-000000000006",
         "name": "Jolana Svobodová",
-        "type": "Předrezervace",
+        "type": "V jednání",
         "result": "Historická"
       }
     ],
@@ -770,7 +770,7 @@ export const dejviceUnitContexts={
         "date": "Datum neuvedeno",
         "partyId": "de700000-0000-4000-8000-000000000009",
         "name": "Lenka Lipowski",
-        "type": "Předrezervace",
+        "type": "V jednání",
         "result": "Historická"
       }
     ],
@@ -784,14 +784,14 @@ export const dejviceUnitContexts={
         "date": "Datum neuvedeno",
         "partyId": "de700000-0000-4000-8000-000000000005",
         "name": "Tomáš Lichtenberg",
-        "type": "Předrezervace",
+        "type": "V jednání",
         "result": "Aktuální"
       },
       {
         "date": "10. 4. 2026",
         "partyId": "de700000-0000-4000-8000-000000000007",
         "name": "Jan Eventov",
-        "type": "Předrezervace",
+        "type": "V jednání",
         "result": "Historická"
       }
     ],
@@ -813,7 +813,7 @@ export const dejviceUnitContexts={
         "date": "Datum neuvedeno",
         "partyId": "de700000-0000-4000-8000-000000000004",
         "name": "Petr Macháček",
-        "type": "Předrezervace",
+        "type": "V jednání",
         "result": "Aktuální"
       }
     ],
@@ -848,7 +848,7 @@ export const dejviceUnitContexts={
         "date": "Datum neuvedeno",
         "partyId": "de700000-0000-4000-8000-000000000006",
         "name": "Jolana Svobodová",
-        "type": "Předrezervace",
+        "type": "V jednání",
         "result": "Historická"
       }
     ],
@@ -862,7 +862,7 @@ export const dejviceUnitContexts={
         "date": "23. 4. 2026",
         "partyId": "de700000-0000-4000-8000-000000000008",
         "name": "Martin Beck",
-        "type": "Předrezervace",
+        "type": "V jednání",
         "result": "Historická"
       }
     ],

@@ -15,9 +15,9 @@ test("dashboard i detail používají stejný sdílený výpočet prodejního v�
   assert.match(catalog, /projectSalesPerformancePercent\(\{units:unitCount,available,preReserved,reserved,sold,handedOver\}\)/);
 });
 
-test("rezervace se vykazuje jako prodaná, předrezervace nikoliv",()=>{
-  assert.match(crm,/title="Prodané včetně rezervovaných"/);
-  assert.match(crm,/je prodaných včetně rezervovaných/);
+test("jednání zahrnuje předrezervované a rezervované jednotky",()=>{
+  assert.match(crm,/salesAggregation\.inNegotiation/);
+  assert.match(crm,/label: "V jednání"/);
   assert.match(crm,/isUnitCommerciallyAvailable\(unit\.status\)/);
 });
 
@@ -47,7 +47,7 @@ test("barvy obchodních stavů používají jednu sémantickou mapu",async()=>{
 
 test("graf a legenda používají tři sdílené agregované stavy",()=>{
   assert.match(crm,/const salesAggregation = projectSalesAggregation\(project\)/);
-  assert.match(crm,/const unitDistribution = \[\s*\{ label: "Prodané"[^\n]+\n\s*\{ label: "Předrezervace"[^\n]+\n\s*\{ label: "Volné"/);
+  assert.match(crm,/const unitDistribution = \[\s*\{ label: "Prodané"[^\n]+\n\s*\{ label: "V jednání"[^\n]+\n\s*\{ label: "Volné"/);
   assert.match(crm,/project-distribution-bar[^\n]+unitDistribution\.map/);
   assert.match(crm,/project-distribution-legend[^\n]+unitDistribution\.map/);
 });

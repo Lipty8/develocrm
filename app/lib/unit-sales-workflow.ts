@@ -1,7 +1,7 @@
 import type { ContractRecord, UnitCommercialContext, UnitRecord } from "../crm-data";
 import {getSalesProcessState,type SalesProcessProjection} from "../../backend/src/shared/next-contract-action";
 
-export const unitSalesWorkflowSteps = ["Zájem", "Předrezervace", "RS", "SBK", "KS", "Předání"] as const;
+export const unitSalesWorkflowSteps = ["Zájem", "V jednání", "RS", "SBK", "KS", "Předání"] as const;
 
 export function projectUnitSalesWorkflow(input: {
   unit: Pick<UnitRecord, "id" | "handover" | "status">;

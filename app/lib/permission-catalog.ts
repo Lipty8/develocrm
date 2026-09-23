@@ -67,9 +67,9 @@ const definitions: PermissionDefinition[] = [
   {key:"sales_cases.read",name:"Zobrazit obchodní případy",description:"Uživatel uvidí obchodní případy v přiřazených projektech.",category:"Obchodní případy",operation:"view",supportedScopes:project},
   {key:"sales_case.manage",name:"Spravovat obchodní případy",description:"Uživatel může spravovat obchodní případy a jejich účastníky.",category:"Obchodní případy",operation:"manage",supportedScopes:project},
   {key:"sales_cases.manage",name:"Spravovat obchodní případy",description:"Uživatel může spravovat obchodní případy a více kupujících.",category:"Obchodní případy",operation:"manage",supportedScopes:project},
-  {key:"holds.create",name:"Vytvářet předrezervace",description:"Uživatel může vytvořit předrezervaci jednotky podle obchodních pravidel.",category:"Obchodní případy",operation:"create",supportedScopes:project},
-  {key:"holds.confirm",name:"Potvrzovat rezervace",description:"Uživatel může převést předrezervaci na potvrzenou rezervaci.",category:"Obchodní případy",operation:"approve",supportedScopes:project},
-  {key:"holds.cancel",name:"Rušit předrezervace a rezervace",description:"Uživatel může řízeně zrušit nebo uvolnit aktivní obchodní blokaci.",category:"Obchodní případy",operation:"update",supportedScopes:project},
+  {key:"holds.create",name:"Vytvářet jednání",description:"Uživatel může vytvořit jednání jednotky podle obchodních pravidel.",category:"Obchodní případy",operation:"create",supportedScopes:project},
+  {key:"holds.confirm",name:"Potvrzovat rezervace",description:"Uživatel může převést jednání na potvrzenou rezervaci.",category:"Obchodní případy",operation:"approve",supportedScopes:project},
+  {key:"holds.cancel",name:"Rušit jednání a rezervace",description:"Uživatel může řízeně zrušit nebo uvolnit aktivní obchodní blokaci.",category:"Obchodní případy",operation:"update",supportedScopes:project},
   {key:"holds.manage",name:"Spravovat rezervace",description:"Uživatel může vytvářet, převádět, rušit a expirovat rezervace.",category:"Obchodní případy",operation:"manage",supportedScopes:project},
 
   {key:"contract.read",name:"Zobrazit smlouvy",description:"Uživatel uvidí smlouvy, jejich účastníky a verze.",category:"Smlouvy",operation:"view",supportedScopes:project},

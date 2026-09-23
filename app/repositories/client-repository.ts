@@ -64,9 +64,9 @@ function applyPreviewSalesCommands(snapshot:ClientSnapshot){
         context.buyers=(command.partyIds??[]).map(partyId=>snapshot.clients.find(item=>item.id===partyId)).filter((item):item is ClientRecord=>Boolean(item)).map(item=>({partyId:item.id,name:item.name,email:item.email,role:"buyer",share:null}));
         for(const buyer of context.buyers){
           const interest=context.interests.find(item=>item.partyId===buyer.partyId);
-          const type=command.type==="reservation"?"Rezervace":"Předrezervace";
-          if(interest){interest.type=type;interest.result=command.type==="reservation"?"Přešel do rezervace":"Přešel do předrezervace";}
-          else context.interests.unshift({date:formatPragueDate(command.recordedAt??Date.now()),partyId:buyer.partyId,name:buyer.name,type,result:command.type==="reservation"?"Přešel do rezervace":"Přešel do předrezervace"});
+          const type=command.type==="reservation"?"Rezervace":"V jednání";
+          if(interest){interest.type=type;interest.result=command.type==="reservation"?"Přešel do rezervace":"Přešel do jednání";}
+          else context.interests.unshift({date:formatPragueDate(command.recordedAt??Date.now()),partyId:buyer.partyId,name:buyer.name,type,result:command.type==="reservation"?"Přešel do rezervace":"Přešel do jednání"});
         }
       }
       if(command.kind==="convert"&&context.hold){

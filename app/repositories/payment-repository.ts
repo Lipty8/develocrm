@@ -5,7 +5,8 @@ export type PaymentStatus="pending"|"partially_paid"|"paid"|"overdue"|"overpaid"
 export type PaymentRefundRecord={id:string;amount:number;refundedAt:string;reason:string};
 export type PaymentTransactionRecord={id:string;amount:number;paidAt:string;variableSymbol?:string;counterpartyAccount?:string;bankTransactionId?:string;note?:string;sourceType?:"manual"|"bank_import"|"bank_sync";reversedAt?:string|null;reversalReason?:string|null;refunds?:PaymentRefundRecord[]};
 export type PaymentEventRecord={id:string;type:string;at:string;payload?:Record<string,unknown>};
-export type PaymentRecord={id:string;projectId:string;project:string;unitId:string;unit:string;partyId?:string;client:string;salesCaseId:string;contractId?:string;contractReference?:string;contractType?:string;contractStatus?:string;type:string;label:string;amount:number;currency:"CZK";dueAt:string;variableSymbol?:string;paid:number;refunded?:number;refundable?:number;refundAllowed?:boolean;status:PaymentStatus;transactions:PaymentTransactionRecord[];events:PaymentEventRecord[]};
+export type PaymentDueDateChange={id:string;previousDueAt:string;newDueAt:string;reason:string;changedAt:string;changedBy:string};
+export type PaymentRecord={id:string;projectId:string;project:string;unitId:string;unit:string;partyId?:string;client:string;salesCaseId:string;contractId?:string;contractReference?:string;contractType?:string;contractStatus?:string;type:string;label:string;amount:number;currency:"CZK";originalDueAt?:string;dueAt:string;dueDateChanges?:PaymentDueDateChange[];variableSymbol?:string;paid:number;refunded?:number;refundDecision?:"none"|"partial"|"full"|"undetermined"|null;refundDecidedAmount?:number|null;refundable?:number|null;refundAllowed?:boolean;status:PaymentStatus;transactions:PaymentTransactionRecord[];events:PaymentEventRecord[]};
 export type PaymentFilters={projectId?:string;project?:string;unitId?:string;unit?:string;partyId?:string;contractId?:string;salesCaseId?:string;status?:PaymentStatus;query?:string;sort?:string;direction?:"asc"|"desc"};
 export type ImportPreviewRow={row:number;bankTransactionId:string;paidAt:string;amount:number;variableSymbol:string;counterpartyAccount:string;duplicate:boolean;proposedObligationId?:string;proposedLabel?:string;confidence:number};
 const STORAGE_KEY="develocrm-preview-payments-v2";
@@ -28,6 +29,7 @@ export interface PaymentRepository{
   record(obligationId:string,input:{amount:number;paidAt:string;variableSymbol?:string;counterpartyAccount?:string;bankTransactionId?:string;note?:string;idempotencyKey?:string}):Promise<void>;
   reverse(transactionId:string,reason:string):Promise<void>;
   refund(obligationId:string,input:{sourceTransactionId:string;amount:number;refundedAt:string;reason?:string;idempotencyKey:string}):Promise<void>;
+  changeDueDate(obligationId:string,input:{dueAt:string;reason:string;idempotencyKey:string}):Promise<void>;
   previewCsv(text:string):Promise<ImportPreviewRow[]>;
   confirmImport(rows:ImportPreviewRow[]):Promise<number>;
 }
@@ -55,6 +57,7 @@ class ApiPaymentRepository implements PaymentRepository{
     tx.reversedAt=new Date().toISOString();tx.reversalReason=reason;row.events.unshift({id:crypto.randomUUID(),type:"payment.reversed",at:tx.reversedAt,payload:{reason}});row.paid=row.transactions.filter(item=>!item.reversedAt).reduce((sum,item)=>sum+item.amount,0);row.status=deriveStatus(row.amount,row.paid,row.dueAt);writePreview(rows);
   }
   async refund(obligationId:string,input:{sourceTransactionId:string;amount:number;refundedAt:string;reason?:string;idempotencyKey:string}){const response=await apiFetch(`/api/payments/${encodeURIComponent(obligationId)}/refunds`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});if(response.ok)return;const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??"Vratku nelze vytvořit");}
+  async changeDueDate(obligationId:string,input:{dueAt:string;reason:string;idempotencyKey:string}){const response=await apiFetch(`/api/payments/${encodeURIComponent(obligationId)}/due-date`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify(input)});if(response.ok)return;const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??"Splatnost nelze změnit");}
   async previewCsv(text:string){
     const lines=text.replace(/^\ufeff/,"").split(/\r?\n/).filter(Boolean);if(lines.length<2)throw new Error("CSV neobsahuje žádné transakce");
     const separator=lines[0].includes(";")?";":",";const headers=lines[0].split(separator).map(value=>value.trim().toLowerCase());

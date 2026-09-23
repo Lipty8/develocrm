@@ -215,7 +215,7 @@ export class SalesRepository {
         `SELECT unit.code unit_code,active_case.id sales_case_id,active_case.current_stage stage,
           COALESCE(buyers.items,'[]'::jsonb) buyers,${buyerHistorySelect},COALESCE(interests.items,'[]'::jsonb) interests,hold.item hold
          FROM units unit
-         LEFT JOIN LATERAL (SELECT id,current_stage FROM sales_cases WHERE tenant_id=unit.tenant_id AND unit_id=unit.id AND status='active' LIMIT 1) active_case ON true
+         LEFT JOIN LATERAL (SELECT id,current_stage FROM sales_cases WHERE tenant_id=unit.tenant_id AND unit_id=unit.id AND status='active' ORDER BY opened_at DESC,id DESC LIMIT 1) active_case ON true
          LEFT JOIN LATERAL (
            SELECT jsonb_agg(jsonb_build_object('partyId',party.id,'name',party.display_name,'email',COALESCE(email.value,''),
              'role',participant.participant_role,'share',participant.ownership_share) ORDER BY participant.is_primary DESC,party.display_name) items
@@ -233,7 +233,7 @@ export class SalesRepository {
              'result',COALESCE(latest.outcome,CASE interest.status WHEN 'converted' THEN 'Pokračuje v obchodním procesu' WHEN 'active' THEN 'Aktivní' ELSE 'Bez realizace' END)) ORDER BY interest.first_interest_at DESC) items
            FROM unit_interests interest JOIN parties party ON party.tenant_id=interest.tenant_id AND party.id=interest.party_id
            LEFT JOIN LATERAL (SELECT outcome FROM interest_events event WHERE event.tenant_id=interest.tenant_id AND event.unit_interest_id=interest.id ORDER BY occurred_at DESC LIMIT 1) latest ON true
-           LEFT JOIN LATERAL (SELECT CASE max(CASE event_type WHEN 'converted_to_sales_case' THEN 7 WHEN 'reservation_requested' THEN 6 WHEN 'pre_reservation_requested' THEN 5 WHEN 'offer' THEN 4 WHEN 'viewing' THEN 3 WHEN 'inquiry' THEN 2 ELSE 1 END) WHEN 7 THEN 'Převedeno do obchodního procesu' WHEN 6 THEN 'Rezervace' WHEN 5 THEN 'Předrezervace' WHEN 4 THEN 'Nabídka' WHEN 3 THEN 'Prohlídka' ELSE 'Zájem' END label FROM interest_events event WHERE event.tenant_id=interest.tenant_id AND event.unit_interest_id=interest.id) highest ON true
+           LEFT JOIN LATERAL (SELECT CASE max(CASE event_type WHEN 'converted_to_sales_case' THEN 7 WHEN 'reservation_requested' THEN 6 WHEN 'pre_reservation_requested' THEN 5 WHEN 'offer' THEN 4 WHEN 'viewing' THEN 3 WHEN 'inquiry' THEN 2 ELSE 1 END) WHEN 7 THEN 'Převedeno do obchodního procesu' WHEN 6 THEN 'Rezervace' WHEN 5 THEN 'V jednání' WHEN 4 THEN 'Nabídka' WHEN 3 THEN 'Prohlídka' ELSE 'Zájem' END label FROM interest_events event WHERE event.tenant_id=interest.tenant_id AND event.unit_interest_id=interest.id) highest ON true
            WHERE interest.tenant_id=unit.tenant_id AND interest.unit_id=unit.id
              AND ${partyAccess}
          ) interests ON true

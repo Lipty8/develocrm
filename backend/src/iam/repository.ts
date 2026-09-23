@@ -252,7 +252,7 @@ export class IamRepository {
 function roleRestrictions(code:string):string[]{
   if(code==="executive")return["Bez správy uživatelů, rolí, systému a integrací"];
   if(code==="admin")return["Bez schvalování cen, slev a obchodních výjimek"];
-  if(code==="sales")return["Pouze vlastní klienti a předrezervace; bez exportu a potvrzení rezervace"];
+  if(code==="sales")return["Pouze vlastní klienti a jednání; bez exportu a potvrzení rezervace"];
   if(code==="read_only")return["Bez mutací a exportu"];
   return [];
 }

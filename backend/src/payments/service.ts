@@ -14,4 +14,7 @@ export class PaymentService{
   refund(input:Context&{obligationId:string;sourceTransactionId:string;amount:number;refundedAt:string;reason?:string;idempotencyKey:string}){
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{id:string}>("SELECT app.create_payment_refund($1,$2,$3,$4,$5,$6,$7,$8) id",[input.tenantId,input.obligationId,input.sourceTransactionId,input.amount,input.refundedAt,input.reason?.trim()||null,input.idempotencyKey,input.membershipId])).rows[0]);
   }
+  changeDueDate(input:Context&{obligationId:string;dueAt:string;reason:string;idempotencyKey:string}){
+    return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{id:string}>("SELECT app.change_payment_obligation_due_date($1,$2,$3,$4,$5,$6) id",[input.tenantId,input.obligationId,input.dueAt,input.reason,input.idempotencyKey,input.membershipId])).rows[0]);
+  }
 }

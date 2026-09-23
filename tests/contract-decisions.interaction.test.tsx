@@ -139,14 +139,14 @@ test("modal dodatku předá název a vratka dovolí volitelnou poznámku",async(
 });
 
 test("detail platby zvýrazní vratku, zkrátí souhrn a rozliší historii",()=>{
-  const payment={id:"obligation-1",project:"Rezidence Dejvice",unit:"417",client:"Jan Novák",label:"Rezervační poplatek",amount:2471000,paid:2471000,refunded:500000,refundable:1971000,refundAllowed:true,status:"paid",dueAt:"2026-09-15",contractReference:"DEJ-417-RS",contractType:"rs",contractStatus:"cancelled",transactions:[{id:"transaction-1",amount:2471000,paidAt:"2026-09-15T08:00:00Z",sourceType:"manual",note:"Připsáno",refunds:[{id:"refund-1",amount:500000,refundedAt:"2026-09-16T08:00:00Z",reason:"Vráceno klientovi"}]}]} as never;
+  const payment={id:"obligation-1",project:"Rezidence Dejvice",unit:"417",client:"Jan Novák",label:"Rezervační poplatek",amount:2471000,paid:2471000,refunded:500000,refundDecision:"full",refundDecidedAmount:2471000,refundable:1971000,refundAllowed:true,status:"paid",dueAt:"2026-09-15",contractReference:"DEJ-417-RS",contractType:"rs",contractStatus:"cancelled",transactions:[{id:"transaction-1",amount:2471000,paidAt:"2026-09-15T08:00:00Z",sourceType:"manual",note:"Připsáno",refunds:[{id:"refund-1",amount:500000,refundedAt:"2026-09-16T08:00:00Z",reason:"Vráceno klientovi"}]}]} as never;
   const {container}=render(<PaymentDetailModal payment={payment} close={()=>{}} openUnit={()=>{}} canRecord={false} canReverse={false} saved={()=>{}}/>);
   const summary=container.querySelector(".payment-refund-overview");
   assert.ok(summary);
   assert.doesNotMatch(summary.textContent??"",/ČISTĚ PŘIJATO/i);
   assert.ok(summary.querySelector(".refund-due-summary")?.textContent?.includes("1 971 000"));
   assert.equal(summary.querySelectorAll(".badge").length,1);
-  assert.ok(screen.getByText(/Nevrácená platba z ukončené rezervace/));
+  assert.ok(screen.getByText(/Nevrácená platba z ukončené smlouvy/));
   assert.ok(container.querySelector(".payment-history article strong")?.textContent?.includes("Úhrada +2 471 000 Kč"));
   assert.ok(container.querySelector(".refund-history strong")?.textContent?.includes("Vratka −500 000 Kč"));
   assert.ok(screen.getByRole("button",{name:"Vytvořit vratku"}));
@@ -159,9 +159,9 @@ test("vratka předvyplní nižší z částky transakce a celkového zůstatku",
 });
 
 test("CTA vratky používá serverovou projekci oprávnění a zbývající částky",()=>{
-  const base={paid:150000,refunded:50000,refundable:100000,refundAllowed:true} as never;
-  assert.deepEqual(paymentRefundAvailability(base),{refunded:50000,refundable:100000,available:true});
+  const base={paid:150000,refunded:50000,refundDecision:"full",refundable:100000,refundAllowed:true} as never;
+  assert.deepEqual(paymentRefundAvailability(base),{refunded:50000,refundable:100000,decisionKnown:true,available:true});
   assert.equal(paymentRefundAvailability({...base,refundAllowed:false} as never).available,false);
   assert.equal(paymentRefundAvailability({...base,refundable:0} as never).available,false);
-  assert.deepEqual(paymentRefundAvailability({paid:150000,refunded:0,contractType:"rs",contractStatus:"signed"} as never),{refunded:0,refundable:0,available:false});
+  assert.deepEqual(paymentRefundAvailability({paid:150000,refunded:0,contractType:"rs",contractStatus:"signed"} as never),{refunded:0,refundable:null,decisionKnown:false,available:false});
 });

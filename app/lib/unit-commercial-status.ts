@@ -1,6 +1,6 @@
 export const unitCommercialStatuses = {
   available: { label: "Volný", className: "available" },
-  pre_reserved: { label: "Předrezervace", className: "pre-reserved" },
+  pre_reserved: { label: "V jednání", className: "pre-reserved" },
   reserved: { label: "Rezervovaná", className: "reserved" },
   contracted: { label: "SBK", className: "contracted" },
   sold: { label: "KS", className: "sold" },
@@ -14,6 +14,7 @@ export type CommercialSalesBucket = "available" | "preReservation" | "sold" | "u
 const aliases: Record<string, UnitCommercialStatusCode> = {
   "volný": "available", "volné": "available", "k dispozici": "available",
   "předrezervace": "pre_reserved", "předrezervováno": "pre_reserved", "předrezervovaná": "pre_reserved", "předrezervované": "pre_reserved",
+  "v jednání": "pre_reserved",
   "rezervováno": "reserved", "rezervovaná": "reserved", "rezervované": "reserved", "rs": "reserved",
   "smluvně zajištěno": "contracted", "sbk": "contracted", "ks": "contracted",
   "prodáno": "sold", "prodaná": "sold", "prodané": "sold", "předáno": "handed_over", "předaná": "handed_over", "předané": "handed_over",

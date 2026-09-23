@@ -14,7 +14,7 @@ test("detail smlouvy nabízí řízené označení aktuální verze jako podepsa
   assert.match(repository,/signContract/);
   assert.match(proxy,/forwardBackendMutation/);
   assert.match(app,/refreshUnitWorkflow\(\)/);
-  assert.match(nextAction,/return\{kind:"create_contract",contractType,label:`Vytvořit \$\{contractType\.toUpperCase\(\)\}`\}/);
+  assert.match(nextAction,/return\{kind:"create_contract",contractType,allowedContractTypes,label:"Vytvořit smlouvu"\}/);
   assert.doesNotMatch(nextAction,/Čeká na úhradu rezervačního poplatku/);
   assert.match(app,/Smlouva byla označena jako podepsaná a obchodní proces byl aktualizován/);
   assert.doesNotMatch(app,/ContractSignatureModal/);
@@ -25,8 +25,8 @@ test("vizuální prodejní proces používá smlouvy a nemá duplicitní krok re
   const statuses=await readFile(new URL("../app/lib/unit-commercial-status.ts",import.meta.url),"utf8");
   const workflow=await readFile(new URL("../app/lib/unit-sales-workflow.ts",import.meta.url),"utf8");
   assert.match(statuses,/reserved: \{ label: "Rezervovaná"/);
-  assert.match(workflow,/\["Zájem", "Předrezervace", "RS", "SBK", "KS", "Předání"\]/);
-  assert.doesNotMatch(workflow,/"Předrezervace", "Rezervace"/);
+  assert.match(workflow,/\["Zájem", "V jednání", "RS", "SBK", "KS", "Předání"\]/);
+  assert.doesNotMatch(workflow,/"V jednání", "Rezervace"/);
   assert.match(workflow,/getSalesProcessState/);
   assert.match(workflow,/contract\.salesCaseId===input\.context\.salesCaseId/);
   assert.match(app,/projectUnitSalesWorkflow/);

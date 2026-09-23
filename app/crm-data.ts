@@ -1,6 +1,6 @@
 import { dejviceClients, dejviceContracts, dejvicePriceHistories, dejviceProject, dejviceUnitContexts, dejviceUnits } from "./dejvice-pilot-data";
 
-export type UnitStatus = "Volný" | "Předrezervace" | "Rezervovaná" | "SBK" | "KS" | "Předáno" | "Blokováno";
+export type UnitStatus = "Volný" | "V jednání" | "Rezervovaná" | "SBK" | "KS" | "Předáno" | "Blokováno";
 
 export type UnitRecord = {
   backendId?: string;
@@ -49,6 +49,7 @@ export type CatalogAccessoryRecord = AccessoryAssignmentRecord & {
   assignedUnitId?:string|null;
   assignedUnitCode?:string|null;
   assignedUnitStatus?:string|null;
+  assignmentState?:"available"|"preassigned"|"assigned"|"archived";
   assignedClient?:string|null;
   assignmentHistory?:AccessoryAssignmentHistoryRecord[];
   archived?:boolean;

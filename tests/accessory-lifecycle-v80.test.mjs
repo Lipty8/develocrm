@@ -35,7 +35,7 @@ test("doménová operace blokuje aktivní přiřazení a volí delete nebo archi
 
 test("archivované položky jsou skryté standardně a preview adapter zachová stav",()=>{
   assert.match(crm,/states\.length\?states\.includes\(state\):!row\.archived/);
-  assert.match(crm,/options=\{\["Volné","Přiřazené","Archivované"\]\}/);
+  assert.match(crm,/options=\{\["Volné","Předpřiřazeno","Přiřazené","Archivované"\]\}/);
   assert.match(catalog,/develocrm\.archived\.accessories/);
   assert.match(catalog,/removeOrArchiveAccessory/);
 });

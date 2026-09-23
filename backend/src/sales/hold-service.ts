@@ -3,14 +3,14 @@ import type { Database } from "../database.js";
 export class HoldService {
   constructor(private readonly database: Database) {}
   create(input: { tenantId:string;userId:string;unitId:string;type:"pre_reservation"|"reservation";partyIds:string[];expiresAt:string;membershipId:string;interestId?:string;idempotencyKey:string;reason:string }) {
-    const reason=input.reason.trim()||(input.type==="pre_reservation"?"Vytvořena předrezervace":"Vytvořena rezervace");
+    const reason=input.reason.trim()||(input.type==="pre_reservation"?"Vytvořeno jednání":"Vytvořena rezervace");
     return this.database.withContext({ tenantId:input.tenantId,userId:input.userId }, async (client) => (await client.query<{ sales_case_id:string;hold_id:string }>(
       "SELECT * FROM app.create_unit_hold($1,$2,$3,$4::uuid[],$5,$6,$7,$8,$9)",
       [input.tenantId,input.unitId,input.type,input.partyIds,input.expiresAt,input.membershipId,input.interestId ?? null,input.idempotencyKey,reason],
     )).rows[0]);
   }
   createWithParty(input:{tenantId:string;userId:string;unitId:string;type:"pre_reservation"|"reservation";expiresAt:string;membershipId:string;idempotencyKey:string;reason:string;newParty:{kind:"individual"|"organization";salutation?:string;firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;email?:string;phone?:string;duplicateOverride?:boolean}}){
-    const reason=input.reason.trim()||(input.type==="pre_reservation"?"Vytvořena předrezervace":"Vytvořena rezervace");
+    const reason=input.reason.trim()||(input.type==="pre_reservation"?"Vytvořeno jednání":"Vytvořena rezervace");
     const party=input.newParty;
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async(client)=>(await client.query<{party_id:string;sales_case_id:string;hold_id:string}>(
       "SELECT * FROM app.create_party_and_unit_hold($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)",
@@ -18,7 +18,7 @@ export class HoldService {
     )).rows[0]);
   }
   convert(input: { tenantId:string;userId:string;holdId:string;expiresAt:string;membershipId:string;idempotencyKey:string;reason:string }) {
-    const reason=input.reason.trim()||"Předrezervace převedena na rezervaci";
+    const reason=input.reason.trim()||"Jednání převedeno na rezervaci";
     return this.database.withContext({ tenantId:input.tenantId,userId:input.userId }, async (client) => (await client.query<{ hold_id:string }>(
       "SELECT app.convert_pre_reservation($1,$2,$3,$4,$5,$6) hold_id",[input.tenantId,input.holdId,input.expiresAt,input.membershipId,input.idempotencyKey,reason],
     )).rows[0]);
