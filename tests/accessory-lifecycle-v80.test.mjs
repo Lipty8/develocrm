@@ -12,6 +12,9 @@ test("sklepy a parking mají CTA přímo v KPI řádku",()=>{
   assert.match(crm,/accessory-inventory-summary[\s\S]*accessory-summary-metrics[\s\S]*Přidat sklep[\s\S]*Přidat parkovací místo/);
   assert.doesNotMatch(crm,/canManage&&<div className="list-action-toolbar"><button[^>]*>[\s\S]*Nový sklep/);
   assert.match(css,/\.accessory-inventory-summary\{display:flex/);
+  assert.match(css,/\.accessory-summary-metrics\{display:grid;grid-template-columns:repeat\(4,minmax\(76px,104px\)\)/);
+  assert.match(css,/\.accessory-inventory-summary>\.list-toolbar-actions\{flex-wrap:nowrap;margin-left:auto\}/);
+  assert.match(css,/@media\(max-width:650px\)\{\.accessory-inventory-summary[\s\S]*\.accessory-summary-metrics\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
 });
 
 test("detail příslušenství nabízí úpravu, přiřazení a bezpečné odstranění",()=>{
