@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { projectCompletionLabel, projectCompletionMonthValue, projectCompletionStorageDate } from "../../app/lib/project-completion.js";
 import { projectConstructionLabel, projectConstructionStepIndex } from "../../app/lib/project-construction.js";
-import { projectSalesAggregation, projectSalesPerformanceCount, projectSalesPerformancePercent } from "../../app/lib/project-sales-performance.js";
+import { projectSalesAggregation, projectSalesPerformanceCount, projectSalesPerformancePercent, projectUnitSalesBucket } from "../../app/lib/project-sales-performance.js";
 import { getCommercialSalesBucket, isUnitCommerciallyAvailable } from "../../app/lib/unit-commercial-status.js";
 
 test("projektové souhrny používají jednotnou definici prodejního výkonu", () => {
@@ -20,6 +20,13 @@ test("detailní stav zůstává jen fallback; projektové KPI používá backend
   assert.equal(getCommercialSalesBucket("Předaná"),"sold");
   assert.equal(isUnitCommerciallyAvailable("Volný"),true);
   for(const status of ["Předrezervovaná","Rezervovaná","Prodaná","Předaná"]) assert.equal(isUnitCommerciallyAvailable(status),false);
+});
+
+test("quick filtr jednotek respektuje backendový sales bucket a bezpečný preview fallback",()=>{
+  assert.equal(projectUnitSalesBucket({salesBucket:"in_negotiation",status:"KS"}),"in_negotiation");
+  assert.equal(projectUnitSalesBucket({status:"Volný"}),"available");
+  assert.equal(projectUnitSalesBucket({status:"Rezervovaná"}),"in_negotiation");
+  assert.equal(projectUnitSalesBucket({status:"Předáno"}),"sold");
 });
 
 test("stavební fáze používá uložený kód, nikoliv odhad z textu", () => {

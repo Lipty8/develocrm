@@ -19,6 +19,7 @@ export type UnitRecord = {
   accessoryPrice?: number;
   priceConfigured?: boolean;
   status: UnitStatus;
+  salesBucket?: "available" | "in_negotiation" | "sold";
   construction: string;
   handover: string;
   client?: string;

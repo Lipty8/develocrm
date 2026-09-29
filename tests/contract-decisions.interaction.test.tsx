@@ -6,6 +6,8 @@ import {RowActionMenu} from "../app/components/row-action-menu";
 import {TableColumnMenu,TableColumnPreferenceProvider,useTableColumns,type TableColumnDefinition} from "../app/components/table-column-config";
 import {TableColumnFilter} from "../app/components/table-column-filter";
 import {SummaryStats,toggledSummaryFilter} from "../app/components/summary-stats";
+import {projectSalesAggregation,projectUnitSalesBucket,type ProjectSalesBucket} from "../app/lib/project-sales-performance";
+import {contractSummaryCategory,contractSummaryCounts,type ContractSummaryCategory} from "../app/lib/contract-summary";
 import {PackageOpen,UserRound,Users} from "lucide-react";
 import {ClientChangeStatusModal,ComplaintDetailModal,ContractAddendumModal,ContractNoteModal,FormModal,PaymentDetailModal,PaymentRefundForm,paymentRefundAvailability} from "../app/CRMApp";
 
@@ -86,6 +88,42 @@ test("souhrn inventáře filtruje tři stavy a Celkem stavový filtr vymaže",as
   render(<Harness/>);
   await user.click(screen.getByRole("button",{name:"Předpřiřazené: 3"}));assert.equal(screen.getByRole("status").textContent,"Předpřiřazené");
   await user.click(screen.getByRole("button",{name:"Celkem: 10"}));assert.equal(screen.getByRole("status").textContent,"vše");
+});
+
+test("souhrn jednotek používá projektovou projekci, kombinuje quick filtr s hledáním a Celkem filtr ruší",async()=>{
+  const user=userEvent.setup({document});
+  const project={units:4,available:1,preReserved:1,reserved:1,sold:1,handedOver:0};
+  const aggregation=projectSalesAggregation(project);
+  const records=[
+    {id:"101",status:"Volný",salesBucket:"available" as const},
+    {id:"102",status:"V jednání",salesBucket:"in_negotiation" as const},
+    {id:"201",status:"Rezervovaná",salesBucket:"in_negotiation" as const},
+    {id:"301",status:"Prodaná",salesBucket:"sold" as const},
+  ];
+  function Harness(){const[selected,setSelected]=useState<ProjectSalesBucket|"">("");const[query,setQuery]=useState("");const visible=records.filter(item=>(!selected||projectUnitSalesBucket(item)===selected)&&item.id.includes(query));return <><SummaryStats label="Souhrn jednotek" selectedId={selected||"all"} onSelect={id=>setSelected(id==="all"?"":id as ProjectSalesBucket)} items={[{id:"all",label:"Celkem",value:project.units,icon:PackageOpen},{id:"available",label:"Volné",value:aggregation.available,icon:PackageOpen},{id:"in_negotiation",label:"V jednání",value:aggregation.inNegotiation,icon:PackageOpen},{id:"sold",label:"Prodané",value:aggregation.sold,icon:PackageOpen}]}/><input aria-label="Hledat jednotku" value={query} onChange={event=>setQuery(event.target.value)}/><output aria-label="Jednotky">{visible.map(item=>item.id).join(",")}</output></>}
+  render(<Harness/>);
+  assert.equal(aggregation.available+aggregation.inNegotiation+aggregation.sold,project.units);
+  await user.click(screen.getByRole("button",{name:"V jednání: 2"}));assert.equal(screen.getByLabelText("Jednotky").textContent,"102,201");
+  await user.type(screen.getByRole("textbox",{name:"Hledat jednotku"}),"20");assert.equal(screen.getByLabelText("Jednotky").textContent,"201");
+  await user.click(screen.getByRole("button",{name:"Celkem: 4"}));assert.equal(screen.getByLabelText("Jednotky").textContent,"201");
+});
+
+test("souhrn smluv klasifikuje dodatky a postoupení jako Ostatní a kombinuje filtr s hledáním",async()=>{
+  const user=userEvent.setup({document});
+  const records=[
+    {reference:"DEJ-101-RS",typeCode:"rs",type:"RS"},
+    {reference:"DEJ-102-SBK",typeCode:"sbk",type:"SBK"},
+    {reference:"DEJ-103-KS",typeCode:"ks",type:"KS"},
+    {reference:"DEJ-101-D1",typeCode:"amendment",type:"Dodatek",parentContractId:"rs-1"},
+    {reference:"DEJ-102-P",typeCode:"assignment_sbk",type:"Postoupení SBK",baseContractType:"sbk"},
+  ];
+  const counts=contractSummaryCounts(records);
+  function Harness(){const[selected,setSelected]=useState<ContractSummaryCategory|"">("");const[query,setQuery]=useState("");const visible=records.filter(item=>(!selected||contractSummaryCategory(item)===selected)&&item.reference.toLocaleLowerCase("cs-CZ").includes(query.toLocaleLowerCase("cs-CZ")));return <><SummaryStats label="Souhrn smluv" selectedId={selected||"all"} onSelect={id=>setSelected(id==="all"?"":id as ContractSummaryCategory)} items={[{id:"all",label:"Celkem",value:counts.total,icon:PackageOpen},{id:"rs",label:"RS",value:counts.rs,icon:PackageOpen},{id:"sbk",label:"SBK",value:counts.sbk,icon:PackageOpen},{id:"ks",label:"KS",value:counts.ks,icon:PackageOpen},{id:"other",label:"Ostatní",value:counts.other,icon:PackageOpen}]}/><input aria-label="Hledat smlouvu" value={query} onChange={event=>setQuery(event.target.value)}/><output aria-label="Smlouvy">{visible.map(item=>item.reference).join(",")}</output></>}
+  render(<Harness/>);
+  assert.equal(counts.rs+counts.sbk+counts.ks+counts.other,counts.total);
+  await user.click(screen.getByRole("button",{name:"Ostatní: 2"}));assert.equal(screen.getByLabelText("Smlouvy").textContent,"DEJ-101-D1,DEJ-102-P");
+  await user.type(screen.getByRole("textbox",{name:"Hledat smlouvu"}),"102");assert.equal(screen.getByLabelText("Smlouvy").textContent,"DEJ-102-P");
+  await user.click(screen.getByRole("button",{name:"Celkem: 5"}));assert.equal(screen.getByLabelText("Smlouvy").textContent,"DEJ-102-SBK,DEJ-102-P");
 });
 
 test("FormModal zobrazuje loading a chybu a chrání před dvojím submittem",async()=>{

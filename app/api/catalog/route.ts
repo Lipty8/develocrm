@@ -114,6 +114,7 @@ function adaptBackendCatalog(catalog: BackendCatalog, priceBreakdowns?: BackendP
       orientation: unit.orientation ?? "—", price: totalPrice ?? 0,basePrice:unitPrice,accessoryPrice,priceConfigured:unitPrice!==null,
       usableArea: unit.usableAreaM2 ?? undefined, balcony: unit.balconyM2, terrace: unit.terraceM2, garden: unit.gardenM2,
       status: ({available:"Volný",in_negotiation:"V jednání",sold:"Prodaná"} as const)[unit.businessStatus] as UnitStatus,
+      salesBucket:unit.businessStatus,
       client:unit.currentBuyers.map(buyer=>buyer.name).join(" a ")||undefined,
       construction: constructionLabel(unit.constructionStatus),
       updatedAt:unit.updatedAt,
