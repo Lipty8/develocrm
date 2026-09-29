@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import type { LucideIcon } from "lucide-react";
 
 export type SummaryStatTone = "neutral" | "success" | "info" | "warning";
@@ -15,7 +16,8 @@ export function toggledSummaryFilter(current: readonly string[], selected: strin
 }
 
 export function SummaryStats({ items, selectedId, onSelect, label }: { items: readonly SummaryStatItem[]; selectedId?: string; onSelect?: (id: string) => void; label: string }) {
-  return <div className={`summary-stats summary-stats-${items.length}`} aria-label={label}>
+  const sizing = { "--summary-stat-count": items.length } as CSSProperties;
+  return <div className={`summary-stats summary-stats-${items.length}`} aria-label={label} style={sizing}>
     {items.map((item) => {
       const Icon = item.icon;
       const active = selectedId === item.id;

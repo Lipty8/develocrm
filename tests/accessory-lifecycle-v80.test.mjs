@@ -12,9 +12,11 @@ test("sklepy a parking mají CTA přímo v KPI řádku",()=>{
   assert.match(crm,/accessory-inventory-summary[\s\S]*SummaryStats[\s\S]*Přidat sklep[\s\S]*Přidat parkovací místo/);
   assert.doesNotMatch(crm,/canManage&&<div className="list-action-toolbar"><button[^>]*>[\s\S]*Nový sklep/);
   assert.match(css,/\.accessory-inventory-summary\{display:flex/);
-  assert.match(css,/\.summary-stats-4 \{ grid-template-columns:repeat\(4,minmax\(82px,112px\)\)/);
+  assert.match(css,/\.summary-stats \{ display:grid; grid-template-columns:repeat\(var\(--summary-stat-count\),minmax\(max-content,1fr\)\)/);
+  assert.match(css,/\.summary-stat \{ min-width:max-content/);
+  assert.doesNotMatch(css,/\.summary-stat small,\.summary-stat strong \{[^}]*text-overflow:ellipsis/);
   assert.match(css,/\.accessory-inventory-summary>\.list-toolbar-actions\{flex-wrap:nowrap;margin-left:auto\}/);
-  assert.match(css,/@media\(max-width:650px\)\{\.summary-stats,\.summary-stats-4\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(css,/@media\(max-width:650px\)\{\.summary-stats\{--summary-stat-count:2!important/);
 });
 
 test("detail příslušenství nabízí úpravu, přiřazení a bezpečné odstranění",()=>{
