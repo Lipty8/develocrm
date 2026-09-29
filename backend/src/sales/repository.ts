@@ -1,8 +1,9 @@
 import type { Database, SqlClient } from "../database.js";
+import { deriveClientRelationshipStatus, type ClientRelationshipStatus } from "../shared/client-relationship.js";
 
 export type ClientDirectoryItem = {
   id: string; name: string; type: string; kind: "FO" | "PO"; email: string; phone: string;
-  contact: string; units: string[]; projects: string; projectIds:string[]; projectNames: string[]; state: string;
+  contact: string; units: string[]; projects: string; projectIds:string[]; projectNames: string[]; state: ClientRelationshipStatus;
   contractStatus: string; initials: string;
   interestHistory: Array<{ date: string; project: string; unit: string; type: string; result: string }>;
   activityHistory:Array<{id:string;type:string;note:string;occurredAt:string;author:string}>;
@@ -10,6 +11,7 @@ export type ClientDirectoryItem = {
   address?:{line1:string;line2?:string;city:string;postalCode?:string;countryCode:string;addressType:string}|null;
   updatedAt?:string;
   lifecycleStatus?:"active"|"inactive"|"merged"|"archived";
+  projectRelationships:Array<{projectId:string;project:string;status:ClientRelationshipStatus}>;
   unitRelations:Array<{unitId:string;code:string;projectId:string;project:string;contractType?:"RS"|"SBK"|"KS";contractStatus?:string}>;
 };
 
@@ -88,15 +90,11 @@ export class SalesRepository {
       const partyContactAccess=hasPartyScope?`(app.can_access_party(party.tenant_id,$2,party.id,true) OR ${archivedAccess})`:"true";
       const partyRows = await client.query<{
         id: string; display_name: string; party_type: string; lifecycle_status:ClientDirectoryItem["lifecycleStatus"]; email: string | null; phone: string | null;first_name:string|null;last_name:string|null;legal_name:string|null;registration_number:string|null;vat_number:string|null;contact_person:string|null;address:ClientDirectoryItem["address"];updated_at:string;
-        projects: Array<{ id: string; name: string }>; units: string[]; state: string; stage: string | null;
+        projects: Array<{ id: string; name: string; activeBuyerRelationship:boolean }>; units: string[];
         interest_history: ClientDirectoryItem["interestHistory"];
       }>(
         `SELECT party.id,party.display_name,party.party_type,party.lifecycle_status,email.value AS email,phone.value AS phone,individual.first_name,individual.last_name,organization.legal_name,organization.registration_number,organization.vat_number,organization.contact_person,address.item address,party.updated_at,
           COALESCE(projects.items,'[]'::jsonb) projects,COALESCE(unit_rows.items,'[]'::jsonb) units,
-          CASE WHEN stage.current_stage='handover' THEN 'Předáno'
-               WHEN stage.current_stage IS NOT NULL AND stage.current_stage<>'interest' THEN 'Aktivní klient'
-               ELSE 'Zájemce' END state,
-          stage.current_stage,
           COALESCE(history.items,'[]'::jsonb) interest_history
          FROM parties party
          LEFT JOIN party_individual_details individual ON individual.tenant_id=party.tenant_id AND individual.party_id=party.id
@@ -108,10 +106,20 @@ export class SalesRepository {
          LEFT JOIN LATERAL (SELECT value FROM party_contacts WHERE tenant_id=party.tenant_id AND party_id=party.id
            AND contact_type='phone' AND archived_at IS NULL AND ${partyContactAccess} ORDER BY is_primary DESC,created_at LIMIT 1) phone ON true
          LEFT JOIN LATERAL (
-           SELECT jsonb_agg(DISTINCT jsonb_build_object('id',project.id,'name',project.name)) items
-           FROM party_project_links link JOIN projects project ON project.tenant_id=link.tenant_id AND project.id=link.project_id
-           WHERE link.tenant_id=party.tenant_id AND link.party_id=party.id AND link.valid_to IS NULL AND project.archived_at IS NULL
-             AND app.has_project_permission(link.tenant_id,$2,link.project_id,'clients.read')
+           SELECT jsonb_agg(jsonb_build_object('id',linked.id,'name',linked.name,'activeBuyerRelationship',linked.active_buyer_relationship) ORDER BY linked.name) items
+           FROM (
+             SELECT project.id,project.name,
+               (bool_or(link.relationship_type='buyer') OR EXISTS(
+                 SELECT 1 FROM sales_case_parties participant
+                 JOIN sales_cases sales_case ON sales_case.tenant_id=participant.tenant_id AND sales_case.id=participant.sales_case_id
+                 WHERE participant.tenant_id=party.tenant_id AND participant.party_id=party.id AND participant.left_at IS NULL
+                   AND sales_case.project_id=project.id AND sales_case.status='active' AND sales_case.current_stage<>'interest'
+               )) active_buyer_relationship
+             FROM party_project_links link JOIN projects project ON project.tenant_id=link.tenant_id AND project.id=link.project_id
+             WHERE link.tenant_id=party.tenant_id AND link.party_id=party.id AND link.valid_to IS NULL AND project.archived_at IS NULL
+               AND app.has_project_permission(link.tenant_id,$2,link.project_id,'clients.read')
+             GROUP BY project.id,project.name
+           ) linked
          ) projects ON true
          LEFT JOIN LATERAL (
            SELECT jsonb_agg(DISTINCT unit.code ORDER BY unit.code) items
@@ -120,13 +128,6 @@ export class SalesRepository {
              AND EXISTS(SELECT 1 FROM projects active_project WHERE active_project.tenant_id=interest.tenant_id AND active_project.id=interest.project_id AND active_project.archived_at IS NULL)
              AND app.has_project_permission(interest.tenant_id,$2,interest.project_id,'clients.read')
          ) unit_rows ON true
-         LEFT JOIN LATERAL (
-           SELECT sales_case.current_stage FROM sales_case_parties participant
-           JOIN sales_cases sales_case ON sales_case.tenant_id=participant.tenant_id AND sales_case.id=participant.sales_case_id
-           WHERE participant.tenant_id=party.tenant_id AND participant.party_id=party.id AND participant.left_at IS NULL
-             AND sales_case.status='active' AND app.has_project_permission(sales_case.tenant_id,$2,sales_case.project_id,'clients.read')
-           ORDER BY sales_case.opened_at DESC LIMIT 1
-         ) stage ON true
          LEFT JOIN LATERAL (
            SELECT jsonb_agg(jsonb_build_object('date',COALESCE(to_char(interest.first_interest_at,'DD. MM. YYYY'),'Datum neuvedeno'),
              'project',project.name,'unit',unit.code,'type',CASE interest.status WHEN 'converted' THEN 'Obchodní proces' WHEN 'active' THEN 'Aktivní zájem' ELSE 'Ukončený zájem' END,
@@ -249,12 +250,14 @@ export class SalesRepository {
         clients: partyRows.rows.map((row) => {
           const projectNames = row.projects.map((project) => project.name).sort();
           const projectIds = row.projects.map((project) => project.id);
+          const projectRelationships=row.projects.map(project=>({projectId:project.id,project:project.name,status:deriveClientRelationshipStatus({archived:row.lifecycle_status==="archived",activeBuyerRelationship:project.activeBuyerRelationship})}));
+          const state=deriveClientRelationshipStatus({archived:row.lifecycle_status==="archived",activeBuyerRelationship:projectRelationships.some(project=>project.status==="Aktivní klient")});
           const email = row.email ?? ""; const phone = row.phone ?? "";
           const unitRelations=relationsByParty.get(row.id)??[];
           const bestContract=[...unitRelations].filter(item=>item.contractType).sort((left,right)=>contractTypeRank(right.contractType)-contractTypeRank(left.contractType)||contractStatusRank(right.contractStatus)-contractStatusRank(left.contractStatus))[0];
           return { id: row.id,name: row.display_name,type: row.party_type === "individual" ? "Fyzická osoba" : "Právnická osoba",
             kind: row.party_type === "individual" ? "FO" : "PO",email,phone,contact: [email,phone].filter(Boolean).join(" · "),
-            units: unitRelations.map(item=>item.code),unitRelations,projects: projectNames.join(", "),projectIds,projectNames,state: row.state,
+            units: unitRelations.map(item=>item.code),unitRelations,projects: projectNames.join(", "),projectIds,projectNames,state,projectRelationships,
             contractStatus: bestContract?.contractType ? `${bestContract.contractType}${bestContract.contractStatus?` · ${contractStatusLabel(bestContract.contractStatus)}`:""}` : "Bez smlouvy",initials: initials(row.display_name),interestHistory: row.interest_history,activityHistory:activitiesByParty.get(row.id)??[],firstName:row.first_name??undefined,lastName:row.last_name??undefined,legalName:row.legal_name??undefined,registrationNumber:row.registration_number??undefined,vatNumber:row.vat_number??undefined,contactPerson:row.contact_person??undefined,address:row.address,updatedAt:row.updated_at,lifecycleStatus:row.lifecycle_status };
         }),
         unitContexts: Object.fromEntries(contextRows.rows.map((row) => [row.unit_code,{ salesCaseId:row.sales_case_id,buyers: row.buyers,buyerHistory:row.buyer_history,interests: row.interests,stage: row.stage,hold: row.hold }])),
@@ -264,8 +267,9 @@ export class SalesRepository {
 
   async getPage(input:Context&{page:number;pageSize:number;projectId?:string;query?:string;quickProject?:string;types?:string[];projects?:string[];unit?:string;relations?:string[];contracts?:string[];phone?:string;email?:string;sort?:string;direction?:"asc"|"desc";includeArchived?:boolean}){
     const directory=await this.getDirectory(input);const includes=(value:string,query?:string)=>!query||value.toLocaleLowerCase("cs-CZ").includes(query.toLocaleLowerCase("cs-CZ"));
-    const filtered=directory.clients.filter(item=>(!input.projectId||item.projectIds.includes(input.projectId))&&includes(item.name,input.query)&&(!input.quickProject||input.quickProject==="Všichni"||item.projectNames.includes(input.quickProject))&&(!input.types?.length||input.types.includes(item.kind))&&(!input.projects?.length||input.projects.some(project=>item.projectNames.includes(project)))&&includes(item.units.join(" "),input.unit)&&(!input.relations?.length||input.relations.includes(item.lifecycleStatus==="archived"?"Archivovaný":item.state))&&(!input.contracts?.length||input.contracts.some(status=>item.contractStatus.startsWith(status)))&&includes(item.phone,input.phone)&&includes(item.email,input.email));
-    const value=(item:ClientDirectoryItem)=>input.sort==="updated"?item.updatedAt??"":input.sort==="relation"?item.state:input.sort==="contract"?item.contractStatus:input.sort==="project"?item.projectNames.join(" "):input.sort==="unit"?item.units.join(" "):item.name;
+    const relationshipStatus=(item:ClientDirectoryItem)=>input.projectId?item.projectRelationships.find(project=>project.projectId===input.projectId)?.status??item.state:item.state;
+    const filtered=directory.clients.filter(item=>(!input.projectId||item.projectIds.includes(input.projectId))&&includes(item.name,input.query)&&(!input.quickProject||input.quickProject==="Všichni"||item.projectNames.includes(input.quickProject))&&(!input.types?.length||input.types.includes(item.kind))&&(!input.projects?.length||input.projects.some(project=>item.projectNames.includes(project)))&&includes(item.units.join(" "),input.unit)&&(!input.relations?.length||input.relations.includes(relationshipStatus(item)))&&(!input.contracts?.length||input.contracts.some(status=>item.contractStatus.startsWith(status)))&&includes(item.phone,input.phone)&&includes(item.email,input.email));
+    const value=(item:ClientDirectoryItem)=>input.sort==="updated"?item.updatedAt??"":input.sort==="relation"?relationshipStatus(item):input.sort==="contract"?item.contractStatus:input.sort==="project"?item.projectNames.join(" "):input.sort==="unit"?item.units.join(" "):item.name;
     filtered.sort((left,right)=>{const compared=String(value(left)).localeCompare(String(value(right)),"cs",{numeric:true,sensitivity:"base"});return (input.direction==="desc"?-compared:compared)||left.id.localeCompare(right.id);});
     const total=filtered.length;const page=Math.max(1,Math.min(input.page,Math.max(1,Math.ceil(total/input.pageSize))));return{clients:filtered.slice((page-1)*input.pageSize,page*input.pageSize),total,page,pageSize:input.pageSize};
   }

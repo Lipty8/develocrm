@@ -45,7 +45,7 @@ test("hlavičky a metadata jsou sdílené napříč hlavními tabulkami", async 
 
 test("projektové seznamy načítají data s projectId scope", async () => {
   const crm = await readFile(new URL("../app/CRMApp.tsx", import.meta.url), "utf8");
-  assert.match(crm, /clientRepository\.getPage\(\{page:1,pageSize:100,projectId\}/);
+  assert.match(crm, /clientRepository\.getPage\(\{page:1,pageSize:100,projectId,includeArchived:true\}/);
   assert.match(crm, /paymentRepository\.list\(\{projectId\}/);
   assert.match(crm, /handoverRepository\.list\(\{projectId\}/);
 });

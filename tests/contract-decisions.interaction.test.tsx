@@ -5,6 +5,8 @@ import {JSDOM} from "jsdom";
 import {RowActionMenu} from "../app/components/row-action-menu";
 import {TableColumnMenu,TableColumnPreferenceProvider,useTableColumns,type TableColumnDefinition} from "../app/components/table-column-config";
 import {TableColumnFilter} from "../app/components/table-column-filter";
+import {SummaryStats,toggledSummaryFilter} from "../app/components/summary-stats";
+import {PackageOpen,UserRound,Users} from "lucide-react";
 import {ClientChangeStatusModal,ComplaintDetailModal,ContractAddendumModal,ContractNoteModal,FormModal,PaymentDetailModal,PaymentRefundForm,paymentRefundAvailability} from "../app/CRMApp";
 
 let cleanup:()=>void;
@@ -65,6 +67,25 @@ test("hlavička sloupce řadí a její popover aplikuje filtr",async()=>{
   render(<Harness/>);
   await user.click(screen.getByRole("button",{name:"Seřadit sloupec Cena"}));assert.equal(screen.getByText("asc").textContent,"asc");
   await user.click(screen.getAllByRole("button",{name:"Filtrovat sloupec Stav"})[0]);await user.click(screen.getByRole("button",{name:"Jen aktivní"}));assert.equal(screen.getByText("aktivní").textContent,"aktivní");
+});
+
+test("souhrn klientů funguje jako kombinovatelný filtr a druhý klik výběr zruší",async()=>{
+  const user=userEvent.setup({document});
+  const records=[{name:"Adam",status:"Aktivní klient"},{name:"Alena",status:"Zájemce"},{name:"Boris",status:"Aktivní klient"},{name:"Cyril",status:"Archiv"}];
+  function Harness(){const[selected,setSelected]=useState<string[]>([]);const[query,setQuery]=useState("");const visible=records.filter(item=>(!selected.length||selected.includes(item.status))&&item.name.toLocaleLowerCase("cs-CZ").includes(query.toLocaleLowerCase("cs-CZ")));return <><SummaryStats label="Souhrn klientských vztahů" selectedId={selected.length===1?selected[0]:undefined} onSelect={status=>setSelected(toggledSummaryFilter(selected,status))} items={[{id:"Aktivní klient",label:"Aktivní klient",value:2,icon:Users,tone:"success"},{id:"Zájemce",label:"Zájemce",value:1,icon:UserRound,tone:"info"},{id:"Archiv",label:"Archiv",value:1,icon:PackageOpen,tone:"neutral"}]}/><input aria-label="Hledat klienta" value={query} onChange={event=>setQuery(event.target.value)}/><output aria-label="Klienti">{visible.map(item=>item.name).join(",")}</output></>}
+  render(<Harness/>);
+  const active=screen.getByRole("button",{name:"Aktivní klient: 2"});
+  await user.click(active);assert.equal(active.getAttribute("aria-pressed"),"true");assert.equal(screen.getByLabelText("Klienti").textContent,"Adam,Boris");
+  await user.type(screen.getByRole("textbox",{name:"Hledat klienta"}),"bo");assert.equal(screen.getByLabelText("Klienti").textContent,"Boris");
+  await user.click(active);assert.equal(active.getAttribute("aria-pressed"),"false");assert.equal(screen.getByLabelText("Klienti").textContent,"Boris");
+});
+
+test("souhrn inventáře filtruje tři stavy a Celkem stavový filtr vymaže",async()=>{
+  const user=userEvent.setup({document});
+  function Harness(){const[selected,setSelected]=useState<string[]>([]);return <><SummaryStats label="Souhrn sklepů" selectedId={selected.length===0?"all":selected[0]} onSelect={status=>setSelected(status==="all"?[]:toggledSummaryFilter(selected,status))} items={[{id:"all",label:"Celkem",value:10,icon:PackageOpen},{id:"Volné",label:"Volné",value:4,icon:PackageOpen,tone:"success"},{id:"Předpřiřazené",label:"Předpřiřazené",value:3,icon:PackageOpen,tone:"warning"},{id:"Přiřazené",label:"Přiřazené",value:3,icon:PackageOpen,tone:"info"}]}/><output>{selected.join(",")||"vše"}</output></>}
+  render(<Harness/>);
+  await user.click(screen.getByRole("button",{name:"Předpřiřazené: 3"}));assert.equal(screen.getByRole("status").textContent,"Předpřiřazené");
+  await user.click(screen.getByRole("button",{name:"Celkem: 10"}));assert.equal(screen.getByRole("status").textContent,"vše");
 });
 
 test("FormModal zobrazuje loading a chybu a chrání před dvojím submittem",async()=>{

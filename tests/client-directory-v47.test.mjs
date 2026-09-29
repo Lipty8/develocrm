@@ -9,11 +9,21 @@ const migration26=await readFile(new URL("../backend/migrations/0026_party_remov
 const migration27=await readFile(new URL("../backend/migrations/0027_party_removal_runtime_privileges.sql",import.meta.url),"utf8");
 const clientRepository=await readFile(new URL("../app/repositories/client-repository.ts",import.meta.url),"utf8");
 const formatter=await readFile(new URL("../app/lib/date-time.ts",import.meta.url),"utf8");
+const relationship=await readFile(new URL("../backend/src/shared/client-relationship.ts",import.meta.url),"utf8");
 
 test("projektový a globální seznam používají stejné klikatelné chips jednotek",()=>{
   assert.match(crm,/function ClientUnitChips/);
   assert.match(crm,/ProjectClients[\s\S]*?<ClientUnitChips client=\{client\} project=\{project\}/);
   assert.match(crm,/ClientRelationColumn[\s\S]*?<ClientUnitChips client=\{client\}/);
+});
+
+test("stav klientského vztahu má tři centrální hodnoty a projektový seznam používá projektovou projekci",()=>{
+  assert.match(relationship,/\["Aktivní klient", "Zájemce", "Archiv"\]/);
+  assert.match(repository,/activeBuyerRelationship/);
+  assert.match(repository,/projectRelationships/);
+  assert.match(crm,/clientRelationshipStatus\(client,project\)/);
+  assert.match(crm,/Souhrn klientských vztahů/);
+  assert.doesNotMatch(crm,/options=\{\["Zájemce", "Aktivní klient", "Předání", "Předáno", "Archivovaný"\]\}/);
 });
 
 test("smluvní stav klienta vychází ze skutečných smluv v pořadí KS SBK RS",()=>{

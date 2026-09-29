@@ -70,6 +70,7 @@ export type ClientRecord = {
   address?:{line1:string;line2?:string;city:string;postalCode?:string;countryCode:string;addressType:string}|null;
   updatedAt?:string;
   lifecycleStatus?:"active"|"inactive"|"merged"|"archived";
+  projectRelationships?:Array<{projectId:string;project:string;status:"Aktivní klient"|"Zájemce"|"Archiv"}>;
   unitRelations?:Array<{unitId:string;code:string;projectId:string;project:string;contractType?:"RS"|"SBK"|"KS";contractStatus?:string}>;
 };
 export type UnitCommercialContext = {
