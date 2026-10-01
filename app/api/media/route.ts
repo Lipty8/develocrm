@@ -141,8 +141,10 @@ export async function PATCH(request:Request){
   if(objects.some(object=>!object))return errorResponse("Nahrání souboru není kompletní",cid,409);
   const parts=await Promise.all(objects.map(object=>object!.arrayBuffer())),total=parts.reduce((sum:number,part:ArrayBuffer)=>sum+part.byteLength,0);
   if(total!==session.size)return errorResponse("Nahraný soubor má neplatnou velikost",cid,409);
+  const assembled=new Uint8Array(total);let offset=0;
+  for(const part of parts){assembled.set(new Uint8Array(part),offset);offset+=part.byteLength;}
   try{
-    await env.FILES.put(session.objectKey,new Blob(parts,{type:session.mimeType}).stream(),{httpMetadata:{contentType:session.mimeType},customMetadata:{tenantId:session.tenantId,projectId:session.projectId,entityType:session.entityType,entityId:session.entityId,kind:session.kind,uploadedByUserId:session.userId,uploadedAt:session.uploadedAt,fileName:session.fileName,version:session.version}});
+    await env.FILES.put(session.objectKey,assembled,{httpMetadata:{contentType:session.mimeType},customMetadata:{tenantId:session.tenantId,projectId:session.projectId,entityType:session.entityType,entityId:session.entityId,kind:session.kind,uploadedByUserId:session.userId,uploadedAt:session.uploadedAt,fileName:session.fileName,version:session.version}});
   }catch(error){log("error",{event:"media.storage.failed",correlationId:cid,uploadId,entityType:session.entityType,entityId:session.entityId,kind:session.kind,errorName:error instanceof Error?error.name:"Error"});return errorResponse(session.kind==="floorplan"?"Půdorys se nepodařilo uložit. Zkuste to prosím znovu.":"Obrázek se nepodařilo uložit. Zkuste to prosím znovu.",cid,502);}
   const mediaUrl=`/api/media/file/${encodeURIComponent(session.objectKey)}`;
   if(session.mode==="api"){

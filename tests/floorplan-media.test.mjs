@@ -44,6 +44,8 @@ test("UI obsahuje PDF preview, skutečné stažení a náhradu aktivního půdor
   assert.match(route, /media\.upload\.chunk/);
   assert.match(route, /media\.upload\.complete/);
   assert.match(route, /clearSession/);
+  assert.match(route, /const assembled=new Uint8Array\(total\)/);
+  assert.match(route, /env\.FILES\.put\(session\.objectKey,assembled/);
   assert.match(route, /uploadedAt/);
   assert.match(route, /fileName/);
   assert.match(fileRoute, /content-disposition/);
