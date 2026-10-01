@@ -30,6 +30,9 @@ importers:
       fastify:
         specifier: ^5.12.1
         version: 5.12.1
+      fflate:
+        specifier: 0.7.4
+        version: 0.7.4
       jose:
         specifier: ^6.2.3
         version: 6.2.3
