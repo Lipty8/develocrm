@@ -2,7 +2,7 @@
 
 ## Verdikt před finálním release
 
-Aktuální zdrojový stav je **READY WITH LIMITATIONS**. V lokálně ověřené verzi není známý P0 blocker hlavního CRM provozu. Obchodní proces, alternativní smluvní cesty, platby a vratky, předání, příslušenství, klientské změny, reklamace, úkoly, oprávnění, audit a nové vazby dokumentů mají automatizované pokrytí. Finální release s migracemi 0044 a 0045 však ještě není v pilotu nasazený.
+Aktuální hlavní CRM provoz je **READY WITH LIMITATIONS**. V lokálně ověřené verzi není známý P0 blocker hlavního CRM provozu. Obchodní proces, alternativní smluvní cesty, platby a vratky, předání, příslušenství, klientské změny, reklamace, úkoly, oprávnění, audit a nové vazby dokumentů mají automatizované pokrytí. Migrace 0044 a 0045 i matching backend byly v pilotu nasazené v release `03442e0`; pozdější frontendové opravy médií jsou publikované v Sites verzi 110.
 
 Jediné zásadní funkční omezení mimo běžný CRM provoz je skutečná SharePoint integrace: backendová managed identity nemá Graph aplikační roli/site grant a Container App nemá cílovou Graph/SharePoint konfiguraci. CRM proto může evidovat metadata a business vazby dokumentů, ale zatím nemůže bezpečně provádět produkční upload ani generování Word dokumentů do SharePointu. Toto omezení neblokuje používání CRM pro evidenci obchodu, smluv, plateb, úkolů a předání, ale blokuje prohlášení dokumentového toku za dokončený.
 
@@ -23,7 +23,7 @@ Pilotní obchodní data nebyla během dokončování měněna.
 | Reklamace | Připraveno pro interní pilot | Řízený stav, odpovědná osoba, termín, historie a vazby dokumentů. |
 | Úkoly a interní notifikace | Připraveno | Moje úkoly, po termínu, dnes, tento týden a kontextová upozornění. |
 | Role, RBAC, RLS, audit, outbox | Připraveno | Backendové vynucení a integrační testy včetně izolace projektu/tenantu. |
-| Dokumentová metadata a vazby | Připraveno lokálně | Dokumenty lze navázat na klientskou změnu, reklamaci a předání; migrace 0044 čeká na release. |
+| Dokumentová metadata a vazby | Nasazeno | Dokumenty lze navázat na klientskou změnu, reklamaci a předání; migrace 0044 je součástí pilotního release `03442e0`. |
 | SharePoint upload a Word generování | Externě blokováno | Chybí Graph `Sites.Selected`, site-level write grant a runtime konfigurace. |
 
 ## Implementované balíky
@@ -38,12 +38,12 @@ Pilotní obchodní data nebyla během dokončování měněna.
 - `aa55fe9` — připravený Graph token provider pro user-assigned managed identity a ověření opravy KS.
 - `24904e3` — schválená business pravidla Fáze 1 a migrace 0043.
 - `0df18fa` — migrace 0044, dokumentové vazby klientských změn, reklamací a předání včetně UI, auditu a outboxu.
-- finální release — migrace 0045, centrální projekce aktuálního kupujícího a manažerského stavu jednotky a jednotná invalidace UI po mutaci.
+- `03442e0` — migrace 0045, centrální projekce aktuálního kupujícího a manažerského stavu jednotky a jednotná invalidace UI po mutaci; matching backend nasazený v pilotu.
 
 ## Migrace
 
-- Pilotní matching release `24904e3` používá migrace do 0043.
-- Finální lokální release přidává aditivní migrace `0044_phase1_document_workflow_links.sql` a `0045_unit_business_projection.sql`.
+- Pilotní matching release `03442e0` používá migrace do 0045. Odpovídající migrační obraz `phase1-03442e0` s digestem `sha256:fc80db6770242be83e5c9b0eb42f0d316b20dd0677ebe1f596d5b05cbe555fa0` doběhl 23. 9. 2026 se stavem `Succeeded`.
+- Aditivní migrace `0044_phase1_document_workflow_links.sql` a `0045_unit_business_projection.sql` jsou součástí tohoto obrazu.
 - 0044 vytváří tři vazební tabulky, projektově bezpečné cizí klíče, RLS/FORCE RLS, audit, outbox a idempotentní příkazy.
 - 0045 zavádí jedinou čtecí projekci pro aktuální kupující a KPI `Volný / V jednání / Prodaný`. Prodaná je podepsaná RS s plně uhrazeným rezervačním poplatkem, přímo podepsaná SBK/KS nebo předaná jednotka; zrušené a historické případy se nezapočítají.
 - Migrace nemažou ani nepřepisují existující obchodní data.
@@ -62,12 +62,14 @@ Pilotní obchodní data nebyla během dokončování měněna.
 
 ## Read-only kontrola pilotu
 
-- Aktivní backend revize: `ca-develocrm-api-pilot--phase1-24904e3`.
+- Aktivní backend revize: `ca-develocrm-api-pilot--phase1-03442e0`.
+- Aktivní backend image: `develocrm-api@sha256:acaa4be676f05c68f34a4d80379472e3638b6348c10b53267f7d2db5b73b0868`.
 - Revize je Healthy a provisioning je Succeeded.
 - `/health` vrací 200.
 - `/ready` vrací 200 a databáze je dostupná.
+- Publikovaný Sites frontend je verze 110, deployment `appgdep_6abe39ab65ec8191af1a4cc739bf1a4e`, zdrojový commit `9029e3028d4037fe4658c2287124308af00e712e`; deployment je `succeeded`.
 - Autentizovaný smoke potvrdil dashboard, projekty, Rezidenci Dejvice, jednotku 417, klienty, smlouvy, platby, předání, úkoly a dokumenty.
-- Rezidence Dejvice má 19 jednotek; read-only UI ukazuje 5 jednotek `V jednání` a 0 prodaných. Tento stav nebyl automaticky opravován ani reinterpretován.
+- Rezidence Dejvice má 19 jednotek; read-only UI k 1. 10. 2026 ukazuje 13 volných, 4 `V jednání` a 2 prodané. Tento stav nebyl automaticky opravován ani reinterpretován.
 - V pilotu jsou dva aktivní projekty (Rezidence Dejvice a Hrdlička); Hrdlička nebyla bez důkazu považována za demo data.
 - Dokumenty korektně zobrazují stav „SharePoint nepřipojen“ místo předstírání funkční integrace.
 
@@ -115,11 +117,11 @@ Všechny tři dodané vzory byly tímto guardem ověřeny read-only. RS a SBK ne
 
 ## Provozní readiness
 
-Security Phase 0 zůstává uzavřená. Health/readiness, Azure probes a alerty jsou aktivní. Finální release musí být proveden koordinovaně v pořadí:
+Security Phase 0 zůstává uzavřená. Health/readiness, Azure probes a alerty jsou aktivní. Další release musí být proveden koordinovaně v pořadí:
 
 1. push přesného zdrojového commitu,
 2. build immutable migration a API image z čistého `git archive`,
-3. migration job s obrazem obsahujícím 0044 a 0045,
+3. migration job pouze pokud nový release obsahuje další migraci; 0044 a 0045 už jsou v pilotu,
 4. ověření migration jobu a dostupnosti DB,
 5. backend deploy přes immutable digest,
 6. health/readiness/logy,
@@ -142,4 +144,4 @@ Security Phase 0 zůstává uzavřená. Health/readiness, Azure probes a alerty 
 
 ## Finální klasifikace
 
-Po nasazení migrací 0044 a 0045 a matching backend/frontend verze může být hlavní DeveloCRM provoz klasifikován jako **READY WITH LIMITATIONS**. Omezení se týká pouze SharePoint/Word dokumentového toku; hlavní obchodní, smluvní, finanční a provozní workflow je připravené pro interní pilot.
+Hlavní DeveloCRM provoz je po nasazení migrací 0044 a 0045, backendu `03442e0` a Sites verze 110 klasifikovaný jako **READY WITH LIMITATIONS**. Omezení se týká SharePoint/Word dokumentového toku; hlavní obchodní, smluvní, finanční a provozní workflow je připravené pro interní pilot. Novější lokální guard DOCX šablon a zpřesnění stavu UI zatím nejsou runtime funkcí a nevyžadují databázovou migraci.
