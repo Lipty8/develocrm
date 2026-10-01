@@ -43,3 +43,43 @@ test("neúspěšná mutace invalidaci dat nevyvolá",async()=>{
     window.removeEventListener(DATA_MUTATED_EVENT,listener);
   }
 });
+
+test("cíleně obsloužený upload média nevyvolá globální obnovu dat",async()=>{
+  const originalFetch=globalThis.fetch;
+  let calls=0;
+  const listener=()=>{calls+=1;};
+  window.addEventListener(DATA_MUTATED_EVENT,listener);
+  globalThis.fetch=async(_input,init)=>{
+    assert.equal(new Headers(init?.headers).has("dataInvalidation"),false);
+    return new Response(JSON.stringify({media:{id:"media-1"}}),{status:201,headers:{"content-type":"application/json"}});
+  };
+  try{
+    const apiFetch=createApiFetch({getAccessToken:async()=>"test-token"},globalThis.fetch,()=>false);
+    const response=await apiFetch("/api/media",{method:"POST",body:new FormData(),dataInvalidation:"none"});
+    assert.equal(response.status,201);
+    assert.equal(calls,0);
+  }finally{
+    globalThis.fetch=originalFetch;
+    window.removeEventListener(DATA_MUTATED_EVENT,listener);
+  }
+});
+
+test("úspěšné tiché obnovení tokenu nerestartuje pracovní prostor",async()=>{
+  const originalFetch=globalThis.fetch;
+  let requests=0;let restored=0;
+  const listener=()=>{restored+=1;};
+  window.addEventListener("develocrm:session-restored",listener);
+  globalThis.fetch=async()=>++requests===1
+    ? new Response(null,{status:401})
+    : new Response(JSON.stringify({ok:true}),{status:200,headers:{"content-type":"application/json"}});
+  try{
+    const apiFetch=createApiFetch({getAccessToken:async()=>"old-token",refreshAccessToken:async()=>"new-token"},globalThis.fetch,()=>false);
+    const response=await apiFetch("/api/media",{method:"POST",body:new FormData(),dataInvalidation:"none"});
+    assert.equal(response.status,200);
+    assert.equal(requests,2);
+    assert.equal(restored,0);
+  }finally{
+    globalThis.fetch=originalFetch;
+    window.removeEventListener("develocrm:session-restored",listener);
+  }
+});

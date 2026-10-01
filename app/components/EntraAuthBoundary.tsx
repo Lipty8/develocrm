@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle, Building2, LogIn, RotateCw } from "lucide-react";
 import { entraAuth, type EntraAuthSnapshot } from "../lib/entra-auth";
+import { shouldRevalidateSession } from "../lib/session-revalidation";
 
 export default function EntraAuthBoundary({ children }: { children: ReactNode }) {
   const [snapshot, setSnapshot] = useState<EntraAuthSnapshot | null>(null);
@@ -20,9 +21,9 @@ export default function EntraAuthBoundary({ children }: { children: ReactNode })
 
   useEffect(()=>{
     let hiddenAt=0;
-    const revalidate=async()=>{
+    const revalidate=async(force=false)=>{
       if(document.visibilityState!=="visible"||!snapshot?.authenticated)return;
-      if(hiddenAt&&Date.now()-hiddenAt<60_000)return;
+      if(!shouldRevalidateSession(hiddenAt,Date.now(),force))return;
       setRefreshing(true);setError(null);
       try{
         await entraAuth.refreshAccessToken();
@@ -38,10 +39,11 @@ export default function EntraAuthBoundary({ children }: { children: ReactNode })
         setSnapshot(current=>current?{...current,authenticated:false}:current);
       }finally{setRefreshing(false);hiddenAt=0;}
     };
-    const visibility=()=>{if(document.visibilityState==="hidden")hiddenAt=Date.now();else void revalidate();};
-    const authenticationRequired=()=>{hiddenAt=1;void revalidate();};
-    document.addEventListener("visibilitychange",visibility);window.addEventListener("focus",revalidate);window.addEventListener("develocrm:authentication-required",authenticationRequired);
-    return()=>{document.removeEventListener("visibilitychange",visibility);window.removeEventListener("focus",revalidate);window.removeEventListener("develocrm:authentication-required",authenticationRequired);};
+    const visibility=()=>{if(document.visibilityState==="hidden")hiddenAt=Date.now();else void revalidate(false);};
+    const focus=()=>{void revalidate(false);};
+    const authenticationRequired=()=>{void revalidate(true);};
+    document.addEventListener("visibilitychange",visibility);window.addEventListener("focus",focus);window.addEventListener("develocrm:authentication-required",authenticationRequired);
+    return()=>{document.removeEventListener("visibilitychange",visibility);window.removeEventListener("focus",focus);window.removeEventListener("develocrm:authentication-required",authenticationRequired);};
   },[snapshot?.authenticated]);
 
   if (refreshing) return <main className="auth-gate"><section className="auth-card" aria-live="polite"><span className="auth-spinner"/><h1>Obnovuji data…</h1><p>Ověřuji přihlášení a načítám aktuální pracovní prostor.</p></section></main>;

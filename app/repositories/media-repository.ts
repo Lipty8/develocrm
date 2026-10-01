@@ -56,9 +56,15 @@ class ApiMediaRepository implements MediaRepository {
     const prepared = await prepareMediaUpload(file, kind);
     const form = new FormData();
     form.set("entityType", entityType); form.set("entityId", entityId); form.set("kind", kind); form.set("file", prepared);
-    const response = await apiFetch("/api/media", { method: "POST", body: form });
+    const response = await apiFetch("/api/media", { method: "POST", body: form, dataInvalidation: "none" });
     const payload = await response.json().catch(() => ({})) as { media?: MediaLink; error?: string; correlationId?: string };
-    if (!response.ok || !payload.media) throw new Error(payload.error || "Půdorys se nepodařilo uložit. Zkuste to prosím znovu.");
+    if (!response.ok || !payload.media) {
+      const fallback = kind === "cover"
+        ? "Titulní obrázek se nepodařilo uložit. Zkuste to prosím znovu."
+        : "Půdorys se nepodařilo uložit. Zkuste to prosím znovu.";
+      const requestId = response.headers.get("x-correlation-id") || payload.correlationId;
+      throw new Error(`${payload.error || fallback}${requestId ? ` · ID chyby ${requestId}` : ""}`);
+    }
     return materializeAuthenticatedMedia(payload.media);
   }
 }
