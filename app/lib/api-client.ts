@@ -20,7 +20,7 @@ export function createApiFetch(
     if(browserMode())return transport(input,requestInit);
     const headers=new Headers(requestInit.headers);
     const method=(requestInit.method??(input instanceof Request?input.method:"GET")).toUpperCase();
-    const mutation=["POST","PATCH","DELETE"].includes(method);
+    const mutation=["POST","PUT","PATCH","DELETE"].includes(method);
     const requestCorrelationId=headers.get("x-correlation-id")||crypto.randomUUID();
     headers.set("x-correlation-id",requestCorrelationId);
     const targetPath=typeof input==="string"?input:input instanceof URL?input.pathname:input.url;

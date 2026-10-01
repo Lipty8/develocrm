@@ -1,4 +1,5 @@
-import { apiFetch } from "../lib/api-client";
+import { apiFetch, type ApiFetch } from "../lib/api-client";
+import { MEDIA_UPLOAD_CHUNK_SIZE, mediaChunkBounds } from "../lib/media-upload-protocol";
 import { validateMediaFile, type MediaKind } from "../lib/media-validation";
 
 export type MediaLink = { id: string; entityType: "project" | "unit"; entityId: string; kind: MediaKind; fileName: string; mimeType: string; url: string; uploadedAt?: string; uploadedBy?: string; version?: string };
@@ -8,64 +9,68 @@ export interface MediaRepository {
   upload(entityType: "project" | "unit", entityId: string, kind: "cover" | "floorplan", file: File): Promise<MediaLink>;
 }
 
-async function materializeAuthenticatedMedia(media: MediaLink, signal?: AbortSignal): Promise<MediaLink> {
-  const response=await apiFetch(media.url,{signal,cache:"no-store"});
+async function materializeAuthenticatedMedia(media: MediaLink, fetcher:ApiFetch, signal?: AbortSignal): Promise<MediaLink> {
+  const response=await fetcher(media.url,{signal,cache:"no-store"});
   if(!response.ok)throw new Error(response.status===403?"Nemáte oprávnění zobrazit toto médium.":"Médium se nepodařilo načíst.");
   const blob=await response.blob();
   return {...media,url:URL.createObjectURL(blob),mimeType:blob.type||media.mimeType};
 }
 
-async function prepareMediaUpload(file: File, kind: MediaKind): Promise<File> {
-  const validation = validateMediaFile(file, kind);
-  if (validation.isPdf) return file;
-  if (file.size <= 850 * 1024) return file;
-
-  const bitmap = await createImageBitmap(file);
-  let maxDimension = 2000;
-  let smallest: Blob | null = null;
-  try {
-    for (const quality of [0.84, 0.76, 0.68, 0.6]) {
-      const scale = Math.min(1, maxDimension / bitmap.width, maxDimension / bitmap.height);
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-      const context = canvas.getContext("2d");
-      if (!context) throw new Error("Obrázek se nepodařilo připravit");
-      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", quality));
-      if (blob && (!smallest || blob.size < smallest.size)) smallest = blob;
-      if (blob && blob.size <= 850 * 1024) return new File([blob], file.name.replace(/\.[^.]+$/, "") + ".webp", { type: "image/webp" });
-      maxDimension = Math.round(maxDimension * 0.76);
-    }
-  } finally {
-    bitmap.close();
-  }
-  if (!smallest) throw new Error("Obrázek se nepodařilo optimalizovat");
-  return new File([smallest], file.name.replace(/\.[^.]+$/, "") + ".webp", { type: "image/webp" });
+async function mediaError(response: Response, fallback: string) {
+  const payload = await response.json().catch(() => ({})) as { error?: string; correlationId?: string };
+  const requestId = response.headers.get("x-correlation-id") || payload.correlationId;
+  return new Error(`${payload.error || fallback}${requestId ? ` · ID chyby ${requestId}` : ""}`);
 }
 
-class ApiMediaRepository implements MediaRepository {
+export class ApiMediaRepository implements MediaRepository {
+  constructor(private readonly fetcher:ApiFetch=apiFetch) {}
   async get(entityType: "project" | "unit", entityId: string, signal?: AbortSignal) {
-    const response = await apiFetch(`/api/media?entityType=${entityType}&entityId=${encodeURIComponent(entityId)}`, { signal, cache: "no-store" });
+    const response = await this.fetcher(`/api/media?entityType=${entityType}&entityId=${encodeURIComponent(entityId)}`, { signal, cache: "no-store" });
     if (!response.ok) return null;
     const payload = await response.json() as { media: MediaLink[] };
     const media=payload.media[0];
-    return media?materializeAuthenticatedMedia(media,signal):null;
+    return media?materializeAuthenticatedMedia(media,this.fetcher,signal):null;
   }
   async upload(entityType: "project" | "unit", entityId: string, kind: "cover" | "floorplan", file: File) {
-    const prepared = await prepareMediaUpload(file, kind);
-    const form = new FormData();
-    form.set("entityType", entityType); form.set("entityId", entityId); form.set("kind", kind); form.set("file", prepared);
-    const response = await apiFetch("/api/media", { method: "POST", body: form, dataInvalidation: "none" });
-    const payload = await response.json().catch(() => ({})) as { media?: MediaLink; error?: string; correlationId?: string };
-    if (!response.ok || !payload.media) {
-      const fallback = kind === "cover"
-        ? "Titulní obrázek se nepodařilo uložit. Zkuste to prosím znovu."
-        : "Půdorys se nepodařilo uložit. Zkuste to prosím znovu.";
-      const requestId = response.headers.get("x-correlation-id") || payload.correlationId;
-      throw new Error(`${payload.error || fallback}${requestId ? ` · ID chyby ${requestId}` : ""}`);
+    validateMediaFile(file, kind);
+    const fallback = kind === "cover"
+      ? "Titulní obrázek se nepodařilo uložit. Zkuste to prosím znovu."
+      : "Půdorys se nepodařilo uložit. Zkuste to prosím znovu.";
+    const startResponse = await this.fetcher("/api/media", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "start", entityType, entityId, kind, fileName: file.name, mimeType: file.type, size: file.size }),
+      dataInvalidation: "none",
+    });
+    if (!startResponse.ok) throw await mediaError(startResponse, fallback);
+    const session = await startResponse.json() as { uploadId: string; chunkSize?: number; chunkCount?: number };
+    const chunkSize = session.chunkSize || MEDIA_UPLOAD_CHUNK_SIZE;
+    const chunkCount = session.chunkCount || Math.ceil(file.size / chunkSize);
+    try {
+      for (let index = 0; index < chunkCount; index += 1) {
+        const { start, end } = mediaChunkBounds(index, file.size, chunkSize);
+        const chunkResponse = await this.fetcher(`/api/media?uploadId=${encodeURIComponent(session.uploadId)}&index=${index}`, {
+          method: "PUT",
+          headers: { "content-type": "application/octet-stream" },
+          body: file.slice(start, end),
+          dataInvalidation: "none",
+        });
+        if (!chunkResponse.ok) throw await mediaError(chunkResponse, fallback);
+      }
+      const response = await this.fetcher("/api/media", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ uploadId: session.uploadId }),
+        dataInvalidation: "none",
+      });
+      if (!response.ok) throw await mediaError(response, fallback);
+      const payload = await response.json() as { media?: MediaLink };
+      if (!payload.media) throw new Error(fallback);
+      return materializeAuthenticatedMedia(payload.media,this.fetcher);
+    } catch (error) {
+      await this.fetcher(`/api/media?uploadId=${encodeURIComponent(session.uploadId)}`, { method: "DELETE", dataInvalidation: "none" }).catch(() => undefined);
+      throw error;
     }
-    return materializeAuthenticatedMedia(payload.media);
   }
 }
 

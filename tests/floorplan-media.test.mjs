@@ -38,8 +38,12 @@ test("UI obsahuje PDF preview, skutečné stažení a náhradu aktivního půdor
   assert.match(app, /Nahrát půdorys/);
   assert.match(app, /application\/pdf/);
   assert.match(app, /Náhled první stránky PDF/);
+  assert.match(app, /FormModal title=\{value\.title\} subtitle=""/);
   assert.match(app, /download=1/);
   assert.match(route, /env\.FILES\.delete\(objectKey\)/);
+  assert.match(route, /media\.upload\.chunk/);
+  assert.match(route, /media\.upload\.complete/);
+  assert.match(route, /clearSession/);
   assert.match(route, /uploadedAt/);
   assert.match(route, /fileName/);
   assert.match(fileRoute, /content-disposition/);
