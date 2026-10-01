@@ -1,4 +1,4 @@
-# DeveloCRM — Fáze 1 readiness (23. 9. 2026)
+# DeveloCRM — Fáze 1 readiness (aktualizace 1. 10. 2026)
 
 ## Verdikt před finálním release
 
@@ -50,9 +50,9 @@ Pilotní obchodní data nebyla během dokončování měněna.
 
 ## Validace finálního zdrojového stavu
 
-- Backend: **175/175 testů prošlo**.
-- Frontend statické/regresní testy: **127/127 prošlo**.
-- Interaction testy: **15/15 prošlo**, včetně úspěšné i odmítnuté mutace bez browser reloadu.
+- Backend: **186/186 testů prošlo**.
+- Frontend statické/regresní testy: **128/128 prošlo**.
+- Interaction testy: **26/26 prošlo**, včetně úspěšné i odmítnuté mutace bez browser reloadu.
 - ESLint: **0 chyb**, 3 dříve existující upozornění na `<img>`.
 - Backend production build: **prošel**.
 - Frontend production build: **prošel**; zůstává pouze neblokující upozornění na velikost chunku.
@@ -89,6 +89,29 @@ Backendová user-assigned identity `id-develocrm-api-pilot` nemá žádný Graph
 2. udělit této identitě `write` pouze k webu `/sites/DeveloCRM`,
 3. dodat do Container App cílovou site/library konfiguraci bez secrets,
 4. následně ověřit upload, otevření, verze a generování na testovacím dokumentu.
+
+### Ověřený stav oprávnění k 1. 10. 2026
+
+- managed identity client ID: `134a9cd1-c2d7-4386-b47c-c59260ad460c`,
+- managed identity principal ID: `9162ffdb-2581-4f0c-95e5-c04dcc592199`,
+- Microsoft Graph service principal: `9ce57c61-224a-41ab-a6d1-bcabb64bd193`,
+- Graph role `Sites.Selected`: `883ea226-0bf2-4a8f-9f9d-92c9162a727d`,
+- cílový site ID: `immobusiness1.sharepoint.com,5d133266-b0bc-4614-ab56-45ec53bc3821,815da7c9-ff7a-4dca-ad04-b6f9629186bc`,
+- knihovna `Dejvice TEST`: `b!ZjITXbywFEarVkXsU7w4IcmnXYF6_8pNrQS2-WKRhrxKidhU_mTfRaBqO75Z5o7S`.
+
+Pokus o přidělení `Sites.Selected` z aktuálního účtu skončil bezpečně chybou Microsoft Graph `Authorization_RequestDenied / Insufficient privileges`; žádné oprávnění nebylo změněno. Změnu musí provést Entra/Microsoft 365 správce s oprávněním spravovat aplikační role. Po app-role assignmentu musí SharePoint správce udělit této identitě pouze roli `write` k výše uvedenému webu. Globální `Sites.ReadWrite.All` není pro tento scénář přijatelné.
+
+### Bezpečný základ Word generování
+
+Commit `524d885` přidává striktní DOCX renderer pro explicitní pole. Renderer:
+
+- nahrazuje pouze schválené tokeny `{{field.name}}` v těle, hlavičkách a patičkách,
+- zvládá token rozdělený mezi více Word runs,
+- odmítne chybějící hodnotu, neschválený token, chybějící povinné pole i zbylý token,
+- odmítne staré ruční značky `[•]`, `[●]`, `[doplnit]` a `[vyplnit]`,
+- nemění vztahy, ID ani jiné technické části DOCX archivu.
+
+Všechny tři dodané vzory byly tímto guardem ověřeny read-only. RS a SBK neobsahují explicitní tokeny; KS navíc obsahuje ruční značky `[•]`/`[●]`. Generování proto správně zůstává fail-closed a zatím není vystavené přes API ani UI. Před aktivací je nutné právně schválené šablony jednorázově parametrizovat a určit mapování jejich povinných polí; nelze bezpečně odhadnout význam tečkovaných míst pouze z formátování dokumentu.
 
 ## Provozní readiness
 
