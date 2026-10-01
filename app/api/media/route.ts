@@ -137,9 +137,9 @@ export async function PATCH(request:Request){
   if(Date.parse(session.expiresAt)<Date.now()){await clearSession(session).catch(()=>undefined);return errorResponse("Platnost nahrávání vypršela. Vyberte soubor znovu.",cid,410);}
   const owner=await authorizeSession(request,session,cid);if(owner instanceof Response)return owner;
   const keys=Array.from({length:session.chunkCount},(_,index)=>chunkKey(uploadId,index));
-  const objects=await Promise.all(keys.map(key=>env.FILES.get(key))) as Array<{arrayBuffer():Promise<ArrayBuffer>}|null>;
-  if(objects.some(object=>!object))return errorResponse("Nahrání souboru není kompletní",cid,409);
-  const parts=await Promise.all(objects.map(object=>object!.arrayBuffer())),total=parts.reduce((sum:number,part:ArrayBuffer)=>sum+part.byteLength,0);
+  const parts:ArrayBuffer[]=[];
+  for(const key of keys){const object=await env.FILES.get(key);if(!object)return errorResponse("Nahrání souboru není kompletní",cid,409);parts.push(await object.arrayBuffer());}
+  const total=parts.reduce((sum:number,part:ArrayBuffer)=>sum+part.byteLength,0);
   if(total!==session.size)return errorResponse("Nahraný soubor má neplatnou velikost",cid,409);
   const assembled=new Uint8Array(total);let offset=0;
   for(const part of parts){assembled.set(new Uint8Array(part),offset);offset+=part.byteLength;}
