@@ -934,6 +934,14 @@ button.summary-stat:hover { border-color:#b8c8d7; background:#fff; }
 .effective-permissions.grouped article strong{font-size:11px;line-height:1.35}
 .effective-permissions.grouped article small,.effective-permissions.grouped article em{margin-top:4px;color:var(--muted);font-size:9.5px;font-style:normal}
 .effective-permissions.grouped article code{margin-top:5px;padding:4px 5px;border-radius:4px;background:#eef2f0;color:#526159;font-size:8.5px}
+.permission-disclosure{overflow:hidden;border:1px solid var(--line);border-radius:9px;background:#fafcfb}
+.permission-disclosure>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;padding:0 13px;cursor:pointer;list-style:none;color:var(--ink)}
+.permission-disclosure>summary::-webkit-details-marker{display:none}
+.permission-disclosure>summary>span{display:flex;align-items:center;gap:8px}
+.permission-disclosure>summary>span svg{color:var(--blue)}
+.permission-disclosure>summary>svg{color:var(--muted);transition:transform .18s ease}
+.permission-disclosure[open]>summary>svg{transform:rotate(180deg)}
+.permission-disclosure .effective-permissions.grouped{border:0;border-top:1px solid var(--line);border-radius:0;background:#fff}
 
 @media(max-width:1180px){
   .document-table-head,.document-central-list>button{grid-template-columns:minmax(230px,1.2fr) 110px minmax(170px,.9fr) 112px 55px 95px 18px}
