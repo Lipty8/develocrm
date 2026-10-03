@@ -2,7 +2,7 @@
 
 ## Verdikt před finálním release
 
-Aktuální hlavní CRM provoz je **READY WITH LIMITATIONS**. V lokálně ověřené verzi není známý P0 blocker hlavního CRM provozu. Obchodní proces, alternativní smluvní cesty, platby a vratky, předání, příslušenství, klientské změny, reklamace, úkoly, oprávnění, audit a nové vazby dokumentů mají automatizované pokrytí. Migrace 0044 a 0045 i matching backend byly v pilotu nasazené v release `03442e0`; pozdější frontendové opravy médií jsou publikované v Sites verzi 110.
+Aktuální hlavní CRM provoz je **READY WITH LIMITATIONS**. V lokálně ověřené verzi není známý P0 blocker hlavního CRM provozu. Obchodní proces, alternativní smluvní cesty, platby a vratky, předání, příslušenství, klientské změny, reklamace, úkoly, oprávnění, audit a nové vazby dokumentů mají automatizované pokrytí. Migrace 0044 a 0045 i matching backend byly v pilotu nasazené v release `03442e0`; pozdější frontendové opravy médií a pravdivý stav dokumentových šablon jsou publikované v Sites verzi 111.
 
 Jediné zásadní funkční omezení mimo běžný CRM provoz je skutečná SharePoint integrace: backendová managed identity nemá Graph aplikační roli/site grant a Container App nemá cílovou Graph/SharePoint konfiguraci. CRM proto může evidovat metadata a business vazby dokumentů, ale zatím nemůže bezpečně provádět produkční upload ani generování Word dokumentů do SharePointu. Toto omezení neblokuje používání CRM pro evidenci obchodu, smluv, plateb, úkolů a předání, ale blokuje prohlášení dokumentového toku za dokončený.
 
@@ -53,7 +53,7 @@ Pilotní obchodní data nebyla během dokončování měněna.
 - Backend: **186/186 testů prošlo**.
 - Frontend statické/regresní testy: **128/128 prošlo**.
 - Interaction testy: **26/26 prošlo**, včetně úspěšné i odmítnuté mutace bez browser reloadu.
-- ESLint: **0 chyb**, 3 dříve existující upozornění na `<img>`.
+- ESLint: **0 chyb a 0 upozornění**.
 - Backend production build: **prošel**.
 - Frontend production build: **prošel**; zůstává pouze neblokující upozornění na velikost chunku.
 - Čistá PGlite databáze aplikuje migrace do 0045.
@@ -67,7 +67,7 @@ Pilotní obchodní data nebyla během dokončování měněna.
 - Revize je Healthy a provisioning je Succeeded.
 - `/health` vrací 200.
 - `/ready` vrací 200 a databáze je dostupná.
-- Publikovaný Sites frontend je verze 110, deployment `appgdep_6abe39ab65ec8191af1a4cc739bf1a4e`, zdrojový commit `9029e3028d4037fe4658c2287124308af00e712e`; deployment je `succeeded`.
+- Publikovaný Sites frontend je verze 111, deployment `appgdep_6abe798e31308191aa24cb5efac90a6d`, zdrojový commit `6bb537dbac399f47732433f145ea6df04466513b`; deployment je `succeeded`.
 - Autentizovaný smoke potvrdil dashboard, projekty, Rezidenci Dejvice, jednotku 417, klienty, smlouvy, platby, předání, úkoly a dokumenty.
 - Rezidence Dejvice má 19 jednotek; read-only UI k 1. 10. 2026 ukazuje 13 volných, 4 `V jednání` a 2 prodané. Tento stav nebyl automaticky opravován ani reinterpretován.
 - V pilotu jsou dva aktivní projekty (Rezidence Dejvice a Hrdlička); Hrdlička nebyla bez důkazu považována za demo data.
@@ -134,7 +134,7 @@ Security Phase 0 zůstává uzavřená. Health/readiness, Azure probes a alerty 
 
 - SharePoint upload/generování ještě není aktivní; soubory je nutné do udělení oprávnění spravovat mimo CRM.
 - Opravenou KS je nutné ručně nebo po obnovení konektoru uložit do testovací knihovny.
-- 3 lint upozornění na `<img>` a velikost frontendového chunku jsou technický dluh, ne provozní blocker.
+- Velikost frontendového chunku zůstává technický dluh, ne provozní blocker.
 
 ### Blokuje úplné prohlášení dokumentové části Fáze 1 za hotovou
 
@@ -144,4 +144,4 @@ Security Phase 0 zůstává uzavřená. Health/readiness, Azure probes a alerty 
 
 ## Finální klasifikace
 
-Hlavní DeveloCRM provoz je po nasazení migrací 0044 a 0045, backendu `03442e0` a Sites verze 110 klasifikovaný jako **READY WITH LIMITATIONS**. Omezení se týká SharePoint/Word dokumentového toku; hlavní obchodní, smluvní, finanční a provozní workflow je připravené pro interní pilot. Novější lokální guard DOCX šablon a zpřesnění stavu UI zatím nejsou runtime funkcí a nevyžadují databázovou migraci.
+Hlavní DeveloCRM provoz je po nasazení migrací 0044 a 0045, backendu `03442e0` a Sites verze 111 klasifikovaný jako **READY WITH LIMITATIONS**. Omezení se týká SharePoint/Word dokumentového toku; hlavní obchodní, smluvní, finanční a provozní workflow je připravené pro interní pilot. Striktní DOCX guard zatím není runtime funkcí a nevyžaduje databázovou migraci; Sites UI už omezení generování zobrazuje pravdivě.
