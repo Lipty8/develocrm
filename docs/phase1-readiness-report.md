@@ -2,7 +2,7 @@
 
 ## Verdikt před finálním release
 
-Aktuální hlavní CRM provoz je **READY WITH LIMITATIONS**. V lokálně ověřené verzi není známý P0 blocker hlavního CRM provozu. Obchodní proces, alternativní smluvní cesty, platby a vratky, předání, příslušenství, klientské změny, reklamace, úkoly, oprávnění, audit a nové vazby dokumentů mají automatizované pokrytí. Migrace 0044 a 0045 i matching backend byly v pilotu nasazené v release `03442e0`; pozdější frontendové opravy médií, pravdivý stav dokumentových šablon a obnova přihlášení po vypršení relace jsou publikované v Sites verzi 113.
+Aktuální hlavní CRM provoz je **READY WITH LIMITATIONS**. V lokálně ověřené verzi není známý P0 blocker hlavního CRM provozu. Obchodní proces, alternativní smluvní cesty, platby a vratky, předání, příslušenství, klientské změny, reklamace, úkoly, oprávnění, audit a nové vazby dokumentů mají automatizované pokrytí. Migrace 0044 a 0045 byly v pilotu nasazené v release `03442e0`; aktuální backend byl následně bezpečnostně aktualizován na commit `b5dc850` a matching frontend je publikovaný v Sites verzi 114.
 
 Jediné zásadní funkční omezení mimo běžný CRM provoz je skutečná SharePoint integrace: backendová managed identity nemá Graph aplikační roli/site grant a Container App nemá cílovou Graph/SharePoint konfiguraci. CRM proto může evidovat metadata a business vazby dokumentů, ale zatím nemůže bezpečně provádět produkční upload ani generování Word dokumentů do SharePointu. Toto omezení neblokuje používání CRM pro evidenci obchodu, smluv, plateb, úkolů a předání, ale blokuje prohlášení dokumentového toku za dokončený.
 
@@ -40,6 +40,8 @@ Pilotní obchodní data nebyla během dokončování měněna.
 - `0df18fa` — migrace 0044, dokumentové vazby klientských změn, reklamací a předání včetně UI, auditu a outboxu.
 - `03442e0` — migrace 0045, centrální projekce aktuálního kupujícího a manažerského stavu jednotky a jednotná invalidace UI po mutaci; matching backend nasazený v pilotu.
 - `73f876b` — bezpečný přechod na interaktivní Entra přihlášení po timeoutu tichého obnovení tokenu místo zobrazení technické MSAL chyby.
+- `f9ef591` — kompatibilní opravy produkčních závislostí Next.js, Fastify, `fflate` a dotčených tranzitivních balíčků.
+- `b5dc850` — aktualizovaný dependency audit a SBOM; produkční audit má 0 známých zranitelností.
 
 ## Migrace
 
@@ -64,15 +66,15 @@ Pilotní obchodní data nebyla během dokončování měněna.
 
 ## Read-only kontrola pilotu
 
-- Aktivní backend revize: `ca-develocrm-api-pilot--phase1-03442e0`.
-- Aktivní backend image: `develocrm-api@sha256:acaa4be676f05c68f34a4d80379472e3638b6348c10b53267f7d2db5b73b0868`.
+- Aktivní backend revize: `ca-develocrm-api-pilot--secdeps-b5dc850`.
+- Aktivní backend image: `develocrm-api@sha256:8853228f218d1ea21b45e9fe8bb20f90a8f0398b12bcebdbb8bf739ca1c7802b`.
 - Revize je Healthy a provisioning je Succeeded.
 - `/health` vrací 200.
 - `/ready` vrací 200 a databáze je dostupná.
-- Publikovaný Sites frontend je verze 113, deployment `appgdep_6ac0dffc906081919939c7e6fb7fa3ea`, zdrojový commit `b97bf8ec70fd5bda57a9a5bc5df37e9f78cb70c5`; deployment je `succeeded`.
-- Autentizovaný smoke potvrdil obnovu vypršené Entra relace, přihlášení uživatele Adam Lipták a načtení dashboardu, projektů, Rezidence Dejvice, jednotek, klientů, smluv, plateb, předání, úkolů a dokumentů.
+- Publikovaný Sites frontend je verze 114, deployment `appgdep_6ac1473566e08191bc6a282ae5a7bb25`, zdrojový commit `762bfa712afc7899637c76773c6e705e55e694df`; deployment je `succeeded`.
+- Autentizovaný smoke na Sites verzi 114 potvrdil přihlášení uživatele Adam Lipták, správný workspace a načtení dashboardu, projektů, Rezidence Dejvice, jednotek, klientů, smluv, plateb, předání, úkolů a dokumentů.
 - Rezidence Dejvice má 19 jednotek; read-only UI k 3. 10. 2026 ukazuje 13 volných, 4 `V jednání` a 2 prodané. Tento stav nebyl automaticky opravován ani reinterpretován.
-- Kontrola aplikačních logů po smoke testu neodhalila aplikační 5xx; zaznamenané přerušené GET požadavky odpovídaly navigaci mezi obrazovkami.
+- Kontrola backendových logů po smoke testu neodhalila 5xx, RLS, startup ani error-level chyby; `/health` a `/ready` zůstaly 200. Sites logy obsahují pouze zrušené read-only GET požadavky při navigaci mezi obrazovkami a browser console je bez warning/error záznamů.
 - V pilotu jsou dva aktivní projekty (Rezidence Dejvice a Hrdlička); Hrdlička nebyla bez důkazu považována za demo data.
 - Dokumenty korektně zobrazují stav „SharePoint nepřipojen“ místo předstírání funkční integrace.
 
@@ -147,4 +149,4 @@ Security Phase 0 zůstává uzavřená. Health/readiness, Azure probes a alerty 
 
 ## Finální klasifikace
 
-Hlavní DeveloCRM provoz je po nasazení migrací 0044 a 0045, backendu `03442e0` a Sites verze 113 klasifikovaný jako **READY WITH LIMITATIONS**. Omezení se týká SharePoint/Word dokumentového toku; hlavní obchodní, smluvní, finanční a provozní workflow je připravené pro interní pilot. Striktní DOCX guard zatím není runtime funkcí a nevyžaduje databázovou migraci; Sites UI už omezení generování zobrazuje pravdivě.
+Hlavní DeveloCRM provoz je po nasazení migrací 0044 a 0045, backendové revize `secdeps-b5dc850` a Sites verze 114 klasifikovaný jako **READY WITH LIMITATIONS**. Omezení se týká SharePoint/Word dokumentového toku; hlavní obchodní, smluvní, finanční a provozní workflow je připravené pro interní pilot. Striktní DOCX guard zatím není runtime funkcí a nevyžaduje databázovou migraci; Sites UI už omezení generování zobrazuje pravdivě.
