@@ -47,6 +47,8 @@ Changes were deliberately limited to compatible versions and targeted transitive
 
 Production audit after hardening: 0 critical, 0 high and 1 moderate advisory. The remaining advisory is `uuid@8.3.2` through `exceljs`; the published fix requires a major dependency jump to UUID 11 and is intentionally deferred rather than forced into Phase 0.
 
+Subsequent maintenance on 3 October 2026 upgraded Next.js to 16.3.6, Fastify to 5.12.5, `fflate` to 0.7.5 and the affected transitive `brace-expansion`, `fast-uri` and `uuid` lines. A fresh production audit reports 0 critical, 0 high and 0 moderate advisories. The compatibility suite, frozen install and both production builds passed after the upgrade.
+
 The CycloneDX production SBOM is stored in `security/sbom.cdx.json` and can be regenerated with:
 
 ```sh
