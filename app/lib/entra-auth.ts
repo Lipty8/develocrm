@@ -185,7 +185,7 @@ function validateConfig(config: EntraFrontendConfig): void {
 
 function isInteractionRequired(error: unknown): boolean {
   return Boolean(error && typeof error === "object" && "errorCode" in error &&
-    ["interaction_required", "login_required", "consent_required"].includes(String(error.errorCode)));
+    ["interaction_required", "login_required", "consent_required", "timed_out"].includes(String(error.errorCode)));
 }
 
 export const entraAuth = new EntraAuthController();

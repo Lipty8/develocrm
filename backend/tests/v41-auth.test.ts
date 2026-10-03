@@ -99,6 +99,22 @@ test("frontend MSAL sloučí souběžné požadavky o access token",async()=>{
   assert.equal(silentCalls,1);
 });
 
+test("frontend MSAL po timeoutu tichého obnovení přejde na interaktivní přihlášení",async()=>{
+  let redirectCalls=0;
+  const account=mockAccount();
+  const controller=new EntraAuthController({
+    loadConfig:async()=>frontendConfig,
+    createClient:()=>({
+      initialize:async()=>undefined,handleRedirectPromise:async()=>null,getActiveAccount:()=>account,
+      setActiveAccount:()=>undefined,getAllAccounts:()=>[account],loginRedirect:async()=>undefined,
+      acquireTokenSilent:async()=>{throw Object.assign(new Error("technical MSAL timeout"),{errorCode:"timed_out"});},
+      acquireTokenRedirect:async()=>{redirectCalls++;},logoutRedirect:async()=>undefined,
+    }),
+  });
+  await assert.rejects(controller.getAccessToken(),/AUTHENTICATION_REDIRECT/);
+  assert.equal(redirectCalls,1);
+});
+
 test("centrální API klient připojí Bearer token a při chybě nepoužije fallback",async()=>{
   let called=0;
   let correlationId="";
