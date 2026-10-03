@@ -8,10 +8,11 @@ allowBuilds:
 # major line and can be removed once the direct packages pull patched releases.
 overrides:
   "baseline-browser-mapping@>=2.0.0 <2.11.0": 2.11.0
-  "brace-expansion@<1.1.18": 1.1.18
-  "brace-expansion@>=2.0.0 <2.1.4": 2.1.4
+  "brace-expansion@<1.1.21": 1.1.21
+  "brace-expansion@>=2.0.0 <2.1.7": 2.1.7
   "browserslist@<=4.28.6": 4.28.7
-  "fast-uri@>=3.0.0 <3.1.6": 3.1.6
-  "fast-uri@>=4.0.0 <4.1.3": 4.1.3
+  "fast-uri@>=3.0.0 <3.1.8": 3.1.8
+  "fast-uri@>=4.0.0 <4.1.5": 4.1.5
   "find-my-way@<=9.6.0": 9.9.0
   "nanoid@<3.3.18": 3.3.18
+  "uuid@<11.1.1": 11.1.1

@@ -57,6 +57,7 @@ Pilotní obchodní data nebyla během dokončování měněna.
 - ESLint: **0 chyb a 0 upozornění**.
 - Backend production build: **prošel**.
 - Frontend production build: **prošel**; zůstává pouze neblokující upozornění na velikost chunku.
+- Produkční dependency audit: **0 známých zranitelností** po bezpečnostním upgradu Next.js, Fastify, `fflate` a dotčených tranzitivních balíčků.
 - Čistá PGlite databáze aplikuje migrace do 0045.
 - Integračně jsou pokryté alternativní smluvní cesty, dokumentové vazby, audit, outbox, idempotence a 11 stavů centrální business projekce.
 - Úspěšné POST/PATCH/DELETE požadavky vyvolají jednu sdílenou invalidaci katalogu, klientů, smluv, dokumentů, plateb, předání a úkolů; dotčené obrazovky se obnoví bez ručního reloadu.
