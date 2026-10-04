@@ -1661,11 +1661,14 @@ const effectivePermissionCategoryOrder=["Projekty","Jednotky a příslušenství
 function effectivePermissionCategory(category:string){return ({Ceny:"Jednotky a příslušenství","Obchodní výjimky":"Jednotky a příslušenství","Klientské změny":"Klienti","Obchodní případy":"Klienti",Předání:"Předání a reklamace",Reklamace:"Předání a reklamace","Uživatelé a role":"Administrace",Systém:"Administrace","Exporty a audit":"Administrace"} as Record<string,string>)[category]??category;}
 const roleAreaLabels:Record<string,string>={Projekty:"projekty","Jednotky a příslušenství":"jednotky a příslušenství",Klienti:"klienty a obchodní případy",Smlouvy:"smlouvy",Platby:"platby a finanční přehledy","Předání a reklamace":"předání a reklamace",Dokumenty:"dokumenty",Úkoly:"úkoly",Administrace:"uživatele a nastavení"};
 function roleAccessSummary(role:AdminRole){
-  const areas=effectivePermissionCategoryOrder.filter(category=>role.permissionCodes.some(code=>effectivePermissionCategory(getPermissionDefinition(code).category)===category));
-  if(areas.length>=7)return "Všechny hlavní oblasti CRM";
+  const definitions=role.permissionCodes.map(getPermissionDefinition);
+  const areas=effectivePermissionCategoryOrder.filter(category=>definitions.some(permission=>effectivePermissionCategory(permission.category)===category));
+  const onlyReading=definitions.length>0&&definitions.every(permission=>["view","export"].includes(permission.operation));
+  if(areas.length>=7&&onlyReading)return "Pouze zobrazení napříč CRM";
+  if(areas.length>=7&&role.permissionCodes.some(code=>["users.manage","roles.manage","tenant.manage"].includes(code)))return "Všechny hlavní oblasti CRM";
   const labels=areas.map(category=>roleAreaLabels[category]);
   if(labels.length<=2)return labels.join(" a ");
-  return `${labels[0]}, ${labels[1]} a další`;
+  return "";
 }
 
 function AdminUserModal({value,snapshot,close,save}:{value:AdminUser|null;snapshot:AdminSnapshot;close:()=>void;save:(value:Omit<AdminUser,"membershipId"|"userId"|"lastLoginAt">)=>Promise<void>}){

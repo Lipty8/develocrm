@@ -88,6 +88,7 @@ test("editace uživatele končí projektovým rozsahem a neobsahuje permission d
   assert.match(app, /function roleAccessSummary\(role:AdminRole\)/);
   assert.match(app, /role\.permissionCodes\.some/);
   assert.match(app, /Všechny hlavní oblasti CRM/);
+  assert.match(app, /Pouze zobrazení napříč CRM/);
   assert.doesNotMatch(css, /\.permission-disclosure/);
   assert.match(css, /\.role-selection small/);
 });
