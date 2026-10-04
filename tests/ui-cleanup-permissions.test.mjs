@@ -67,31 +67,43 @@ test("centrální katalog pokrývá všechna databázová oprávnění českým 
 
 test("technické klíče zůstávají jen ve volitelné diagnostice role a fallback je bezpečný", () => {
   assert.match(app, /const \[showTechnical,setShowTechnical\]=useState\(false\)/);
-  assert.match(app, /showTechnical&&<code>Technický klíč: \{permission\.key\}<\/code>/);
+  assert.match(app, /showTechnical&&<code>\{permission\.key\}<\/code>/);
   assert.doesNotMatch(app, /showTechnical&&<code>Technický klíč: \{item\.definition\.key\}<\/code>/);
-  assert.match(app, /Zobrazit diagnostické názvy/);
+  assert.match(app, /Technické názvy/);
   assert.match(catalog, /name: "Další systémové oprávnění"/);
   assert.match(catalog, /console\.warn\(`\[DeveloCRM\] Chybí český katalog oprávnění/);
   assert.doesNotMatch(app, /effective\.join\(" · "\)/);
 });
 
-test("efektivní oprávnění jsou ve výchozím sbaleném detailu s uživatelskými skupinami", () => {
-  assert.match(app, /<details className="permission-disclosure"><summary>/);
-  assert.match(app, /<strong>Detail oprávnění<\/strong>/);
-  assert.doesNotMatch(app, /Efektivní oprávnění \(\{effective\.length\}\)/);
-  assert.doesNotMatch(app, /<details className="permission-disclosure" open/);
+test("editace uživatele končí projektovým rozsahem a neobsahuje permission diagnostiku", () => {
+  const userModal = app.slice(app.indexOf("function AdminUserModal"), app.indexOf("function RolePermissionsModal"));
+  assert.doesNotMatch(userModal, /Efektivní oprávnění|Detail oprávnění|Získáno z role|Z role:|Rozsah:|Technický klíč|permissionScopeLabel|permission-disclosure|effective-permissions/);
+  assert.doesNotMatch(userModal, /permissionCodes\.includes|permissionGrants/);
+  assert.match(userModal, /<fieldset className="admin-check-grid role-selection"><legend>Role<\/legend>/);
+  assert.match(userModal, /<fieldset className="admin-check-grid"><legend>Projektový rozsah<\/legend>/);
+  assert.match(userModal, /roleAccessSummary\(role\)/);
   for (const category of ["Projekty", "Jednotky a příslušenství", "Klienti", "Smlouvy", "Platby", "Předání a reklamace", "Dokumenty", "Úkoly", "Administrace"]) {
     assert.match(app, new RegExp(`"${category.replace(" a ", " a ")}"`));
   }
-  assert.match(app, /Z role:/);
-  assert.match(app, /Rozsah: \{permissionScopeLabel/);
-  assert.match(app, /permissionCategoryOrder\.map/);
+  assert.match(app, /function roleAccessSummary\(role:AdminRole\)/);
+  assert.match(app, /role\.permissionCodes\.some/);
+  assert.match(app, /Všechny hlavní oblasti CRM/);
+  assert.doesNotMatch(css, /\.permission-disclosure/);
+  assert.match(css, /\.role-selection small/);
+});
+
+test("správa role používá kompaktní funkční oblasti a volitelnou technickou diagnostiku", () => {
+  const roleModal = app.slice(app.indexOf("function RolePermissionsModal"), app.indexOf("function UnitPreview"));
+  assert.match(roleModal, /Přístup podle oblastí/);
+  assert.match(roleModal, /className="role-permission-areas"/);
+  assert.match(roleModal, /effectivePermissionCategoryOrder\.map/);
+  assert.match(roleModal, /effectivePermissionCategory\(permission\.category\)/);
   assert.match(app, /permissionOperationOrder\.indexOf/);
-  assert.match(css, /\.permission-editor\.grouped strong[^}]*white-space:normal/);
-  assert.match(css, /overflow-wrap:anywhere/);
-  assert.match(css, /\.permission-disclosure>summary/);
-  assert.match(css, /\.permission-disclosure\[open\]>summary>svg/);
-  assert.match(css, /\.permission-editor\.grouped\{max-height:520px/);
+  assert.match(roleModal, /showTechnical&&<code>\{permission\.key\}<\/code>/);
+  assert.doesNotMatch(roleModal, /<small>\{permission\.description\}<\/small>/);
+  assert.match(roleModal, /title=\{permission\.description\}/);
+  assert.match(css, /\.role-permission-areas\{[^}]*max-height:520px/);
+  assert.match(css, /\.role-permission-areas>section>div\{[^}]*grid-template-columns:repeat\(2/);
   assert.match(app, /className=\{`modal form-modal \$\{className\}`\}/);
   assert.match(css, /\.form-modal\s*\{[^}]*max-height:calc\(100dvh - 40px\)/s);
   assert.match(css, /\.form-modal>\.modal-form\s*\{[^}]*overflow-y:auto/s);
@@ -103,14 +115,14 @@ test("sdílený modal ani administrace nevysvětlují interní implementaci", ()
   assert.doesNotMatch(app, /Efektivní práva jsou vynucena backendem a RLS/);
   assert.doesNotMatch(app, /Projektový rozsah i role jsou kontrolovány také na backendu/);
   assert.doesNotMatch(app, /Každá změna se zapisuje do auditu a outboxu/);
+  assert.doesNotMatch(app, /Přihlášený uživatel a jeho efektivní oprávnění/);
+  assert.doesNotMatch(app, /Tenantová role umožňuje/);
 });
 
 test("zjednodušený formulář zachovává role, projekty i původní RBAC payload", () => {
   for (const label of ["Jméno", "Pracovní e-mail", "Pracovní pozice", "Pracovní telefon", "Stav přístupu", "Role", "Projektový rozsah"]) {
     assert.match(app, new RegExp(`>${label}<`));
   }
-  assert.match(app, /roleIds\.flatMap\(id=>snapshot\.roles\.find\(role=>role\.id===id\)\?\.permissionCodes/);
-  assert.match(app, /projectIds\.length\?"project":"workspace"/);
   assert.match(app, /await save\(\{name,email,jobTitle,workPhone,status,roleIds,projectIds\}\)/);
   assert.match(app, /checked=\{roleIds\.includes\(role\.id\)\}/);
   assert.match(app, /checked=\{projectIds\.includes\(project\.id\)\}/);
