@@ -124,7 +124,7 @@ test("zjednodušený formulář zachovává role, projekty i původní RBAC payl
   for (const label of ["Jméno", "Pracovní e-mail", "Pracovní pozice", "Pracovní telefon", "Stav přístupu", "Role", "Projektový rozsah"]) {
     assert.match(app, new RegExp(`>${label}<`));
   }
-  assert.match(app, /await save\(\{name,email,jobTitle,workPhone,status,roleIds,projectIds\}\)/);
+  assert.match(app, /await saveExisting\(\{name,email,jobTitle,workPhone,status,roleIds,projectIds\}\)/);
   assert.match(app, /checked=\{roleIds\.includes\(role\.id\)\}/);
   assert.match(app, /checked=\{projectIds\.includes\(project\.id\)\}/);
 });

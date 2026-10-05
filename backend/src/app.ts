@@ -2,7 +2,7 @@ import Fastify, { type FastifyError, type FastifyInstance, type FastifyRequest }
 import type { EntraIdentity } from "./auth/entra.js";
 import { EntraTokenVerifier } from "./auth/entra.js";
 import type { Database } from "./database.js";
-import { IamRepository } from "./iam/repository.js";
+import { ExistingMembershipError, IamRepository } from "./iam/repository.js";
 import { InventoryRepository } from "./inventory/repository.js";
 import { InventoryImportService, type InventoryEntityType, type InventoryImportRow } from "./inventory/import-service.js";
 import { CommercialStatusService } from "./inventory/commercial-status-service.js";
@@ -155,9 +155,9 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
       return repository.adminSnapshot({tenantId,userId:user.id});
     }catch(error){return reply.code(403).send({error:error instanceof Error?error.message:"Administraci nelze načíst"});}
   });
-  app.post<{Body:{name:string;email:string;jobTitle?:string;workPhone?:string;status:"invited";roleIds:string[];projectIds:string[]}}>("/v1/admin/users",async(request,reply)=>{
-    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není přístupný"});return reply.code(201).send(await repository.inviteMember({...context,...request.body}));}
-    catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Pozvánku nelze vytvořit"});}
+  app.post<{Body:{entraObjectId:string;name:string;email:string;jobTitle?:string;workPhone?:string;roleIds:string[];projectIds:string[]}}>("/v1/admin/users",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není přístupný"});return reply.code(201).send(await repository.addMember({...context,...request.body}));}
+    catch(error){if(error instanceof ExistingMembershipError)return reply.code(409).send({error:error.message,membershipId:error.membershipId});return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Uživatele nelze přidat"});}
   });
   app.patch<{Params:{membershipId:string};Body:{name:string;email:string;jobTitle?:string;workPhone?:string;status:string;roleIds:string[];projectIds:string[]}}>("/v1/admin/users/:membershipId",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není přístupný"});return repository.updateMember({...context,targetMembershipId:request.params.membershipId,...request.body});}

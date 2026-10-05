@@ -50,8 +50,8 @@ export class EntraAuthController {
   private client: MsalClient | null = null;
   private config: EntraFrontendConfig | null = null;
   private initialization: Promise<EntraAuthSnapshot> | null = null;
-  private cachedToken: AuthenticationResult | null = null;
-  private tokenRequest: Promise<AuthenticationResult> | null = null;
+  private readonly cachedTokens = new Map<string,AuthenticationResult>();
+  private readonly tokenRequests = new Map<string,Promise<AuthenticationResult>>();
 
   constructor(private readonly dependencies: EntraAuthDependencies = {}) {}
 
@@ -94,37 +94,46 @@ export class EntraAuthController {
   }
 
   async getAccessToken(): Promise<string | null> {
-    return this.acquireAccessToken(false);
+    await this.initialize();
+    return this.acquireAccessToken(this.requireScope(),false);
   }
 
   async refreshAccessToken(): Promise<string | null> {
-    this.cachedToken = null;
-    return this.acquireAccessToken(true);
+    await this.initialize();
+    const scope=this.requireScope();
+    this.cachedTokens.delete(scope);
+    return this.acquireAccessToken(scope,true);
   }
 
-  private async acquireAccessToken(forceRefreshRequested: boolean): Promise<string | null> {
+  async getDirectoryAccessToken():Promise<string|null>{
+    return this.acquireAccessToken("https://graph.microsoft.com/User.ReadBasic.All",false);
+  }
+
+  private async acquireAccessToken(scope:string,forceRefreshRequested: boolean): Promise<string | null> {
     const snapshot = await this.initialize();
     if (snapshot.mode === "browser") return null;
     const client = this.requireClient();
     const account = client.getActiveAccount() ?? client.getAllAccounts()[0] ?? null;
     if (!account) throw new Error("AUTHENTICATION_REQUIRED");
     client.setActiveAccount(account);
-    if (this.cachedToken?.accessToken && tokenIsFresh(this.cachedToken)) return this.cachedToken.accessToken;
+    const cachedToken=this.cachedTokens.get(scope);
+    if (cachedToken?.accessToken && tokenIsFresh(cachedToken)) return cachedToken.accessToken;
     const forceRefresh = forceRefreshRequested || Boolean(
-      this.cachedToken?.expiresOn && this.cachedToken.expiresOn.getTime() - Date.now() <= 5 * 60_000,
+      cachedToken?.expiresOn && cachedToken.expiresOn.getTime() - Date.now() <= 5 * 60_000,
     );
     try {
-      this.tokenRequest ??= client.acquireTokenSilent({
-        account,
-        scopes: [this.requireScope()],
-        forceRefresh,
-      }).finally(() => { this.tokenRequest = null; });
-      this.cachedToken = await this.tokenRequest;
-      if (!this.cachedToken.accessToken) throw new Error("Access token pro DeveloCRM API nebyl vydán");
-      return this.cachedToken.accessToken;
+      let tokenRequest=this.tokenRequests.get(scope);
+      if(!tokenRequest){
+        tokenRequest=client.acquireTokenSilent({account,scopes:[scope],forceRefresh}).finally(()=>{this.tokenRequests.delete(scope);});
+        this.tokenRequests.set(scope,tokenRequest);
+      }
+      const token=await tokenRequest;
+      this.cachedTokens.set(scope,token);
+      if (!token.accessToken) throw new Error("Přístupový token nebyl vydán");
+      return token.accessToken;
     } catch (error) {
       if (error instanceof InteractionRequiredAuthError || isInteractionRequired(error)) {
-        await client.acquireTokenRedirect({ account, scopes: [this.requireScope()] });
+        await client.acquireTokenRedirect({ account, scopes: [scope] });
         throw new Error("AUTHENTICATION_REDIRECT");
       }
       throw error;
@@ -145,8 +154,8 @@ export class EntraAuthController {
     this.initialization = null;
     this.client = null;
     this.config = null;
-    this.cachedToken = null;
-    this.tokenRequest = null;
+    this.cachedTokens.clear();
+    this.tokenRequests.clear();
   }
 
   private requireClient(): MsalClient {

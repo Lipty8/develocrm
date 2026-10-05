@@ -60,25 +60,25 @@ test("preview adapter ihned přepočítá smlouvu, uloží historii a přežije 
   assert.equal(snapshot.contracts[0].history?.[0].source, "manual");
 });
 
-test("preview administrace perzistentně pozve a upraví uživatele bez lokálního hesla", async () => {
+test("preview administrace perzistentně přidá Entra uživatele a upraví ho bez lokálního hesla", async () => {
   rememberClientDataMode("prototype-fallback");
   const storage = new MemoryStorage();
   Object.assign(globalThis, { window: {}, localStorage: storage });
   globalThis.fetch = (async () => new Response(null, { status: 503 })) as typeof fetch;
   const { adminRepository } = await import("../../app/repositories/admin-repository.js");
-  await adminRepository.invite({
+  await adminRepository.add({
+    entraObjectId: "30000000-0000-4000-8000-000000000031",
     name: "Jana Nová",
     email: "jana@example.test",
     jobTitle: "Finance",
     workPhone: "+420 222 333 444",
-    status: "invited",
     roleIds: ["role-finance"],
     projectIds: ["DEJ"],
   });
   const invited = (await adminRepository.getSnapshot()).users.find(user => user.email === "jana@example.test");
   assert.ok(invited);
-  assert.equal(invited.status, "invited");
-  await adminRepository.update({ ...invited, status: "active", projectIds: ["DEJ", "RJ"] });
+  assert.equal(invited.status, "active");
+  await adminRepository.update({ ...invited, projectIds: ["DEJ", "RJ"] });
   const updated = (await adminRepository.getSnapshot()).users.find(user => user.email === "jana@example.test");
   assert.equal(updated?.status, "active");
   assert.deepEqual(updated?.projectIds, ["DEJ", "RJ"]);

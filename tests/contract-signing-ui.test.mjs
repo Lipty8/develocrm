@@ -56,5 +56,5 @@ test("smlouvy používají filtry v hlavičkách a jedinou sjednocenou historii"
   assert.doesNotMatch(app,/<span>Doporučená akce<\/span>/);
   assert.doesNotMatch(app,/contract-next-action/);
   assert.doesNotMatch(app,/\["activity","Aktivita",Activity\]/);
-  assert.match(app,/Stavy, logické verze, podpisy a relevantní auditní události/);
+  assert.match(app,/\["history","Historie",History\]/);
 });

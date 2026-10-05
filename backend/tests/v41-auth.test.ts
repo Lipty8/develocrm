@@ -99,6 +99,23 @@ test("frontend MSAL sloučí souběžné požadavky o access token",async()=>{
   assert.equal(silentCalls,1);
 });
 
+test("frontend odděluje API a least-privilege Graph token",async()=>{
+  const requestedScopes:string[]=[];const account=mockAccount();
+  const controller=new EntraAuthController({
+    loadConfig:async()=>frontendConfig,
+    createClient:()=>({
+      initialize:async()=>undefined,handleRedirectPromise:async()=>null,getActiveAccount:()=>account,
+      setActiveAccount:()=>undefined,getAllAccounts:()=>[account],loginRedirect:async()=>undefined,
+      acquireTokenSilent:async request=>{const scope=request.scopes[0];requestedScopes.push(scope);return authResult(scope.includes("graph.microsoft.com")?"graph-token":"api-token");},
+      acquireTokenRedirect:async()=>undefined,logoutRedirect:async()=>undefined,
+    }),
+  });
+  assert.equal(await controller.getAccessToken(),"api-token");
+  assert.equal(await controller.getDirectoryAccessToken(),"graph-token");
+  assert.equal(await controller.getAccessToken(),"api-token","Graph token nesmí přepsat API token");
+  assert.deepEqual(requestedScopes,[frontendConfig.apiScope,"https://graph.microsoft.com/User.ReadBasic.All"]);
+});
+
 test("frontend MSAL po timeoutu tichého obnovení přejde na interaktivní přihlášení",async()=>{
   let redirectCalls=0;
   const account=mockAccount();
