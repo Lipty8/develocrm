@@ -17,6 +17,11 @@ const allowedAdvancedPermissions=new Set([
   "clients.archive","clients.read_own","contracts.mark_ready","contracts.record_signature",
   "documents.review","documents.archive","payments.reverse","payments.import","payments.export",
 ]);
+const implicitEditOverrides:Partial<Record<ProjectAccessArea,string[]>>={
+  payments:["payments.manage"],
+  documents:["documents.manage"],
+};
+const implicitEditPermissionSet=new Set(Object.values(implicitEditOverrides).flat());
 
 export class ExistingMembershipError extends Error {
   constructor(readonly membershipId:string) {
@@ -172,7 +177,7 @@ export class IamRepository {
           const projectIds=[...new Set(customAssignments.rows.filter(item=>item.membership_id===row.membership_id).map(item=>item.project_id))];
           const projectAccess=projectIds.map(projectId=>{
             const custom=customAssignments.rows.filter(item=>item.membership_id===row.membership_id&&item.project_id===projectId);
-            return {projectId,areaAccess:Object.fromEntries(custom.filter(item=>item.access_level!=="none").map(item=>[item.area,item.access_level])),advancedPermissions:[...new Set(custom.flatMap(item=>item.permission_overrides))].sort()};
+            return {projectId,areaAccess:Object.fromEntries(custom.filter(item=>item.access_level!=="none").map(item=>[item.area,item.access_level])),advancedPermissions:[...new Set(custom.flatMap(item=>item.permission_overrides).filter(permission=>!implicitEditPermissionSet.has(permission)))].sort()};
           });
           return{membershipId:row.membership_id,userId:row.user_id,name:row.name,email:row.email,jobTitle:row.job_title??"",workPhone:row.work_phone??"",status:row.status,lastLoginAt:row.last_login_at,
             workspaceRoleIds:workspaceAssignments.rows.filter(item=>item.membership_id===row.membership_id).map(item=>item.role_id),projectAccess,entraObjectId:row.entra_object_id??undefined};
@@ -298,7 +303,7 @@ export class IamRepository {
       const advancedByArea=new Map<ProjectAccessArea,string[]>();
       for(const permission of access.advancedPermissions){const area=advancedPermissionArea(permission);advancedByArea.set(area,[...(advancedByArea.get(area)??[]),permission]);}
       for(const area of projectAreas){
-        const level=access.areaAccess[area]??"none";const overrides=advancedByArea.get(area)??[];
+        const level=access.areaAccess[area]??"none";const overrides=[...(advancedByArea.get(area)??[]),...(level==="edit"?(implicitEditOverrides[area]??[]):[])];
         if(level==="none"&&!overrides.length)continue;
         await client.query(`INSERT INTO project_custom_access(tenant_id,project_id,membership_id,area,access_level,permission_overrides,assigned_by_user_id) VALUES($1,$2,$3,$4,$5,$6,$7)`,[input.tenantId,access.projectId,input.targetMembershipId,area,level,overrides,input.userId]);
       }

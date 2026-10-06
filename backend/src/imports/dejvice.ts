@@ -55,8 +55,8 @@ export async function importDejvice(client:PoolClient,source:string,input:{tenan
         ('units',ARRAY['holds.confirm','prices.approve','discounts.approve','commercial_exceptions.approve']::text[]),
         ('clients',ARRAY['clients.archive']::text[]),
         ('contracts',ARRAY['contracts.mark_ready','contracts.record_signature']::text[]),
-        ('payments',ARRAY['payments.reverse','payments.import','payments.export']::text[]),
-        ('documents',ARRAY['documents.review','documents.archive']::text[]),
+        ('payments',ARRAY['payments.manage','payments.reverse','payments.import','payments.export']::text[]),
+        ('documents',ARRAY['documents.manage','documents.review','documents.archive']::text[]),
         ('client_changes',ARRAY[]::text[]),('handovers',ARRAY[]::text[]),('complaints',ARRAY[]::text[]),('tasks',ARRAY[]::text[])
       ) access(area,overrides)
       WHERE project.tenant_id=$1 AND project.code='DEJ' AND project.archived_at IS NULL

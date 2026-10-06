@@ -53,6 +53,29 @@ test("0048 zachová i historická vlastní oprávnění mimo nové hranice oblas
   await db.close();
 });
 
+test("0048 bezpečně sloučí historickou roli s již existující projektovou maticí",async()=>{
+  const db=new PGlite();const migrations=await names();await apply(db,migrations.filter(name=>name<"0048_project_module_access.sql"));
+  await db.query("INSERT INTO tenants(id,name,slug,status) VALUES($1,'Mixed access','mixed-access','active')",[tenant]);
+  await db.query("INSERT INTO users(id,entra_issuer,entra_subject,email,display_name) VALUES($1,'test','mixed-user','mixed@example.test','Mixed User')",[user]);
+  await db.query("INSERT INTO tenant_memberships(id,tenant_id,user_id,status,accepted_at) VALUES($1,$2,$3,'active',now())",[member,tenant,user]);
+  await db.query("INSERT INTO projects(id,tenant_id,code,name,slug,lifecycle_status) VALUES($1,$2,'MA','Projekt A','project-a','active')",[projectA,tenant]);
+  await db.query("INSERT INTO roles(id,tenant_id,code,name,is_system) VALUES($1,$2,'mixed_custom','Mixed custom',false)",[role,tenant]);
+  await db.query(`INSERT INTO role_permissions(tenant_id,role_id,permission_id,scope)
+    SELECT $1,$2,id,'project' FROM permissions WHERE code=ANY($3::text[])`,[tenant,role,["documents.manage","payments.manage"]]);
+  await db.query("INSERT INTO project_role_assignments(tenant_id,project_id,membership_id,role_id,assigned_by_user_id) VALUES($1,$2,$3,$4,$5)",[tenant,projectA,member,role,user]);
+  await db.exec("ALTER TABLE project_custom_access DISABLE TRIGGER project_custom_access_mode_guard");
+  await db.query(`INSERT INTO project_custom_access(tenant_id,project_id,membership_id,area,access_level,assigned_by_user_id) VALUES
+    ($1,$2,$3,'project','edit',$4),($1,$2,$3,'documents','read',$4),($1,$2,$3,'payments','edit',$4)`,[tenant,projectA,member,user]);
+  await db.exec("ALTER TABLE project_custom_access ENABLE TRIGGER project_custom_access_mode_guard");
+  const permissions=["documents.manage","payments.manage","payments.record","projects.change_manager","projects.change_status"];
+  const before=await Promise.all(permissions.map(permission=>allowed(db,projectA,permission)));
+  await apply(db,["0048_project_module_access.sql"]);
+  assert.deepEqual(await Promise.all(permissions.map(permission=>allowed(db,projectA,permission))),before);
+  const rows=await db.query<{area:string;access_level:string;permission_overrides:string[]}>("SELECT area,access_level,permission_overrides FROM project_custom_access WHERE tenant_id=$1 AND project_id=$2 AND membership_id=$3 ORDER BY area",[tenant,projectA,member]);
+  assert.deepEqual(rows.rows.map(row=>[row.area,row.access_level]),[["documents","read"],["payments","edit"],["project","edit"]],"existující úrovně matice se nesmí přepsat rolí");
+  await db.close();
+});
+
 test("matice vynucuje Čtení, Úpravy, Bez přístupu a oddělenou citlivou vratku",async()=>{
   const db=new PGlite();await apply(db,await names());
   await db.query("INSERT INTO tenants(id,name,slug,status) VALUES($1,'Matrix','matrix','active')",[tenant]);
@@ -69,6 +92,12 @@ test("matice vynucuje Čtení, Úpravy, Bez přístupu a oddělenou citlivou vra
   assert.equal(await allowed(db,projectB,"payments.read"),false);
   await db.query("UPDATE project_custom_access SET permission_overrides=ARRAY['payments.reverse'] WHERE tenant_id=$1 AND project_id=$2 AND membership_id=$3 AND area='payments'",[tenant,projectA,member]);
   assert.equal(await allowed(db,projectA,"payments.reverse"),true);
+  await db.query(`INSERT INTO project_custom_access(tenant_id,project_id,membership_id,area,access_level,permission_overrides,assigned_by_user_id)
+    VALUES($1,$2,$3,'contracts','edit',ARRAY['contracts.mark_ready','contracts.record_signature'],$4)`,[tenant,projectA,member,user]);
+  assert.equal(await allowed(db,projectA,"contract.approve"),true,"explicitní business oprávnění se přeloží na kanonický smluvní příkaz");
+  assert.equal(await allowed(db,projectA,"contract.sign"),true);
+  await db.query("UPDATE project_custom_access SET access_level='edit',permission_overrides=ARRAY[]::text[] WHERE tenant_id=$1 AND project_id=$2 AND membership_id=$3 AND area='documents'",[tenant,projectA,member]);
+  assert.equal(await allowed(db,projectA,"documents.manage"),false,"překlad aliasů nesmí rozšířit samotnou základní úroveň Úpravy");
   await db.query("DELETE FROM project_custom_access WHERE tenant_id=$1 AND project_id=$2 AND membership_id=$3",[tenant,projectA,member]);
   assert.equal(await allowed(db,projectA,"payments.read"),false,"odebrání projektu platí okamžitě");
   await db.close();

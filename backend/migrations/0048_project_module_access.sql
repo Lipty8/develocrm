@@ -34,8 +34,8 @@ RETURNS text[] LANGUAGE sql IMMUTABLE AS $$
     WHEN 'units' THEN ARRAY['unit.manage','units.update','units.update_sales_status','accessory.manage','accessories.update','price.manage','prices.propose','media.manage']
     WHEN 'clients' THEN ARRAY['clients.create','clients.manage','clients.update','interests.manage','sales_case.manage','sales_cases.manage','holds.create','holds.cancel']
     WHEN 'contracts' THEN ARRAY['contract.manage','contracts.create','contracts.update']
-    WHEN 'payments' THEN ARRAY['payments.manage','payments.record']
-    WHEN 'documents' THEN ARRAY['documents.upload','documents.create','documents.edit_metadata','documents.update','documents.manage']
+    WHEN 'payments' THEN ARRAY['payments.record']
+    WHEN 'documents' THEN ARRAY['documents.upload','documents.create','documents.edit_metadata','documents.update']
     WHEN 'client_changes' THEN ARRAY['client_changes.manage']
     WHEN 'handovers' THEN ARRAY['handover.manage','handovers.manage']
     WHEN 'complaints' THEN ARRAY['complaints.manage']
@@ -84,9 +84,33 @@ WHERE before_access.allowed AND EXISTS(
     AND assignment.membership_id=before_access.membership_id
 );
 
--- The mutually-exclusive mode trigger intentionally prevents inserting the
--- matrix before the deprecated role assignments have been removed.
+-- The mutually-exclusive mode trigger requires removing deprecated role
+-- assignments before existing matrix rows can be normalized.  The complete
+-- effective snapshot and all legacy grants are already held in temp tables.
 DELETE FROM project_role_assignments;
+
+-- Preserve the exact effective permissions of an already configured matrix.
+-- The new base levels are intentionally no broader than the 0047 levels;
+-- permissions that used to be implicit (for example project status/manager
+-- changes) become explicit overrides instead of silently disappearing.
+UPDATE project_custom_access access SET permission_overrides=(
+  SELECT ARRAY(
+    SELECT DISTINCT before_access.code
+    FROM module_access_before before_access
+    WHERE before_access.tenant_id=access.tenant_id
+      AND before_access.project_id=access.project_id
+      AND before_access.membership_id=access.membership_id
+      AND before_access.allowed
+      AND app.permission_project_area(before_access.code)=access.area
+      AND NOT(before_access.code=ANY(
+        CASE access.access_level
+          WHEN 'edit' THEN app.project_area_edit_permissions(access.area)
+          WHEN 'read' THEN app.project_area_read_permissions(access.area)
+          ELSE ARRAY[]::text[] END
+      ))
+    ORDER BY before_access.code
+  )
+);
 
 WITH grouped AS (
   SELECT tenant_id,project_id,membership_id,max(assigned_by_user_id::text)::uuid assigned_by_user_id,
@@ -114,7 +138,6 @@ SELECT tenant_id,project_id,membership_id,area,access_level,
   assigned_by_user_id
 FROM normalized
 ON CONFLICT(tenant_id,project_id,membership_id,area) DO UPDATE SET
-  access_level=EXCLUDED.access_level,
   permission_overrides=(SELECT ARRAY(SELECT DISTINCT permission FROM unnest(project_custom_access.permission_overrides || EXCLUDED.permission_overrides) permission ORDER BY permission)),
   assigned_by_user_id=EXCLUDED.assigned_by_user_id,
   assigned_at=now();
@@ -122,11 +145,11 @@ ON CONFLICT(tenant_id,project_id,membership_id,area) DO UPDATE SET
 CREATE OR REPLACE FUNCTION app.custom_project_access_allows(p_area text,p_level text,p_permission text,p_overrides text[] DEFAULT ARRAY[]::text[])
 RETURNS boolean LANGUAGE sql IMMUTABLE AS $$
   SELECT p_permission=ANY(
-    CASE p_level
-      WHEN 'edit' THEN app.project_area_edit_permissions(p_area)
-      WHEN 'read' THEN app.project_area_read_permissions(p_area)
-      ELSE ARRAY[]::text[] END || COALESCE(p_overrides,ARRAY[]::text[])
-  )
+      CASE p_level
+        WHEN 'edit' THEN app.project_area_edit_permissions(p_area)
+        WHEN 'read' THEN app.project_area_read_permissions(p_area)
+        ELSE ARRAY[]::text[] END || COALESCE(p_overrides,ARRAY[]::text[])
+    ) OR app.requested_project_permissions(p_permission) && COALESCE(p_overrides,ARRAY[]::text[])
 $$;
 
 CREATE OR REPLACE FUNCTION app.has_project_permission(p_tenant_id uuid,p_membership_id uuid,p_project_id uuid,p_permission text)
@@ -161,8 +184,8 @@ BEGIN
       WHEN 'units' THEN ARRAY['holds.confirm','prices.approve','discounts.approve','commercial_exceptions.approve']
       WHEN 'clients' THEN ARRAY['clients.archive']
       WHEN 'contracts' THEN ARRAY['contracts.mark_ready','contracts.record_signature']
-      WHEN 'payments' THEN ARRAY['payments.reverse','payments.import','payments.export']
-      WHEN 'documents' THEN ARRAY['documents.review','documents.archive']
+      WHEN 'payments' THEN ARRAY['payments.manage','payments.reverse','payments.import','payments.export']
+      WHEN 'documents' THEN ARRAY['documents.manage','documents.review','documents.archive']
       ELSE ARRAY[]::text[] END;
     INSERT INTO project_custom_access(tenant_id,project_id,membership_id,area,access_level,permission_overrides,assigned_by_user_id)
     VALUES(NEW.tenant_id,NEW.id,creator_membership,area_name,'edit',overrides,creator_user)
