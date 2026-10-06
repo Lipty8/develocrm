@@ -236,13 +236,17 @@ BEGIN
 END $$;
 
 DO $$
-DECLARE drift_count integer;
+DECLARE drift_count integer;drift_details text;
 BEGIN
-  SELECT count(*) INTO drift_count FROM module_access_before before_access
+  SELECT count(*),string_agg(format('%s/%s/%s:%s->%s',before_access.membership_id,before_access.project_id,
+    before_access.code,before_access.allowed,app.has_project_permission(
+      before_access.tenant_id,before_access.membership_id,before_access.project_id,before_access.code
+    )),', ' ORDER BY before_access.membership_id,before_access.project_id,before_access.code)
+  INTO drift_count,drift_details FROM module_access_before before_access
   WHERE before_access.allowed IS DISTINCT FROM app.has_project_permission(
     before_access.tenant_id,before_access.membership_id,before_access.project_id,before_access.code
   );
-  IF drift_count<>0 THEN RAISE EXCEPTION 'Project module migration aborted: % unexpected permission changes',drift_count;END IF;
+  IF drift_count<>0 THEN RAISE EXCEPTION 'Project module migration aborted: % unexpected permission changes: %',drift_count,drift_details;END IF;
 END $$;
 
 GRANT EXECUTE ON FUNCTION app.project_area_read_permissions(text) TO develocrm_app;
