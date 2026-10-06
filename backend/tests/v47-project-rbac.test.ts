@@ -19,7 +19,7 @@ async function apply(db:PGlite,names:string[]){for(const name of names)await db.
 async function allowed(db:PGlite,projectId:string,permission:string){return Boolean((await db.query<{allowed:boolean}>("SELECT app.has_project_permission($1,$2,$3,$4) allowed",[tenant,member,projectId,permission])).rows[0]?.allowed);}
 
 async function currentFixture(){
-  const db=new PGlite();await apply(db,await migrationNames());
+  const db=new PGlite();await apply(db,(await migrationNames()).filter(name=>name<"0048_project_module_access.sql"));
   await db.query("INSERT INTO tenants(id,name,slug,status) VALUES($1,'RBAC test','rbac-test','active')",[tenant]);
   await db.query("INSERT INTO users(id,entra_issuer,entra_subject,email,display_name) VALUES($1,'test','actor','actor@example.test','Actor')",[actor]);
   await db.query("INSERT INTO tenant_memberships(id,tenant_id,user_id,status,accepted_at) VALUES($1,$2,$3,'active',now())",[member,tenant,actor]);

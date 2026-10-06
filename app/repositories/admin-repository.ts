@@ -17,7 +17,7 @@ export type AdminUser = {
 };
 export type ProjectAccessArea="project"|"units"|"clients"|"contracts"|"payments"|"documents"|"client_changes"|"handovers"|"complaints"|"tasks";
 export type ProjectAccessLevel="none"|"read"|"edit";
-export type AdminProjectAccess={projectId:string;mode:"roles"|"custom";roleIds:string[];customAccess:Partial<Record<ProjectAccessArea,"read"|"edit">>};
+export type AdminProjectAccess={projectId:string;areaAccess:Partial<Record<ProjectAccessArea,"read"|"edit">>;advancedPermissions:string[]};
 export type EntraDirectoryUser={id:string;displayName:string;email:string;userPrincipalName:string};
 export type CreateAdminUser={entraObjectId:string;name:string;email:string;jobTitle:string;workPhone:string;workspaceRoleIds:string[];projectAccess:AdminProjectAccess[]};
 export type AdminRole = { id: string; code: string; name: string; description: string; isSystem: boolean; permissionCodes: string[];permissionGrants?:Array<{code:string;scope:"workspace"|"project"|"own"|"partner"}>;assignedUserCount?:number;restrictions?:string[];history?:Array<{occurredAt:string;actor:string}> };
@@ -39,8 +39,8 @@ const previewRoles: AdminRole[] = [
 ];
 const previewProjects=[{id:"DEJ",name:"Rezidence Dejvice"}];
 const defaultPreview:AdminSnapshot={users:[
-  {membershipId:"prototype-iva-membership",userId:"prototype-iva",name:"Iva Novotná",email:"iva@develo.example",jobTitle:"Back Office",workPhone:"+420 222 000 101",status:"active",lastLoginAt:new Date().toISOString(),workspaceRoleIds:["role-admin"],projectAccess:[{projectId:"DEJ",mode:"roles",roleIds:["role-project-admin"],customAccess:{}}]},
-  {membershipId:"prototype-martin-membership",userId:"prototype-martin",name:"Martin Jelínek",email:"martin@develo.example",jobTitle:"Vedoucí projektu",workPhone:"+420 222 000 102",status:"active",lastLoginAt:null,workspaceRoleIds:[],projectAccess:[{projectId:"DEJ",mode:"roles",roleIds:["role-pm"],customAccess:{}}]},
+  {membershipId:"prototype-iva-membership",userId:"prototype-iva",name:"Iva Novotná",email:"iva@develo.example",jobTitle:"Back Office",workPhone:"+420 222 000 101",status:"active",lastLoginAt:new Date().toISOString(),workspaceRoleIds:["role-admin"],projectAccess:[{projectId:"DEJ",areaAccess:{project:"edit",units:"edit",clients:"edit",contracts:"edit",payments:"edit",documents:"edit",client_changes:"edit",handovers:"edit",complaints:"edit",tasks:"edit"},advancedPermissions:[]}]},
+  {membershipId:"prototype-martin-membership",userId:"prototype-martin",name:"Martin Jelínek",email:"martin@develo.example",jobTitle:"Vedoucí projektu",workPhone:"+420 222 000 102",status:"active",lastLoginAt:null,workspaceRoleIds:[],projectAccess:[{projectId:"DEJ",areaAccess:{project:"edit",units:"edit",clients:"edit",contracts:"edit",documents:"edit",handovers:"edit",tasks:"edit"},advancedPermissions:[]}]},
 ],roles:previewRoles,projects:previewProjects,permissions:Array.from(new Set(previewRoles.flatMap(role=>role.permissionCodes))).sort().map(code=>({code,description:getPermissionDefinition(code).description}))};
 
 export interface AdminRepository {

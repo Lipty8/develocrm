@@ -8,7 +8,7 @@ export type IdentitySession = {
     tenantName: string;
     roles: string[];
     permissions: string[];
-    projectScopes?: Array<{ projectId: string; projectName: string; mode:"roles"|"custom";roles: string[];permissions:string[] }>;
+    projectScopes?: Array<{ projectId: string; projectName: string;permissions:string[] }>;
   };
   source: "production-api" | "prototype-fallback";
 };

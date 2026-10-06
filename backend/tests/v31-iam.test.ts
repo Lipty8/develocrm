@@ -9,9 +9,8 @@ const tenant="d0000000-0000-4000-8000-000000000001";
 const user="d1000000-0000-4000-8000-000000000001";
 const membership="d3000000-0000-4000-8000-000000000001";
 const adminRole="d4000000-0000-4000-8000-000000000001";
-const projectRole="d4000000-0000-4000-8000-000000000002";
 const project="e0000000-0000-4000-8000-000000000001";
-const roleAccess=(roleId:string,projectId=project)=>[{projectId,mode:"roles" as const,roleIds:[roleId],customAccess:{}}];
+const projectAccess=(projectId=project)=>[{projectId,areaAccess:{project:"read" as const,payments:"edit" as const},advancedPermissions:[]}];
 
 async function fixture(){
   const db=new PGlite();
@@ -35,14 +34,14 @@ async function fixture(){
 test("administrátor přidá Entra uživatele a upraví jeho projektový rozsah s auditem",async()=>{
   const {db,repository}=await fixture();
   const oid="30000000-0000-4000-8000-000000000031";
-  const invited=await repository.addMember({tenantId:tenant,userId:user,membershipId:membership,entraObjectId:oid,name:"Jana Nová",email:"jana@example.test",jobTitle:"Finance",workPhone:"+420 222 333 444",workspaceRoleIds:[],projectAccess:roleAccess(projectRole)});
+  const invited=await repository.addMember({tenantId:tenant,userId:user,membershipId:membership,entraObjectId:oid,name:"Jana Nová",email:"jana@example.test",jobTitle:"Finance",workPhone:"+420 222 333 444",workspaceRoleIds:[],projectAccess:projectAccess()});
   let snapshot=await repository.adminSnapshot({tenantId:tenant,userId:user});
   const row=snapshot.users.find(item=>item.membershipId===invited.membershipId);
   assert.ok(row);
   assert.equal(row.status,"active");
   assert.equal(row.entraObjectId,oid);
   assert.deepEqual(row.workspaceRoleIds,[]);
-  assert.deepEqual(row.projectAccess,roleAccess(projectRole));
+  assert.deepEqual(row.projectAccess,projectAccess());
   const identity={issuer:`https://login.microsoftonline.com/00000000-0000-4000-8000-000000000001/v2.0`,subject:oid,entraTenantId:"00000000-0000-4000-8000-000000000001",email:"jana.renamed@example.test",displayName:"Jana Nová"};
   const resolved=await repository.resolveUser(identity);
   assert.equal(resolved.id,row.userId);
@@ -52,7 +51,7 @@ test("administrátor přidá Entra uživatele a upraví jeho projektový rozsah 
   const session=await repository.getSession(resolved,identity,tenant);
   assert.ok(session);
   assert.deepEqual(session.workspace.projectScopes.map(scope=>scope.projectId),[project]);
-  await repository.updateMember({tenantId:tenant,userId:user,membershipId:membership,targetMembershipId:invited.membershipId,name:"Jana Nováková",email:"jana@example.test",jobTitle:"Vedoucí financí",workPhone:"+420 222 333 445",status:"active",workspaceRoleIds:[],projectAccess:roleAccess(projectRole)});
+  await repository.updateMember({tenantId:tenant,userId:user,membershipId:membership,targetMembershipId:invited.membershipId,name:"Jana Nováková",email:"jana@example.test",jobTitle:"Vedoucí financí",workPhone:"+420 222 333 445",status:"active",workspaceRoleIds:[],projectAccess:projectAccess()});
   snapshot=await repository.adminSnapshot({tenantId:tenant,userId:user});
   assert.equal(snapshot.users.find(item=>item.membershipId===invited.membershipId)?.name,"Jana Nováková");
   await db.exec("RESET ROLE");
@@ -64,7 +63,7 @@ test("administrátor přidá Entra uživatele a upraví jeho projektový rozsah 
 test("nelze deaktivovat posledního administrátora ani přiřadit cizí projekt",async()=>{
   const {db,repository}=await fixture();
   await assert.rejects(repository.updateMember({tenantId:tenant,userId:user,membershipId:membership,targetMembershipId:membership,name:"Iva Novotná",email:"iva@develo.example",status:"suspended",workspaceRoleIds:[adminRole],projectAccess:[]}),/Vlastní administrátorský přístup/);
-  await assert.rejects(repository.addMember({tenantId:tenant,userId:user,membershipId:membership,entraObjectId:"30000000-0000-4000-8000-000000000032",name:"Neplatný uživatel",email:"invalid@example.test",workspaceRoleIds:[],projectAccess:roleAccess(projectRole,"aa000000-0000-4000-8000-000000000001")}),/projekt nepatří/i);
+  await assert.rejects(repository.addMember({tenantId:tenant,userId:user,membershipId:membership,entraObjectId:"30000000-0000-4000-8000-000000000032",name:"Neplatný uživatel",email:"invalid@example.test",workspaceRoleIds:[],projectAccess:projectAccess("aa000000-0000-4000-8000-000000000001")}),/projekt nepatří/i);
   await db.exec("RESET ROLE");
   assert.equal((await db.query("SELECT membership.id FROM tenant_memberships membership JOIN users user_account ON user_account.id=membership.user_id WHERE user_account.email='invalid@example.test'")).rows.length,0,"celá transakce pozvánky se vrátí zpět");
   await db.close();
@@ -73,13 +72,13 @@ test("nelze deaktivovat posledního administrátora ani přiřadit cizí projekt
 test("stejný Entra oid nelze přidat dvakrát a neznámý oid se nepersistuje",async()=>{
   const {db,repository}=await fixture();
   const oid="30000000-0000-4000-8000-000000000033";
-  const input={tenantId:tenant,userId:user,membershipId:membership,entraObjectId:oid,name:"Petr Nový",email:"petr@example.test",workspaceRoleIds:[],projectAccess:roleAccess(projectRole)};
+  const input={tenantId:tenant,userId:user,membershipId:membership,entraObjectId:oid,name:"Petr Nový",email:"petr@example.test",workspaceRoleIds:[],projectAccess:projectAccess()};
   const created=await repository.addMember(input);
   await assert.rejects(repository.addMember(input),/už má přístup/i);
   await db.exec("RESET ROLE");
   assert.equal((await db.query("SELECT id FROM users WHERE entra_subject=$1",[oid])).rows.length,1);
   assert.equal((await db.query("SELECT id FROM tenant_memberships WHERE tenant_id=$1 AND user_id=(SELECT id FROM users WHERE entra_subject=$2)",[tenant,oid])).rows.length,1);
-  await repository.updateMember({tenantId:tenant,userId:user,membershipId:membership,targetMembershipId:created.membershipId,name:"Petr Nový",email:"petr@example.test",status:"suspended",workspaceRoleIds:[],projectAccess:roleAccess(projectRole)});
+  await repository.updateMember({tenantId:tenant,userId:user,membershipId:membership,targetMembershipId:created.membershipId,name:"Petr Nový",email:"petr@example.test",status:"suspended",workspaceRoleIds:[],projectAccess:projectAccess()});
   const identity={issuer:`https://login.microsoftonline.com/00000000-0000-4000-8000-000000000001/v2.0`,subject:oid,entraTenantId:"00000000-0000-4000-8000-000000000001",email:"petr@example.test",displayName:"Petr Nový"};
   assert.equal(await repository.getSession(await repository.resolveUser(identity),identity,tenant),null,"deaktivovaný membership nemá session");
   const unknown={...identity,subject:"30000000-0000-4000-8000-000000000034",email:"unknown@example.test"};
@@ -93,7 +92,7 @@ test("existující Entra identita bez membershipu se bezpečně znovu použije",
   const {db,repository}=await fixture();
   const identityId="d1000000-0000-4000-8000-000000000099",oid="30000000-0000-4000-8000-000000000099";
   await db.query("INSERT INTO users(id,entra_issuer,entra_subject,email,display_name) VALUES($1,'https://login.microsoftonline.com/00000000-0000-4000-8000-000000000001/v2.0',$2,'old@example.test','Starý profil')",[identityId,oid]);
-  const created=await repository.addMember({tenantId:tenant,userId:user,membershipId:membership,entraObjectId:oid,name:"Nový profil",email:"new@example.test",workspaceRoleIds:[],projectAccess:roleAccess(projectRole)});
+  const created=await repository.addMember({tenantId:tenant,userId:user,membershipId:membership,entraObjectId:oid,name:"Nový profil",email:"new@example.test",workspaceRoleIds:[],projectAccess:projectAccess()});
   await db.exec("RESET ROLE");
   const membershipRow=(await db.query<{user_id:string}>("SELECT user_id FROM tenant_memberships WHERE id=$1",[created.membershipId])).rows[0];
   assert.equal(membershipRow.user_id,identityId);

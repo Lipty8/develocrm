@@ -124,8 +124,11 @@ test("zjednodušený formulář zachovává globální správu a projektově spe
   }
   assert.match(app, /workspaceRoleIds/);
   assert.match(app, /projectAccess/);
-  assert.match(app, /mode:"roles"/);
-  assert.match(app, /"custom"/);
-  assert.match(app, /Vlastní přístup/);
-  assert.match(app, /Přidat další roli/);
+  assert.match(app, /areaAccess/);
+  assert.match(app, /Úpravy/);
+  assert.match(app, /Pouze čtení/);
+  assert.match(app, /Bez přístupu/);
+  assert.match(app, /Povolit vše/);
+  assert.doesNotMatch(app, /mode:"roles"/);
+  assert.doesNotMatch(app, /Přidat další roli/);
 });

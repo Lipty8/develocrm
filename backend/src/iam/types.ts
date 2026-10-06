@@ -21,8 +21,6 @@ export type WorkspaceMembership = {
   projectScopes?: Array<{
     projectId: string;
     projectName: string;
-    mode: "roles" | "custom";
-    roles: string[];
     permissions: string[];
   }>;
 };

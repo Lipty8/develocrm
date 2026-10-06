@@ -34,12 +34,10 @@ test("media access vyžaduje tenant, project scope a media.read; znalost klíče
   const otherProject="60000000-0000-4000-8000-000000000097";
   await db.exec("SELECT set_config('app.user_id','',false)");
   await db.query("INSERT INTO projects(id,tenant_id,code,name,slug) VALUES($1,$2,'SEC','Security project','security-project')",[otherProject,ids.tenantId]);
-  const salesRole=(await db.query<{id:string}>("SELECT id FROM roles WHERE tenant_id=$1 AND code='sales'",[ids.tenantId])).rows[0];
-  await db.query("INSERT INTO project_role_assignments(tenant_id,project_id,membership_id,role_id,assigned_by_user_id) VALUES($1,$2,$3,$4,$5)",[ids.tenantId,project.id,restrictedMembership,salesRole.id,ids.userId]);
+  await db.query("INSERT INTO project_custom_access(tenant_id,project_id,membership_id,area,access_level,assigned_by_user_id) VALUES($1,$2,$3,'project','read',$4)",[ids.tenantId,project.id,restrictedMembership,ids.userId]);
   const otherKey=`${ids.tenantId}/${otherProject}/project/${otherProject}/cover/other-project-key`;
   await assert.rejects(media.register({tenantId:ids.tenantId,userId:ids.userId,membershipId:ids.membershipId,entityType:"project",entityId:otherProject,kind:"cover",url:`/api/media/file/${encodeURIComponent(otherKey)}`,storageKey:otherKey,fileName:"other.png",mimeType:"image/png"}),error=>error instanceof MediaAccessError&&error.reason==="forbidden","globální Admin nemá business bypass na nový projekt");
-  const projectAdminRole=(await db.query<{id:string}>("SELECT id FROM roles WHERE tenant_id=$1 AND code='project_admin'",[ids.tenantId])).rows[0];
-  await db.query("INSERT INTO project_role_assignments(tenant_id,project_id,membership_id,role_id,assigned_by_user_id) VALUES($1,$2,$3,$4,$5)",[ids.tenantId,otherProject,ids.membershipId,projectAdminRole.id,ids.userId]);
+  await db.query("INSERT INTO project_custom_access(tenant_id,project_id,membership_id,area,access_level,assigned_by_user_id) VALUES($1,$2,$3,'project','edit',$4)",[ids.tenantId,otherProject,ids.membershipId,ids.userId]);
   await media.register({tenantId:ids.tenantId,userId:ids.userId,membershipId:ids.membershipId,entityType:"project",entityId:otherProject,kind:"cover",url:`/api/media/file/${encodeURIComponent(otherKey)}`,storageKey:otherKey,fileName:"other.png",mimeType:"image/png"});
   assert.equal((await media.getByStorageKey({tenantId:ids.tenantId,userId:restrictedUser,membershipId:restrictedMembership,storageKey:privateKey})).projectId,project.id);
   await assert.rejects(media.getByStorageKey({tenantId:ids.tenantId,userId:restrictedUser,membershipId:restrictedMembership,storageKey:otherKey}),error=>error instanceof MediaAccessError&&error.reason==="forbidden");

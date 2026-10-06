@@ -46,13 +46,21 @@ export async function importDejvice(client:PoolClient,source:string,input:{tenan
     await client.query("SELECT set_config('app.tenant_id',$1,true),set_config('app.user_id','',true)",[input.tenantId]);
     const before=await importCounts(client,input.tenantId);
     await client.query(renderDejviceImport(source,input));
-    await client.query(`INSERT INTO project_role_assignments(tenant_id,project_id,membership_id,role_id,assigned_by_user_id)
-      SELECT $1,project.id,$2,role.id,membership.user_id
+    await client.query(`INSERT INTO project_custom_access(tenant_id,project_id,membership_id,area,access_level,permission_overrides,assigned_by_user_id)
+      SELECT $1,project.id,$2,access.area,'edit',access.overrides,membership.user_id
       FROM projects project
-      JOIN roles role ON role.tenant_id=project.tenant_id AND role.code='project_admin' AND role.status='active'
       JOIN tenant_memberships membership ON membership.tenant_id=project.tenant_id AND membership.id=$2 AND membership.status='active'
+      CROSS JOIN (VALUES
+        ('project',ARRAY['projects.change_manager','projects.change_status','exports.run']::text[]),
+        ('units',ARRAY['holds.confirm','prices.approve','discounts.approve','commercial_exceptions.approve']::text[]),
+        ('clients',ARRAY['clients.archive']::text[]),
+        ('contracts',ARRAY['contracts.mark_ready','contracts.record_signature']::text[]),
+        ('payments',ARRAY['payments.reverse','payments.import','payments.export']::text[]),
+        ('documents',ARRAY['documents.review','documents.archive']::text[]),
+        ('client_changes',ARRAY[]::text[]),('handovers',ARRAY[]::text[]),('complaints',ARRAY[]::text[]),('tasks',ARRAY[]::text[])
+      ) access(area,overrides)
       WHERE project.tenant_id=$1 AND project.code='DEJ' AND project.archived_at IS NULL
-      ON CONFLICT(tenant_id,project_id,membership_id,role_id) DO NOTHING`,[input.tenantId,input.membershipId]);
+      ON CONFLICT(tenant_id,project_id,membership_id,area) DO UPDATE SET access_level='edit',permission_overrides=EXCLUDED.permission_overrides,assigned_by_user_id=EXCLUDED.assigned_by_user_id,assigned_at=now()`,[input.tenantId,input.membershipId]);
     const after=await importCounts(client,input.tenantId);
     if(after.projects!==1||after.units!==19||after.accessories!==48||after.unitPrices!==19)
       throw new Error(`Validace importu selhala: očekáváno 1/19/48/19, získáno ${after.projects}/${after.units}/${after.accessories}/${after.unitPrices}`);

@@ -7,8 +7,16 @@ import { roleDisplayName } from "../shared/role-catalog.js";
 
 type UserRow = { id: string; email: string; display_name: string; job_title?:string|null;work_phone?:string|null;profile_initials?:string|null;avatar_url?:string|null;preferred_language?:string;profile_timezone?:string;notification_settings?:{email:boolean;inApp:boolean};profile_name_overridden?:boolean };
 export type ProjectAccessArea="project"|"units"|"clients"|"contracts"|"payments"|"documents"|"client_changes"|"handovers"|"complaints"|"tasks";
-export type ProjectAccessInput={projectId:string;mode:"roles"|"custom";roleIds:string[];customAccess:Partial<Record<ProjectAccessArea,"read"|"edit">>};
+export type ProjectAccessInput={projectId:string;areaAccess:Partial<Record<ProjectAccessArea,"read"|"edit">>;advancedPermissions:string[]};
 type MemberAccessInput={workspaceRoleIds:string[];projectAccess:ProjectAccessInput[]};
+
+const projectAreas:ProjectAccessArea[]=["project","units","clients","contracts","payments","documents","client_changes","handovers","complaints","tasks"];
+const allowedAdvancedPermissions=new Set([
+  "projects.change_manager","projects.change_status","exports.run","audit.read",
+  "holds.confirm","prices.approve","discounts.approve","commercial_exceptions.approve",
+  "clients.archive","clients.read_own","contracts.mark_ready","contracts.record_signature",
+  "documents.review","documents.archive","payments.reverse","payments.import","payments.export",
+]);
 
 export class ExistingMembershipError extends Error {
   constructor(readonly membershipId:string) {
@@ -103,15 +111,12 @@ export class IamRepository {
       );
       const row = result.rows[0];
       if (!row) return null;
-      const scopes = await client.query<{ project_id:string;project_name:string;mode:"roles"|"custom";roles:string[];permissions:string[] }>(
+      const scopes = await client.query<{ project_id:string;project_name:string;permissions:string[] }>(
         `SELECT project.id project_id,project.name project_name,
-           CASE WHEN EXISTS(SELECT 1 FROM project_custom_access access WHERE access.tenant_id=project.tenant_id AND access.project_id=project.id AND access.membership_id=$2) THEN 'custom' ELSE 'roles' END mode,
-           COALESCE((SELECT array_agg(DISTINCT role.code ORDER BY role.code) FROM project_role_assignments assignment JOIN roles role ON role.tenant_id=assignment.tenant_id AND role.id=assignment.role_id WHERE assignment.tenant_id=project.tenant_id AND assignment.project_id=project.id AND assignment.membership_id=$2),ARRAY[]::text[]) roles,
            COALESCE((SELECT array_agg(permission.code ORDER BY permission.code) FROM permissions permission WHERE app.has_project_permission(project.tenant_id,$2,project.id,permission.code)),ARRAY[]::text[]) permissions
          FROM projects project
          WHERE project.tenant_id=$1 AND project.archived_at IS NULL AND (
-           EXISTS(SELECT 1 FROM project_role_assignments assignment WHERE assignment.tenant_id=project.tenant_id AND assignment.project_id=project.id AND assignment.membership_id=$2)
-           OR EXISTS(SELECT 1 FROM project_custom_access access WHERE access.tenant_id=project.tenant_id AND access.project_id=project.id AND access.membership_id=$2)
+           EXISTS(SELECT 1 FROM project_custom_access access WHERE access.tenant_id=project.tenant_id AND access.project_id=project.id AND access.membership_id=$2)
          ) ORDER BY project.name`,[tenantId,row.membership_id],
       );
       return {
@@ -123,7 +128,7 @@ export class IamRepository {
           membershipId: row.membership_id,
           roles: row.roles ?? [],
           permissions: row.permissions ?? [],
-          projectScopes: scopes.rows.map(scope=>({projectId:scope.project_id,projectName:scope.project_name,mode:scope.mode,roles:scope.roles,permissions:scope.permissions})),
+          projectScopes: scopes.rows.map(scope=>({projectId:scope.project_id,projectName:scope.project_name,permissions:scope.permissions})),
         },
       };
     });
@@ -136,12 +141,10 @@ export class IamRepository {
       }>(`SELECT membership.id membership_id,user_account.id user_id,user_account.display_name name,user_account.email,
           user_account.job_title,user_account.work_phone,membership.status,user_account.last_login_at,
           CASE WHEN user_account.entra_issuer LIKE 'pending:%' THEN NULL ELSE user_account.entra_subject END entra_object_id,
-          COALESCE((SELECT array_agg(DISTINCT role_id::text ORDER BY role_id::text) FROM (
-            SELECT assignment.role_id FROM role_assignments assignment WHERE assignment.tenant_id=membership.tenant_id AND assignment.membership_id=membership.id
-            UNION ALL
-            SELECT assignment.role_id FROM project_role_assignments assignment WHERE assignment.tenant_id=membership.tenant_id AND assignment.membership_id=membership.id
-          ) assigned_roles),ARRAY[]::text[]) role_ids,
-          COALESCE((SELECT array_agg(DISTINCT project_id::text ORDER BY project_id::text) FROM project_role_assignments assignment WHERE assignment.tenant_id=membership.tenant_id AND assignment.membership_id=membership.id),ARRAY[]::text[]) project_ids
+          COALESCE((SELECT array_agg(DISTINCT assignment.role_id::text ORDER BY assignment.role_id::text)
+            FROM role_assignments assignment WHERE assignment.tenant_id=membership.tenant_id AND assignment.membership_id=membership.id),ARRAY[]::text[]) role_ids,
+          COALESCE((SELECT array_agg(DISTINCT access.project_id::text ORDER BY access.project_id::text)
+            FROM project_custom_access access WHERE access.tenant_id=membership.tenant_id AND access.membership_id=membership.id),ARRAY[]::text[]) project_ids
          FROM tenant_memberships membership JOIN users user_account ON user_account.id=membership.user_id
          WHERE membership.tenant_id=$1 ORDER BY user_account.display_name,membership.id`,[input.tenantId]);
       const hasPermissionScope=Boolean((await client.query("SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='role_permissions' AND column_name='scope'")).rowCount);
@@ -157,10 +160,8 @@ export class IamRepository {
       const permissions=await client.query<{code:string;description:string}>("SELECT code,description FROM permissions ORDER BY code");
       const workspaceAssignments=await client.query<{membership_id:string;role_id:string}>(
         "SELECT membership_id,role_id FROM role_assignments WHERE tenant_id=$1 ORDER BY membership_id,role_id",[input.tenantId]);
-      const projectRoleAssignments=await client.query<{membership_id:string;project_id:string;role_id:string}>(
-        "SELECT membership_id,project_id,role_id FROM project_role_assignments WHERE tenant_id=$1 ORDER BY membership_id,project_id,role_id",[input.tenantId]);
-      const customAssignments=await client.query<{membership_id:string;project_id:string;area:ProjectAccessArea;access_level:"read"|"edit"}>(
-        "SELECT membership_id,project_id,area,access_level FROM project_custom_access WHERE tenant_id=$1 ORDER BY membership_id,project_id,area",[input.tenantId]);
+      const customAssignments=await client.query<{membership_id:string;project_id:string;area:ProjectAccessArea;access_level:"none"|"read"|"edit";permission_overrides:string[]}>(
+        "SELECT membership_id,project_id,area,access_level,permission_overrides FROM project_custom_access WHERE tenant_id=$1 ORDER BY membership_id,project_id,area",[input.tenantId]);
       const roleHistory=await client.query<{entity_id:string;occurred_at:string;actor:string|null}>(
         `SELECT audit.entity_id,audit.occurred_at,user_account.display_name actor
          FROM audit_log audit LEFT JOIN users user_account ON user_account.id=audit.actor_user_id
@@ -168,15 +169,10 @@ export class IamRepository {
          ORDER BY audit.occurred_at DESC LIMIT 100`,[input.tenantId]);
       return {
         users:users.rows.map(row=>{
-          const projectIds=[...new Set([
-            ...projectRoleAssignments.rows.filter(item=>item.membership_id===row.membership_id).map(item=>item.project_id),
-            ...customAssignments.rows.filter(item=>item.membership_id===row.membership_id).map(item=>item.project_id),
-          ])];
+          const projectIds=[...new Set(customAssignments.rows.filter(item=>item.membership_id===row.membership_id).map(item=>item.project_id))];
           const projectAccess=projectIds.map(projectId=>{
             const custom=customAssignments.rows.filter(item=>item.membership_id===row.membership_id&&item.project_id===projectId);
-            return custom.length
-              ? {projectId,mode:"custom" as const,roleIds:[],customAccess:Object.fromEntries(custom.map(item=>[item.area,item.access_level]))}
-              : {projectId,mode:"roles" as const,roleIds:projectRoleAssignments.rows.filter(item=>item.membership_id===row.membership_id&&item.project_id===projectId).map(item=>item.role_id),customAccess:{}};
+            return {projectId,areaAccess:Object.fromEntries(custom.filter(item=>item.access_level!=="none").map(item=>[item.area,item.access_level])),advancedPermissions:[...new Set(custom.flatMap(item=>item.permission_overrides))].sort()};
           });
           return{membershipId:row.membership_id,userId:row.user_id,name:row.name,email:row.email,jobTitle:row.job_title??"",workPhone:row.work_phone??"",status:row.status,lastLoginAt:row.last_login_at,
             workspaceRoleIds:workspaceAssignments.rows.filter(item=>item.membership_id===row.membership_id).map(item=>item.role_id),projectAccess,entraObjectId:row.entra_object_id??undefined};
@@ -271,26 +267,27 @@ export class IamRepository {
   private async replaceAssignments(client:PoolClient,input:{tenantId:string;userId:string;targetMembershipId:string}&MemberAccessInput) {
     const workspaceRoleIds=[...new Set(input.workspaceRoleIds)];
     const projectAccess=[...new Map(input.projectAccess.map(access=>[access.projectId,access])).values()];
-    const allRoleIds=[...new Set([...workspaceRoleIds,...projectAccess.flatMap(access=>access.roleIds)])];
+    const allRoleIds=[...new Set(workspaceRoleIds)];
     if(allRoleIds.length){
       const validRoles=await client.query<{id:string;code:string}>("SELECT id,code FROM roles WHERE tenant_id=$1 AND id=ANY($2::uuid[]) AND status='active'",[input.tenantId,allRoleIds]);
       if(validRoles.rowCount!==allRoleIds.length)throw new Error("Některá zvolená role nepatří do aktuálního workspace");
       const workspaceCodes=new Set(validRoles.rows.filter(role=>workspaceRoleIds.includes(role.id)).map(role=>role.code));
       if([...workspaceCodes].some(code=>code!=="admin"))throw new Error("Globálně lze přiřadit pouze administrátorskou roli");
-      if(projectAccess.some(access=>access.roleIds.some(roleId=>validRoles.rows.find(role=>role.id===roleId)?.code==="admin")))throw new Error("Administrátor je globální role a nelze ji přiřadit projektu");
     }
     const projectIds=projectAccess.map(access=>access.projectId);
     if(projectIds.length){
       const validProjects=await client.query("SELECT id FROM projects WHERE tenant_id=$1 AND id=ANY($2::uuid[]) AND lifecycle_status<>'archived'",[input.tenantId,projectIds]);
       if(validProjects.rowCount!==projectIds.length)throw new Error("Některý zvolený projekt nepatří do aktuálního workspace");
     }
+    const existingOverrides=await client.query<{project_id:string;permission:string}>(`SELECT access.project_id::text,permission
+      FROM project_custom_access access CROSS JOIN LATERAL unnest(access.permission_overrides) permission
+      WHERE access.tenant_id=$1 AND access.membership_id=$2`,[input.tenantId,input.targetMembershipId]);
+    const preservedOverrides=new Set(existingOverrides.rows.map(row=>`${row.project_id}:${row.permission}`));
     for(const access of projectAccess){
-      if(!["roles","custom"].includes(access.mode))throw new Error("Neplatný způsob projektového přístupu");
-      if(access.mode==="roles"&&!access.roleIds.length)throw new Error("U projektového přístupu vyberte alespoň jednu roli");
-      if(access.mode==="custom"&&!Object.values(access.customAccess).some(Boolean))throw new Error("Vlastní přístup musí obsahovat alespoň jednu oblast");
-      if(access.mode==="roles"&&Object.keys(access.customAccess).length)throw new Error("Projekt používá role nebo vlastní přístup, ne obojí");
-      if(access.mode==="custom"&&access.roleIds.length)throw new Error("Projekt používá role nebo vlastní přístup, ne obojí");
-      if(Object.entries(access.customAccess).some(([area,level])=>!["project","units","clients","contracts","payments","documents","client_changes","handovers","complaints","tasks"].includes(area)||!["read","edit"].includes(String(level))))throw new Error("Vlastní přístup obsahuje neplatnou oblast nebo úroveň");
+      if(!Object.values(access.areaAccess).some(Boolean)&&!access.advancedPermissions.length)throw new Error("U projektu nastavte přístup alespoň k jedné oblasti");
+      if(Object.entries(access.areaAccess).some(([area,level])=>!projectAreas.includes(area as ProjectAccessArea)||!["read","edit"].includes(String(level))))throw new Error("Projektový přístup obsahuje neplatnou oblast nebo úroveň");
+      if(access.advancedPermissions.some(permission=>!allowedAdvancedPermissions.has(permission)&&!preservedOverrides.has(`${access.projectId}:${permission}`)))throw new Error("Projektový přístup obsahuje neplatné rozšířené oprávnění");
+      if(access.advancedPermissions.some(permission=>!preservedOverrides.has(`${access.projectId}:${permission}`)&&access.areaAccess[advancedPermissionArea(permission)]!=="edit"))throw new Error("Citlivou operaci lze povolit pouze společně s právem upravovat danou oblast");
     }
     await client.query("DELETE FROM role_assignments WHERE tenant_id=$1 AND membership_id=$2",[input.tenantId,input.targetMembershipId]);
     if(workspaceRoleIds.length)await client.query(`INSERT INTO role_assignments(tenant_id,membership_id,role_id,assigned_by_user_id)
@@ -298,11 +295,29 @@ export class IamRepository {
     await client.query("DELETE FROM project_role_assignments WHERE tenant_id=$1 AND membership_id=$2",[input.tenantId,input.targetMembershipId]);
     await client.query("DELETE FROM project_custom_access WHERE tenant_id=$1 AND membership_id=$2",[input.tenantId,input.targetMembershipId]);
     for(const access of projectAccess){
-      if(access.mode==="roles")await client.query(`INSERT INTO project_role_assignments(tenant_id,project_id,membership_id,role_id,assigned_by_user_id)
-        SELECT $1,$2,$3,role.id,$4 FROM roles role WHERE role.tenant_id=$1 AND role.id=ANY($5::uuid[])`,[input.tenantId,access.projectId,input.targetMembershipId,input.userId,[...new Set(access.roleIds)]]);
-      else for(const [area,level] of Object.entries(access.customAccess))if(level)await client.query(`INSERT INTO project_custom_access(tenant_id,project_id,membership_id,area,access_level,assigned_by_user_id) VALUES($1,$2,$3,$4,$5,$6)`,[input.tenantId,access.projectId,input.targetMembershipId,area,level,input.userId]);
+      const advancedByArea=new Map<ProjectAccessArea,string[]>();
+      for(const permission of access.advancedPermissions){const area=advancedPermissionArea(permission);advancedByArea.set(area,[...(advancedByArea.get(area)??[]),permission]);}
+      for(const area of projectAreas){
+        const level=access.areaAccess[area]??"none";const overrides=advancedByArea.get(area)??[];
+        if(level==="none"&&!overrides.length)continue;
+        await client.query(`INSERT INTO project_custom_access(tenant_id,project_id,membership_id,area,access_level,permission_overrides,assigned_by_user_id) VALUES($1,$2,$3,$4,$5,$6,$7)`,[input.tenantId,access.projectId,input.targetMembershipId,area,level,overrides,input.userId]);
+      }
     }
   }
+}
+
+function advancedPermissionArea(permission:string):ProjectAccessArea{
+  if(permission.startsWith("projects.")||permission.startsWith("media.")||["exports.run","audit.read"].includes(permission))return"project";
+  if(permission.startsWith("units.")||permission.startsWith("accessories.")||permission.startsWith("prices.")||["holds.confirm","prices.approve","discounts.approve","commercial_exceptions.approve"].includes(permission))return"units";
+  if(permission.startsWith("clients.")||permission.startsWith("interests.")||permission.startsWith("sales_cases.")||["holds.create","holds.cancel"].includes(permission))return"clients";
+  if(permission.startsWith("contracts."))return"contracts";
+  if(permission.startsWith("payments."))return"payments";
+  if(permission.startsWith("documents."))return"documents";
+  if(permission.startsWith("client_changes."))return"client_changes";
+  if(permission.startsWith("handovers."))return"handovers";
+  if(permission.startsWith("complaints."))return"complaints";
+  if(permission.startsWith("tasks."))return"tasks";
+  return"project";
 }
 
 function roleRestrictions(code:string):string[]{
