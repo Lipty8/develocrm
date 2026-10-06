@@ -70,19 +70,29 @@ CROSS JOIN permissions permission
 WHERE membership.status='active'
   AND permission.code NOT IN ('users.manage','roles.manage','role.manage','role.read','system.manage','integrations.manage','projects.create');
 
+-- Rebuild from the effective snapshot rather than from roles alone.  This also
+-- preserves old custom matrices whose area boundaries differ from the new
+-- shared mapper (for example historical unit-area media permissions).
 CREATE TEMP TABLE legacy_project_grants ON COMMIT DROP AS
-SELECT assignment.tenant_id,assignment.project_id,assignment.membership_id,
-  max(assignment.assigned_by_user_id::text)::uuid assigned_by_user_id,
-  permission.code
-FROM project_role_assignments assignment
-JOIN role_permissions grant_row ON grant_row.tenant_id=assignment.tenant_id AND grant_row.role_id=assignment.role_id
-  AND grant_row.scope IN ('project','own','partner')
-JOIN permissions permission ON permission.id=grant_row.permission_id
-GROUP BY assignment.tenant_id,assignment.project_id,assignment.membership_id,permission.code;
+SELECT before_access.tenant_id,before_access.project_id,before_access.membership_id,
+  COALESCE(
+    (SELECT max(assignment.assigned_by_user_id::text)::uuid FROM project_role_assignments assignment
+      WHERE assignment.tenant_id=before_access.tenant_id AND assignment.project_id=before_access.project_id
+        AND assignment.membership_id=before_access.membership_id),
+    (SELECT max(access.assigned_by_user_id::text)::uuid FROM project_custom_access access
+      WHERE access.tenant_id=before_access.tenant_id AND access.project_id=before_access.project_id
+        AND access.membership_id=before_access.membership_id),
+    membership.user_id
+  ) assigned_by_user_id,
+  before_access.code
+FROM module_access_before before_access
+JOIN tenant_memberships membership ON membership.tenant_id=before_access.tenant_id AND membership.id=before_access.membership_id
+WHERE before_access.allowed;
 
 -- The mutually-exclusive mode trigger intentionally prevents inserting the
 -- matrix before the deprecated role assignments have been removed.
 DELETE FROM project_role_assignments;
+DELETE FROM project_custom_access;
 
 WITH grouped AS (
   SELECT tenant_id,project_id,membership_id,max(assigned_by_user_id::text)::uuid assigned_by_user_id,
@@ -109,7 +119,7 @@ SELECT tenant_id,project_id,membership_id,area,access_level,
 FROM normalized
 ON CONFLICT(tenant_id,project_id,membership_id,area) DO UPDATE SET
   access_level=EXCLUDED.access_level,
-  permission_overrides=(SELECT ARRAY(SELECT DISTINCT permission FROM unnest(project_custom_access.permission_overrides || EXCLUDED.permission_overrides) permission ORDER BY permission)),
+  permission_overrides=EXCLUDED.permission_overrides,
   assigned_by_user_id=EXCLUDED.assigned_by_user_id,
   assigned_at=now();
 

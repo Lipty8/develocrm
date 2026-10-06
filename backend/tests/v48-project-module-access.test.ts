@@ -36,6 +36,25 @@ test("0048 převede projektové role na matici beze změny efektivních oprávn�
   await db.close();
 });
 
+test("0048 zachová i historická vlastní oprávnění mimo nové hranice oblasti",async()=>{
+  const db=new PGlite();const migrations=await names();await apply(db,migrations.filter(name=>name<"0048_project_module_access.sql"));
+  await db.query("INSERT INTO tenants(id,name,slug,status) VALUES($1,'Custom matrix','custom-matrix','active')",[tenant]);
+  await db.query("INSERT INTO users(id,entra_issuer,entra_subject,email,display_name) VALUES($1,'test','custom-user','custom@example.test','Custom User')",[user]);
+  await db.query("INSERT INTO tenant_memberships(id,tenant_id,user_id,status,accepted_at) VALUES($1,$2,$3,'active',now())",[member,tenant,user]);
+  await db.query("INSERT INTO projects(id,tenant_id,code,name,slug,lifecycle_status) VALUES($1,$2,'MA','Projekt A','project-a','active')",[projectA,tenant]);
+  await db.query("INSERT INTO project_custom_access(tenant_id,project_id,membership_id,area,access_level,assigned_by_user_id) VALUES($1,$2,$3,'units','edit',$4)",[tenant,projectA,member,user]);
+  const permissions=["units.read","units.update","media.read","media.manage","payments.read"];
+  const before=await Promise.all(permissions.map(permission=>allowed(db,projectA,permission)));
+  await apply(db,["0048_project_module_access.sql"]);
+  assert.deepEqual(await Promise.all(permissions.map(permission=>allowed(db,projectA,permission))),before);
+  const unit=(await db.query<{access_level:string;permission_overrides:string[]}>("SELECT access_level,permission_overrides FROM project_custom_access WHERE tenant_id=$1 AND project_id=$2 AND membership_id=$3 AND area='units'",[tenant,projectA,member])).rows[0];
+  const project=(await db.query<{access_level:string;permission_overrides:string[]}>("SELECT access_level,permission_overrides FROM project_custom_access WHERE tenant_id=$1 AND project_id=$2 AND membership_id=$3 AND area='project'",[tenant,projectA,member])).rows[0];
+  assert.equal(unit.access_level,"edit");
+  assert.equal(project.access_level,"none");
+  assert.deepEqual(project.permission_overrides.sort(),["accessory.manage","accessory.read","media.manage","media.read","price.manage","price.read","unit.manage","unit.read"]);
+  await db.close();
+});
+
 test("matice vynucuje Čtení, Úpravy, Bez přístupu a oddělenou citlivou vratku",async()=>{
   const db=new PGlite();await apply(db,await names());
   await db.query("INSERT INTO tenants(id,name,slug,status) VALUES($1,'Matrix','matrix','active')",[tenant]);
