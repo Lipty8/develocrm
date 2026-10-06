@@ -48,10 +48,8 @@ test("0048 zachová i historická vlastní oprávnění mimo nové hranice oblas
   await apply(db,["0048_project_module_access.sql"]);
   assert.deepEqual(await Promise.all(permissions.map(permission=>allowed(db,projectA,permission))),before);
   const unit=(await db.query<{access_level:string;permission_overrides:string[]}>("SELECT access_level,permission_overrides FROM project_custom_access WHERE tenant_id=$1 AND project_id=$2 AND membership_id=$3 AND area='units'",[tenant,projectA,member])).rows[0];
-  const project=(await db.query<{access_level:string;permission_overrides:string[]}>("SELECT access_level,permission_overrides FROM project_custom_access WHERE tenant_id=$1 AND project_id=$2 AND membership_id=$3 AND area='project'",[tenant,projectA,member])).rows[0];
   assert.equal(unit.access_level,"edit");
-  assert.equal(project.access_level,"none");
-  assert.deepEqual(project.permission_overrides.sort(),["accessory.manage","accessory.read","media.manage","media.read","price.manage","price.read","unit.manage","unit.read"]);
+  assert.deepEqual(unit.permission_overrides,[]);
   await db.close();
 });
 

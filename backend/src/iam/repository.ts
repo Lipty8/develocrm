@@ -307,14 +307,14 @@ export class IamRepository {
 }
 
 function advancedPermissionArea(permission:string):ProjectAccessArea{
-  if(permission.startsWith("projects.")||permission.startsWith("media.")||["exports.run","audit.read"].includes(permission))return"project";
-  if(permission.startsWith("units.")||permission.startsWith("accessories.")||permission.startsWith("prices.")||["holds.confirm","prices.approve","discounts.approve","commercial_exceptions.approve"].includes(permission))return"units";
-  if(permission.startsWith("clients.")||permission.startsWith("interests.")||permission.startsWith("sales_cases.")||["holds.create","holds.cancel"].includes(permission))return"clients";
-  if(permission.startsWith("contracts."))return"contracts";
+  if(permission.startsWith("project.")||permission.startsWith("projects.")||permission.startsWith("media.")||["exports.run","audit.read"].includes(permission))return"project";
+  if(permission.startsWith("unit.")||permission.startsWith("units.")||permission.startsWith("accessory.")||permission.startsWith("accessories.")||permission.startsWith("price.")||permission.startsWith("prices.")||["holds.confirm","prices.approve","discounts.approve","commercial_exceptions.approve"].includes(permission))return"units";
+  if(permission.startsWith("clients.")||permission.startsWith("interests.")||permission.startsWith("sales_case.")||permission.startsWith("sales_cases.")||["holds.create","holds.cancel"].includes(permission))return"clients";
+  if(permission.startsWith("contract.")||permission.startsWith("contracts."))return"contracts";
   if(permission.startsWith("payments."))return"payments";
   if(permission.startsWith("documents."))return"documents";
   if(permission.startsWith("client_changes."))return"client_changes";
-  if(permission.startsWith("handovers."))return"handovers";
+  if(permission.startsWith("handover.")||permission.startsWith("handovers."))return"handovers";
   if(permission.startsWith("complaints."))return"complaints";
   if(permission.startsWith("tasks."))return"tasks";
   return"project";

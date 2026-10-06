@@ -14,14 +14,14 @@ ALTER TABLE project_custom_access
 CREATE OR REPLACE FUNCTION app.project_area_read_permissions(p_area text)
 RETURNS text[] LANGUAGE sql IMMUTABLE AS $$
   SELECT CASE p_area
-    WHEN 'project' THEN ARRAY['projects.read','media.read']
-    WHEN 'units' THEN ARRAY['units.read','accessories.read','prices.read']
-    WHEN 'clients' THEN ARRAY['clients.read_all','clients.read_contact_details','sales_cases.read']
-    WHEN 'contracts' THEN ARRAY['contracts.read']
+    WHEN 'project' THEN ARRAY['project.read','projects.read','media.read']
+    WHEN 'units' THEN ARRAY['unit.read','units.read','accessory.read','accessories.read','price.read','prices.read','media.read']
+    WHEN 'clients' THEN ARRAY['clients.read','clients.read_all','clients.read_contact_details','sales_case.read','sales_cases.read']
+    WHEN 'contracts' THEN ARRAY['contract.read','contracts.read']
     WHEN 'payments' THEN ARRAY['payments.read']
-    WHEN 'documents' THEN ARRAY['documents.read']
+    WHEN 'documents' THEN ARRAY['documents.view','documents.read']
     WHEN 'client_changes' THEN ARRAY['client_changes.read']
-    WHEN 'handovers' THEN ARRAY['handovers.read']
+    WHEN 'handovers' THEN ARRAY['handover.read','handovers.read']
     WHEN 'complaints' THEN ARRAY['complaints.read']
     WHEN 'tasks' THEN ARRAY['tasks.read']
     ELSE ARRAY[]::text[] END
@@ -30,14 +30,14 @@ $$;
 CREATE OR REPLACE FUNCTION app.project_area_edit_permissions(p_area text)
 RETURNS text[] LANGUAGE sql IMMUTABLE AS $$
   SELECT app.project_area_read_permissions(p_area) || CASE p_area
-    WHEN 'project' THEN ARRAY['projects.update','media.manage']
-    WHEN 'units' THEN ARRAY['units.update','units.update_sales_status','accessories.update','prices.propose']
-    WHEN 'clients' THEN ARRAY['clients.create','clients.update','interests.manage','sales_cases.manage','holds.create','holds.cancel']
-    WHEN 'contracts' THEN ARRAY['contracts.create','contracts.update']
+    WHEN 'project' THEN ARRAY['project.manage','projects.update','media.manage']
+    WHEN 'units' THEN ARRAY['unit.manage','units.update','units.update_sales_status','accessory.manage','accessories.update','price.manage','prices.propose','media.manage']
+    WHEN 'clients' THEN ARRAY['clients.create','clients.manage','clients.update','interests.manage','sales_case.manage','sales_cases.manage','holds.create','holds.cancel']
+    WHEN 'contracts' THEN ARRAY['contract.manage','contracts.create','contracts.update']
     WHEN 'payments' THEN ARRAY['payments.manage','payments.record']
-    WHEN 'documents' THEN ARRAY['documents.create','documents.update']
+    WHEN 'documents' THEN ARRAY['documents.upload','documents.create','documents.edit_metadata','documents.update','documents.manage']
     WHEN 'client_changes' THEN ARRAY['client_changes.manage']
-    WHEN 'handovers' THEN ARRAY['handovers.manage']
+    WHEN 'handovers' THEN ARRAY['handover.manage','handovers.manage']
     WHEN 'complaints' THEN ARRAY['complaints.manage']
     WHEN 'tasks' THEN ARRAY['tasks.manage']
     ELSE ARRAY[]::text[] END
@@ -46,16 +46,17 @@ $$;
 CREATE OR REPLACE FUNCTION app.permission_project_area(p_permission text)
 RETURNS text LANGUAGE sql IMMUTABLE AS $$
   SELECT CASE
-    WHEN p_permission LIKE 'projects.%' OR p_permission LIKE 'media.%' OR p_permission IN ('exports.run','audit.read') THEN 'project'
-    WHEN p_permission LIKE 'units.%' OR p_permission LIKE 'accessories.%' OR p_permission LIKE 'prices.%'
+    WHEN p_permission LIKE 'project.%' OR p_permission LIKE 'projects.%' OR p_permission LIKE 'media.%' OR p_permission IN ('exports.run','audit.read') THEN 'project'
+    WHEN p_permission LIKE 'unit.%' OR p_permission LIKE 'units.%' OR p_permission LIKE 'accessory.%' OR p_permission LIKE 'accessories.%'
+      OR p_permission LIKE 'price.%' OR p_permission LIKE 'prices.%'
       OR p_permission IN ('discounts.approve','commercial_exceptions.approve','holds.confirm') THEN 'units'
-    WHEN p_permission LIKE 'clients.%' OR p_permission LIKE 'interests.%' OR p_permission LIKE 'sales_cases.%'
+    WHEN p_permission LIKE 'clients.%' OR p_permission LIKE 'interests.%' OR p_permission LIKE 'sales_case.%' OR p_permission LIKE 'sales_cases.%'
       OR p_permission IN ('holds.create','holds.cancel') THEN 'clients'
-    WHEN p_permission LIKE 'contracts.%' THEN 'contracts'
+    WHEN p_permission LIKE 'contract.%' OR p_permission LIKE 'contracts.%' THEN 'contracts'
     WHEN p_permission LIKE 'payments.%' THEN 'payments'
     WHEN p_permission LIKE 'documents.%' THEN 'documents'
     WHEN p_permission LIKE 'client_changes.%' THEN 'client_changes'
-    WHEN p_permission LIKE 'handovers.%' THEN 'handovers'
+    WHEN p_permission LIKE 'handover.%' OR p_permission LIKE 'handovers.%' THEN 'handovers'
     WHEN p_permission LIKE 'complaints.%' THEN 'complaints'
     WHEN p_permission LIKE 'tasks.%' THEN 'tasks'
     ELSE 'project' END
@@ -70,29 +71,22 @@ CROSS JOIN permissions permission
 WHERE membership.status='active'
   AND permission.code NOT IN ('users.manage','roles.manage','role.manage','role.read','system.manage','integrations.manage','projects.create');
 
--- Rebuild from the effective snapshot rather than from roles alone.  This also
--- preserves old custom matrices whose area boundaries differ from the new
--- shared mapper (for example historical unit-area media permissions).
 CREATE TEMP TABLE legacy_project_grants ON COMMIT DROP AS
 SELECT before_access.tenant_id,before_access.project_id,before_access.membership_id,
-  COALESCE(
-    (SELECT max(assignment.assigned_by_user_id::text)::uuid FROM project_role_assignments assignment
-      WHERE assignment.tenant_id=before_access.tenant_id AND assignment.project_id=before_access.project_id
-        AND assignment.membership_id=before_access.membership_id),
-    (SELECT max(access.assigned_by_user_id::text)::uuid FROM project_custom_access access
-      WHERE access.tenant_id=before_access.tenant_id AND access.project_id=before_access.project_id
-        AND access.membership_id=before_access.membership_id),
-    membership.user_id
-  ) assigned_by_user_id,
+  (SELECT max(assignment.assigned_by_user_id::text)::uuid FROM project_role_assignments assignment
+    WHERE assignment.tenant_id=before_access.tenant_id AND assignment.project_id=before_access.project_id
+      AND assignment.membership_id=before_access.membership_id) assigned_by_user_id,
   before_access.code
 FROM module_access_before before_access
-JOIN tenant_memberships membership ON membership.tenant_id=before_access.tenant_id AND membership.id=before_access.membership_id
-WHERE before_access.allowed;
+WHERE before_access.allowed AND EXISTS(
+  SELECT 1 FROM project_role_assignments assignment
+  WHERE assignment.tenant_id=before_access.tenant_id AND assignment.project_id=before_access.project_id
+    AND assignment.membership_id=before_access.membership_id
+);
 
 -- The mutually-exclusive mode trigger intentionally prevents inserting the
 -- matrix before the deprecated role assignments have been removed.
 DELETE FROM project_role_assignments;
-DELETE FROM project_custom_access;
 
 WITH grouped AS (
   SELECT tenant_id,project_id,membership_id,max(assigned_by_user_id::text)::uuid assigned_by_user_id,
@@ -101,8 +95,10 @@ WITH grouped AS (
   GROUP BY tenant_id,project_id,membership_id,app.permission_project_area(code)
 ), classified AS (
   SELECT *,CASE
-    WHEN app.project_area_edit_permissions(area) <@ codes THEN 'edit'
-    WHEN app.project_area_read_permissions(area) <@ codes THEN 'read'
+    WHEN ARRAY(SELECT candidate FROM unnest(app.project_area_edit_permissions(area)) candidate
+      WHERE EXISTS(SELECT 1 FROM permissions permission WHERE permission.code=candidate)) <@ codes THEN 'edit'
+    WHEN ARRAY(SELECT candidate FROM unnest(app.project_area_read_permissions(area)) candidate
+      WHERE EXISTS(SELECT 1 FROM permissions permission WHERE permission.code=candidate)) <@ codes THEN 'read'
     ELSE 'none' END access_level
   FROM grouped
 ), normalized AS (
@@ -119,20 +115,17 @@ SELECT tenant_id,project_id,membership_id,area,access_level,
 FROM normalized
 ON CONFLICT(tenant_id,project_id,membership_id,area) DO UPDATE SET
   access_level=EXCLUDED.access_level,
-  permission_overrides=EXCLUDED.permission_overrides,
+  permission_overrides=(SELECT ARRAY(SELECT DISTINCT permission FROM unnest(project_custom_access.permission_overrides || EXCLUDED.permission_overrides) permission ORDER BY permission)),
   assigned_by_user_id=EXCLUDED.assigned_by_user_id,
   assigned_at=now();
 
 CREATE OR REPLACE FUNCTION app.custom_project_access_allows(p_area text,p_level text,p_permission text,p_overrides text[] DEFAULT ARRAY[]::text[])
 RETURNS boolean LANGUAGE sql IMMUTABLE AS $$
-  SELECT EXISTS(
-    SELECT 1 FROM unnest(app.requested_project_permissions(p_permission)) requested
-    WHERE requested=ANY(
-      CASE p_level
-        WHEN 'edit' THEN app.project_area_edit_permissions(p_area)
-        WHEN 'read' THEN app.project_area_read_permissions(p_area)
-        ELSE ARRAY[]::text[] END || COALESCE(p_overrides,ARRAY[]::text[])
-    )
+  SELECT p_permission=ANY(
+    CASE p_level
+      WHEN 'edit' THEN app.project_area_edit_permissions(p_area)
+      WHEN 'read' THEN app.project_area_read_permissions(p_area)
+      ELSE ARRAY[]::text[] END || COALESCE(p_overrides,ARRAY[]::text[])
   )
 $$;
 
