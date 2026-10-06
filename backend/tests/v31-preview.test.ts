@@ -72,16 +72,16 @@ test("preview administrace perzistentně přidá Entra uživatele a upraví ho b
     email: "jana@example.test",
     jobTitle: "Finance",
     workPhone: "+420 222 333 444",
-    roleIds: ["role-finance"],
-    projectIds: ["DEJ"],
+    workspaceRoleIds: [],
+    projectAccess: [{projectId:"DEJ",mode:"roles",roleIds:["role-finance"],customAccess:{}}],
   });
   const invited = (await adminRepository.getSnapshot()).users.find(user => user.email === "jana@example.test");
   assert.ok(invited);
   assert.equal(invited.status, "active");
-  await adminRepository.update({ ...invited, projectIds: ["DEJ", "RJ"] });
+  await adminRepository.update({ ...invited, projectAccess: [...invited.projectAccess,{projectId:"RJ",mode:"roles",roleIds:["role-finance"],customAccess:{}}] });
   const updated = (await adminRepository.getSnapshot()).users.find(user => user.email === "jana@example.test");
   assert.equal(updated?.status, "active");
-  assert.deepEqual(updated?.projectIds, ["DEJ", "RJ"]);
+  assert.deepEqual(updated?.projectAccess.map(access=>access.projectId), ["DEJ", "RJ"]);
   assert.equal("password" in (updated ?? {}), false);
 });
 

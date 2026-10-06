@@ -79,16 +79,14 @@ test("editace uživatele končí projektovým rozsahem a neobsahuje permission d
   const userModal = app.slice(app.indexOf("function AdminUserModal"), app.indexOf("function RolePermissionsModal"));
   assert.doesNotMatch(userModal, /Efektivní oprávnění|Detail oprávnění|Získáno z role|Z role:|Rozsah:|Technický klíč|permissionScopeLabel|permission-disclosure|effective-permissions/);
   assert.doesNotMatch(userModal, /permissionCodes\.includes|permissionGrants/);
-  assert.match(userModal, /<fieldset className="admin-check-grid role-selection"><legend>Role<\/legend>/);
-  assert.match(userModal, /<fieldset className="admin-check-grid"><legend>Projektový rozsah<\/legend>/);
-  assert.match(userModal, /roleAccessSummary\(role\)/);
+  assert.match(userModal, /<fieldset className="admin-check-grid role-selection"><legend>Globální přístup<\/legend>/);
+  assert.match(userModal, /className="project-access-editor"/);
+  assert.match(userModal, /Přístup k projektům/);
+  assert.match(userModal, /Správa uživatelů, rolí a pracovního prostoru\. Bez automatického přístupu k projektovým datům\./);
   for (const category of ["Projekty", "Jednotky a příslušenství", "Klienti", "Smlouvy", "Platby", "Předání a reklamace", "Dokumenty", "Úkoly", "Administrace"]) {
     assert.match(app, new RegExp(`"${category.replace(" a ", " a ")}"`));
   }
-  assert.match(app, /function roleAccessSummary\(role:AdminRole\)/);
-  assert.match(app, /role\.permissionCodes\.some/);
-  assert.match(app, /Všechny hlavní oblasti CRM/);
-  assert.match(app, /Pouze zobrazení napříč CRM/);
+  assert.doesNotMatch(userModal, /roleAccessSummary/);
   assert.doesNotMatch(css, /\.permission-disclosure/);
   assert.match(css, /\.role-selection small/);
 });
@@ -120,11 +118,14 @@ test("sdílený modal ani administrace nevysvětlují interní implementaci", ()
   assert.doesNotMatch(app, /Tenantová role umožňuje/);
 });
 
-test("zjednodušený formulář zachovává role, projekty i původní RBAC payload", () => {
-  for (const label of ["Jméno", "Pracovní e-mail", "Pracovní pozice", "Pracovní telefon", "Stav přístupu", "Role", "Projektový rozsah"]) {
+test("zjednodušený formulář zachovává globální správu a projektově specifický RBAC payload", () => {
+  for (const label of ["Jméno", "Pracovní e-mail", "Pracovní pozice", "Pracovní telefon", "Stav přístupu", "Globální přístup", "Přístup k projektům"]) {
     assert.match(app, new RegExp(`>${label}<`));
   }
-  assert.match(app, /await saveExisting\(\{name,email,jobTitle,workPhone,status,roleIds,projectIds\}\)/);
-  assert.match(app, /checked=\{roleIds\.includes\(role\.id\)\}/);
-  assert.match(app, /checked=\{projectIds\.includes\(project\.id\)\}/);
+  assert.match(app, /workspaceRoleIds/);
+  assert.match(app, /projectAccess/);
+  assert.match(app, /mode:"roles"/);
+  assert.match(app, /"custom"/);
+  assert.match(app, /Vlastní přístup/);
+  assert.match(app, /Přidat další roli/);
 });

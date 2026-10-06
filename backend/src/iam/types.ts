@@ -18,7 +18,13 @@ export type WorkspaceMembership = {
   membershipId: string;
   roles: string[];
   permissions: string[];
-  projectScopes?: Array<{ projectId: string; projectName: string; roles: string[] }>;
+  projectScopes?: Array<{
+    projectId: string;
+    projectName: string;
+    mode: "roles" | "custom";
+    roles: string[];
+    permissions: string[];
+  }>;
 };
 
 export type Session = {

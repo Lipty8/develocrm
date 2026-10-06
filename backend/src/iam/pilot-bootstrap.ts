@@ -64,9 +64,10 @@ export async function bootstrapPilotWorkspace(client:SqlClient,input:BootstrapWi
     const roleId=current.rows[0].id;
     if(role.code==="admin")adminRoleId=roleId;
     await client.query(`INSERT INTO role_permissions(tenant_id,role_id,permission_id,scope)
-      SELECT $1,$2,permission.id,'workspace' FROM permissions permission WHERE permission.code=ANY($3::text[])
-      ON CONFLICT(tenant_id,role_id,permission_id) DO UPDATE SET scope='workspace'`,
-      [input.tenantId,roleId,defaultPermissionCodes[role.code]]);
+      SELECT $1,$2,permission.id,CASE WHEN $4='admin' THEN 'workspace' WHEN $4='sales' AND permission.code='clients.create' THEN 'partner' WHEN $4='sales' AND permission.code IN ('clients.read_own','clients.read_contact_details','clients.update','interests.manage','sales_cases.read','sales_cases.manage','holds.create','holds.cancel') THEN 'own' ELSE 'project' END
+      FROM permissions permission WHERE permission.code=ANY($3::text[])
+      ON CONFLICT(tenant_id,role_id,permission_id) DO UPDATE SET scope=EXCLUDED.scope`,
+      [input.tenantId,roleId,defaultPermissionCodes[role.code],role.code]);
   }
   if(!adminRoleId)throw new Error("Administrátorská role nebyla vytvořena");
   await client.query(`INSERT INTO role_assignments(id,tenant_id,membership_id,role_id,assigned_by_user_id)
