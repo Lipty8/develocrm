@@ -125,6 +125,7 @@ import { entraAuth } from "./lib/entra-auth";
 import { clientUsesBrowserAdapter } from "./lib/data-mode";
 import { clientRelationshipStatus, clientRelationshipTone } from "./lib/client-relationship";
 import { CLIENT_RELATIONSHIP_STATUSES, type ClientRelationshipStatus } from "../backend/src/shared/client-relationship";
+import {useDashboardGreeting} from "./lib/dashboard-greeting";
 
 type Page = "dashboard" | "projects" | "clients" | "contracts" | "documents" | "payments" | "handovers" | "tasks" | "admin";
 type UnitTab = "overview" | "contracts" | "payments" | "changes" | "complaints" | "documents" | "handover" | "tasks" | "history";
@@ -141,7 +142,7 @@ const navItems: { id: Page; label: string; icon: typeof Home }[] = [
 ];
 
 const pageTitles: Record<Page, { title: string; subtitle: string }> = {
-  dashboard: { title: "Dobré ráno, Ivo", subtitle: "Tady je přehled toho, co dnes vyžaduje vaši pozornost." },
+  dashboard: { title: "Dashboard", subtitle: "Tady je přehled toho, co dnes vyžaduje vaši pozornost." },
   projects: { title: "Projekty", subtitle: "Portfolio developerských projektů a jejich aktuální stav." },
   clients: { title: "Klienti a zájemci", subtitle: "Jedno místo pro kontakty, jednotky a historii zájmu." },
   contracts: { title: "Dokumenty", subtitle: "Smlouvy, ostatní dokumenty a šablony v jednom pracovním prostoru." },
@@ -272,11 +273,6 @@ function RoleChips({items,limit=3}:{items:Array<{key:string;label:string}>;limit
   return <span className="role-chip-list" aria-label={`Role: ${full}`}>{visible.map(item=><Badge key={item.key} tone="neutral">{item.label}</Badge>)}{hidden.length>0&&<span className="role-overflow-chip" title={full} aria-label={`Další role: ${hidden.map(item=>item.label).join(", ")}`}>+{hidden.length} další</span>}</span>;
 }
 
-function vocativeFirstName(displayName: string): string {
-  const firstName = displayName.trim().split(/\s+/)[0] || "";
-  return firstName === "Iva" ? "Ivo" : firstName;
-}
-
 function ensurePilotPreviewStorage(){
   if(typeof window==="undefined"||localStorage.getItem("develocrm.pilot-cleanup")==="v1")return;
   for(const key of [
@@ -295,6 +291,7 @@ export default function CRMApp() {
   const pathname=usePathname();
   const searchParams=useSearchParams();
   const [identitySession, setIdentitySession] = useState<IdentitySession>(prototypeSession);
+  const dashboardGreeting=useDashboardGreeting(identitySession.user.displayName,identitySession.user.timezone);
   const [identityReady,setIdentityReady]=useState(false);
   const [catalogReady,setCatalogReady]=useState(false);
   const [clientDataReady,setClientDataReady]=useState(false);
@@ -793,7 +790,7 @@ export default function CRMApp() {
               <div className="page-header">
                 <div>
                   <div className="eyebrow">{now?formatPragueLongDate(now).toLocaleUpperCase("cs-CZ"):"AKTUÁLNÍ PRACOVNÍ PŘEHLED"}</div>
-                  <h1>{page === "dashboard" ? `Dobré ráno, ${vocativeFirstName(identitySession.user.displayName)}` : pageTitles[page].title}</h1>
+                  <h1>{page === "dashboard" ? dashboardGreeting??"Vítejte" : pageTitles[page].title}</h1>
                 </div>
                 <div className="page-actions">
                   {page !== "admin"&&page!=="payments"&&(page!=="projects"||can("projects.create"))&&(page!=="clients"||can("clients.create"))&&(page!=="handovers"||can("handovers.manage"))&&(page!=="contracts"||(searchParams.get("view")==="documents"&&can("documents.create")))&&<button className="primary-button" onClick={() => page === "tasks" || page === "dashboard" ? setNewTaskOpen(true) : page==="projects"?setNewProjectOpen(true):page==="clients"?setNewClientOpen(true):page==="handovers"?setNewHandoverContext({}):page==="contracts"&&searchParams.get("view")==="documents"?setNewDocumentOpen(true):notify("Nový záznam lze nyní založit")}>
