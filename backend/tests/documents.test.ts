@@ -21,7 +21,7 @@ const beforeSeed = [
   "0001_block_a_identity.sql", "0002_block_b_inventory.sql", "0003_block_c_sales.sql",
   "0004_block_d_pricing_contracts.sql", "0005_pilot_import_compatibility.sql", "0006_crud_operations.sql",
 ];
-const afterSeed = ["0007_practical_editing_rbac.sql", "0008_completion_workflows.sql", "0009_documents_sharepoint_foundation.sql", "0010_document_workspace.sql"];
+const afterSeed = ["0007_practical_editing_rbac.sql", "0008_completion_workflows.sql", "0009_documents_sharepoint_foundation.sql", "0010_document_workspace.sql", "0050_sharepoint_document_upload.sql"];
 async function database() {
   const db = new PGlite();
   for (const name of beforeSeed) await db.exec(await readFile(new URL(`../migrations/${name}`, import.meta.url), "utf8"));
@@ -95,6 +95,30 @@ test("document_versions jsou oddělené od contract_versions a append-only", asy
   await asRoot(db);
   await assert.rejects(db.query("UPDATE document_versions SET version_label='2.0' WHERE id=$1", [versionId]), /append-only/i);
   assert.equal((await db.query("SELECT id FROM contract_versions WHERE id=$1", [versionId])).rows.length, 0);
+  await db.close();
+});
+
+test("upload reservation je idempotentní, projektově izolovaná a finalizuje existující document model",async()=>{
+  const db=await database();
+  await db.query("INSERT INTO document_types(tenant_id,code,name) VALUES($1,'other','Jiné')",[tenant]);
+  await asApp(db);
+  const values=[tenant,project,"smoke-upload-0001","a".repeat(64),"other","Technický smoke test","smoke.txt","text/plain",12,"sha256:"+"b".repeat(64),"v1","draft","Technický test",unit,null,null,null,member] as const;
+  const sql="SELECT app.reserve_document_upload($1,$2,$3,$4,'create',NULL,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) id";
+  const first=(await db.query<{id:string}>(sql,[...values])).rows[0].id;
+  const replay=(await db.query<{id:string}>(sql,[...values])).rows[0].id;
+  assert.equal(replay,first);
+  await assert.rejects(db.query(sql,[tenant,project,"smoke-upload-0001","c".repeat(64),"other","Technický smoke test","smoke.txt","text/plain",12,"sha256:"+"b".repeat(64),"v1","draft","Technický test",unit,null,null,null,member]),/idempotency key payload mismatch/i);
+  await assert.rejects(db.query(sql,[tenant,project,"smoke-upload-0002","d".repeat(64),"other","Technický smoke test","smoke.txt","text/plain",12,"sha256:"+"b".repeat(64),"v1","draft","Technický test","f0000000-0000-4000-8000-000000000007",null,null,null,member]),/unit not found in project/i);
+  await assert.rejects(db.query(sql,["aa000000-0000-4000-8000-000000000001",project,"smoke-upload-0003","e".repeat(64),"other","Technický smoke test","smoke.txt","text/plain",12,"sha256:"+"b".repeat(64),"v1","draft","Technický test",null,null,null,null,member]),/permission required/i);
+  await db.query("SELECT app.prepare_document_upload_target($1,$2,$3,$4,$5)",[tenant,first,["projects","dejvice--e00000000000","project-documents","other"],"smoke--doc.txt",member]);
+  await db.query("SELECT app.record_document_graph_upload($1,$2,'drive-1','item-1','https://sharepoint.test/item','etag-1','1.0',12,$3)",[tenant,first,member]);
+  const finalized=(await db.query<{document_id:string;document_version_id:string;replayed:boolean}>("SELECT * FROM app.finalize_document_upload($1,$2,$3)",[tenant,first,member])).rows[0];
+  assert.equal(finalized.replayed,false);
+  assert.equal((await db.query("SELECT id FROM documents WHERE id=$1 AND storage_provider='sharepoint' AND external_drive_id='drive-1' AND external_item_id='item-1'",[finalized.document_id])).rows.length,1);
+  assert.equal((await db.query("SELECT id FROM document_versions WHERE id=$1 AND external_version_id='1.0'",[finalized.document_version_id])).rows.length,1);
+  assert.equal((await db.query("SELECT id FROM unit_documents WHERE document_id=$1 AND unit_id=$2",[finalized.document_id,unit])).rows.length,1);
+  assert.equal((await db.query<{replayed:boolean}>("SELECT replayed FROM app.finalize_document_upload($1,$2,$3)",[tenant,first,member])).rows[0].replayed,true);
+  assert.equal((await db.query("SELECT id FROM audit_log WHERE entity_id=$1 AND action='document.uploaded'",[finalized.document_version_id])).rows.length,1);
   await db.close();
 });
 

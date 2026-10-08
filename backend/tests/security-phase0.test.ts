@@ -82,6 +82,7 @@ test("všechny doménové API oblasti odmítnou požadavek bez Entra tokenu",asy
     {method:"POST",url:"/v1/handovers",payload:{}},
     {method:"POST",url:"/v1/tasks",payload:{}},
     {method:"POST",url:"/v1/documents",payload:{}},
+    {method:"POST",url:"/v1/documents/sharepoint-upload",payload:{}},
     {method:"POST",url:"/v1/document-connections/sharepoint/validate",payload:{}},
     {method:"PUT",url:"/v1/document-connections/sharepoint",payload:{}},
     {method:"PATCH",url:"/v1/accessories/10000000-0000-4000-8000-000000000001",payload:{}},

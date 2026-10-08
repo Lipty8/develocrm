@@ -49,6 +49,15 @@ export type SharePointConnectionConfiguration = {
   credentialReference: string;
 };
 
+export type DocumentUploadReservation = {
+  id:string;projectId:string;idempotencyKey:string;requestHash:string;operationType:"create"|"version";
+  documentId:string;documentVersionId:string;originalFileName:string;sharePointFileName:string|null;targetPath:string[]|null;
+  mimeType:string;fileSize:number;contentHash:string;versionLabel:string;documentStatus:DocumentListItem["status"];
+  metadata:Record<string,string>;baselineEtag:string|null;state:"reserved"|"uploaded"|"completed"|"failed";
+  graphDriveId:string|null;graphItemId:string|null;graphWebUrl:string|null;graphEtag:string|null;graphVersionId:string|null;graphFileSize:number|null;
+  projectCode:string;unitCode:string|null;partyName:string|null;currentItemId:string|null;currentItemName:string|null;
+};
+
 type DocumentRow = {
   id: string; project_id: string; project_name: string; name: string; category: string; type_code:string;type_name:string;status_code:DocumentListItem["status"];note:string|null;mime_type: string;
   file_size: string | number | null; storage_provider: "sharepoint" | "preview" | "external"; web_url: string | null;
@@ -168,6 +177,19 @@ export class DocumentRepository {
     });
   }
 
+  async getConnectionForUpload(input:DocumentContext & {projectId:string}):Promise<SharePointConnectionConfiguration|null>{
+    return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
+      const row=(await client.query<{id:string;name:string;entra_tenant_id:string;site_id:string;drive_id:string;authentication_mode:string;credential_reference:string}>(`
+        SELECT connection.id,connection.name,connection.entra_tenant_id,connection.site_id,connection.drive_id,
+          connection.authentication_mode,connection.credential_reference
+        FROM sharepoint_connections connection
+        WHERE connection.tenant_id=$1 AND connection.archived_at IS NULL AND connection.connection_status='connected'
+          AND app.has_project_permission($1,$2,$3,'documents.upload')
+        ORDER BY connection.created_at LIMIT 1`,[input.tenantId,input.membershipId,input.projectId])).rows[0];
+      return row?{id:row.id,name:row.name,entraTenantId:row.entra_tenant_id,siteId:row.site_id,driveId:row.drive_id,authenticationMode:row.authentication_mode,credentialReference:row.credential_reference}:null;
+    });
+  }
+
   async configureConnection(input:DocumentContext & {name:string;entraTenantId:string;siteId:string;driveId:string;credentialReference:string}):Promise<{id:string}>{
     return this.command(input,client=>client.query<{id:string}>("SELECT app.configure_sharepoint_connection($1,$2,$3,$4,$5,$6,$7) id",[
       input.tenantId,input.name,input.entraTenantId,input.siteId,input.driveId,input.credentialReference,input.membershipId,
@@ -178,6 +200,56 @@ export class DocumentRepository {
     return this.command(input,client=>client.query<{id:string}>("SELECT app.record_sharepoint_connection_validation($1,$2,$3,$4,$5) id",[
       input.tenantId,input.connectionId,input.status,input.errorCode??null,input.membershipId,
     ]));
+  }
+
+  async reserveUpload(input:DocumentContext & {projectId:string;idempotencyKey:string;requestHash:string;operationType:"create"|"version";existingDocumentId?:string;
+    typeCode?:string;documentName:string;originalFileName:string;mimeType:string;fileSize:number;contentHash:string;versionLabel:string;
+    status:DocumentListItem["status"];note?:string;unitId?:string;partyId?:string;contractId?:string;salesCaseId?:string}):Promise<DocumentUploadReservation>{
+    const created=await this.command(input,client=>client.query<{id:string}>(`SELECT app.reserve_document_upload(
+      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) id`,[
+      input.tenantId,input.projectId,input.idempotencyKey,input.requestHash,input.operationType,input.existingDocumentId??null,
+      input.typeCode??null,input.documentName,input.originalFileName,input.mimeType,input.fileSize,input.contentHash,input.versionLabel,
+      input.status,input.note??null,input.unitId??null,input.partyId??null,input.contractId??null,input.salesCaseId??null,input.membershipId,
+    ]));
+    const reservation=await this.getUploadReservation({...input,operationId:created.id});
+    if(!reservation)throw new Error("document upload reservation not found");
+    return reservation;
+  }
+
+  async getUploadReservation(input:DocumentContext & {operationId:string}):Promise<DocumentUploadReservation|null>{
+    return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
+      const row=(await client.query<Record<string,unknown>>(`SELECT operation.*,project.code project_code,unit.code unit_code,
+          party.display_name party_name,document.external_item_id current_item_id,document.name current_item_name
+        FROM document_upload_operations operation
+        JOIN projects project ON project.tenant_id=operation.tenant_id AND project.id=operation.project_id
+        LEFT JOIN units unit ON unit.tenant_id=operation.tenant_id AND unit.project_id=operation.project_id AND unit.id=(operation.metadata->>'unitId')::uuid
+        LEFT JOIN parties party ON party.tenant_id=operation.tenant_id AND party.id=(operation.metadata->>'partyId')::uuid
+        LEFT JOIN documents document ON document.tenant_id=operation.tenant_id AND document.id=operation.document_id
+        WHERE operation.tenant_id=$1 AND operation.id=$3
+          AND app.has_project_permission(operation.tenant_id,$2,operation.project_id,'documents.upload')`,[input.tenantId,input.membershipId,input.operationId])).rows[0];
+      return row?mapUploadReservation(row):null;
+    });
+  }
+
+  async prepareUploadTarget(input:DocumentContext & {operationId:string;targetPath:string[];sharePointFileName:string}):Promise<{id:string}>{
+    return this.command(input,client=>client.query<{id:string}>("SELECT app.prepare_document_upload_target($1,$2,$3,$4,$5) id",[
+      input.tenantId,input.operationId,input.targetPath,input.sharePointFileName,input.membershipId,
+    ]));
+  }
+
+  async recordGraphUpload(input:DocumentContext & {operationId:string;driveId:string;itemId:string;webUrl?:string|null;etag?:string|null;externalVersionId?:string|null;fileSize?:number|null}):Promise<{id:string}>{
+    return this.command(input,client=>client.query<{id:string}>("SELECT app.record_document_graph_upload($1,$2,$3,$4,$5,$6,$7,$8,$9) id",[
+      input.tenantId,input.operationId,input.driveId,input.itemId,input.webUrl??null,input.etag??null,input.externalVersionId??null,input.fileSize??null,input.membershipId,
+    ]));
+  }
+
+  async finalizeUpload(input:DocumentContext & {operationId:string}):Promise<{documentId:string;documentVersionId:string;replayed:boolean}>{
+    return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
+      const row=(await client.query<{document_id:string;document_version_id:string;replayed:boolean}>("SELECT * FROM app.finalize_document_upload($1,$2,$3)",[
+        input.tenantId,input.operationId,input.membershipId,
+      ])).rows[0];
+      return{documentId:row.document_id,documentVersionId:row.document_version_id,replayed:row.replayed};
+    });
   }
 
   async createMetadata(input: DocumentContext & { projectId:string;name:string;category:string;mimeType:string;fileSize?:number;storageProvider:string;externalDriveId?:string;externalItemId?:string;webUrl?:string;etag?:string;sensitivity?:string;operation?:string }): Promise<{id:string}> {
@@ -252,5 +324,17 @@ export class DocumentRepository {
 }
 
 function mapDocument(row:DocumentRow):DocumentListItem{return{id:row.id,projectId:row.project_id,projectName:row.project_name,name:row.name,category:row.category,typeCode:row.type_code,typeName:row.type_name,status:row.status_code,note:row.note,mimeType:row.mime_type,fileSize:numberOrNull(row.file_size),storageProvider:row.storage_provider,webUrl:row.web_url,etag:row.etag,sensitivity:row.sensitivity,createdAt:row.created_at,updatedAt:row.updated_at,author:row.author,version:row.version_label,units:splitList(row.unit_codes),parties:splitList(row.party_names),contracts:splitList(row.contract_refs),salesCases:splitList(row.sales_case_refs),clientChanges:splitList(row.client_change_refs),complaints:splitList(row.complaint_refs),handovers:splitList(row.handover_refs)};}
+function mapUploadReservation(row:Record<string,unknown>):DocumentUploadReservation{return{
+  id:String(row.id),projectId:String(row.project_id),idempotencyKey:String(row.idempotency_key),requestHash:String(row.request_hash),
+  operationType:row.operation_type as "create"|"version",documentId:String(row.document_id),documentVersionId:String(row.document_version_id),
+  originalFileName:String(row.original_file_name),sharePointFileName:stringOrNull(row.sharepoint_file_name),targetPath:Array.isArray(row.target_path)?row.target_path.map(String):null,
+  mimeType:String(row.mime_type),fileSize:Number(row.file_size),contentHash:String(row.content_hash),versionLabel:String(row.version_label),
+  documentStatus:row.document_status as DocumentListItem["status"],metadata:(row.metadata??{}) as Record<string,string>,baselineEtag:stringOrNull(row.baseline_etag),
+  state:row.state as DocumentUploadReservation["state"],graphDriveId:stringOrNull(row.graph_drive_id),graphItemId:stringOrNull(row.graph_item_id),
+  graphWebUrl:stringOrNull(row.graph_web_url),graphEtag:stringOrNull(row.graph_etag),graphVersionId:stringOrNull(row.graph_version_id),
+  graphFileSize:row.graph_file_size==null?null:Number(row.graph_file_size),projectCode:String(row.project_code),unitCode:stringOrNull(row.unit_code),
+  partyName:stringOrNull(row.party_name),currentItemId:stringOrNull(row.current_item_id),currentItemName:stringOrNull(row.current_item_name),
+};}
 function splitList(value:string|null):string[]{return value?value.split(", ").filter(Boolean):[];}
 function numberOrNull(value:string|number|null):number|null{return value==null?null:Number(value);}
+function stringOrNull(value:unknown):string|null{return typeof value==="string"&&value?value:null;}

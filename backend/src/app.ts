@@ -15,6 +15,7 @@ import { TaskRepository } from "./tasks/repository.js";
 import { DocumentRepository } from "./documents/repository.js";
 import type { MicrosoftGraphAdapter } from "./documents/graph-adapter.js";
 import { SharePointConnectionService, SharePointConnectionValidationError } from "./documents/connection-service.js";
+import { SharePointDocumentUploadService, SharePointUploadError } from "./documents/upload-service.js";
 import { HandoverRepository } from "./handovers/repository.js";
 import { PaymentRepository } from "./payments/repository.js";
 import { PaymentService } from "./payments/service.js";
@@ -49,6 +50,9 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
   const documentRepository = new DocumentRepository(dependencies.database);
   const sharePointConnections=dependencies.microsoftGraphAdapter&&dependencies.sharepointManagedIdentityClientId
     ?new SharePointConnectionService(documentRepository,dependencies.microsoftGraphAdapter,dependencies.sharepointManagedIdentityClientId)
+    :null;
+  const sharePointUploads=dependencies.microsoftGraphAdapter&&dependencies.sharepointManagedIdentityClientId
+    ?new SharePointDocumentUploadService(documentRepository,dependencies.microsoftGraphAdapter,dependencies.sharepointManagedIdentityClientId)
     :null;
   const handoverRepository = new HandoverRepository(dependencies.database);
   const paymentRepository = new PaymentRepository(dependencies.database);
@@ -508,6 +512,27 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
       return reply.code(status).send({error:status===403?"Nemáte oprávnění ověřit SharePoint připojení.":"Připojení k SharePointu se nepodařilo ověřit."});
     }
   });
+  app.post<{Body:{projectId:string;idempotencyKey:string;documentId?:string;typeCode?:string;documentName:string;fileName:string;mimeType:string;
+    contentBase64:string;versionLabel:string;status?:"draft"|"ready"|"sent"|"negotiation"|"signed"|"archived";note?:string;
+    unitId?:string;partyId?:string;contractId?:string;salesCaseId?:string}}>("/v1/documents/sharepoint-upload",{bodyLimit:6*1024*1024},async(request,reply)=>{
+    try{
+      const context=await sessionContext(request,dependencies.verifier,repository);
+      if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});
+      if(!sharePointUploads)return reply.code(503).send({error:"SharePoint integrace není v tomto prostředí nakonfigurovaná"});
+      const bytes=decodeBase64(request.body.contentBase64);
+      const result=await sharePointUploads.upload({...context,...request.body,bytes});
+      return reply.code(result.replayed?200:201).send({upload:result});
+    }catch(error){
+      const uploadError=error instanceof SharePointUploadError?error:null;
+      request.log.warn({event:"sharepoint.document.upload_failed",correlationId:request.id,errorName:error instanceof Error?error.name:"Error",
+        errorCode:uploadError?.code,graphStatus:uploadError?.graphStatus,graphRequestId:uploadError?.graphRequestId},"SharePoint document upload failed");
+      const status=permissionError(error)?403:uploadError?.code==="connection_unavailable"?503:
+        uploadError&&uploadError.code.startsWith("invalid_")||uploadError?.code==="document_type_required"?400:
+          uploadError?.code==="graph_not_found"||uploadError?.code==="document_item_missing"?404:uploadError?502:409;
+      return reply.code(status).send({error:status===403?"Nemáte oprávnění nahrát dokument.":status===400?"Zkontrolujte název a obsah souboru.":
+        status===503?"SharePoint není pro tento pracovní prostor dostupný.":"Dokument se nepodařilo uložit do SharePointu."});
+    }
+  });
   app.post<{Body:{projectId:string;typeCode:string;name:string;mimeType?:string;status?:string;note?:string;storageProvider?:"external"}}>("/v1/documents",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await documentRepository.createRecord({...context,...request.body}));}
     catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Metadata dokumentu nelze vytvořit"});}
@@ -568,6 +593,12 @@ function headerValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 function permissionError(error:unknown){return error instanceof Error&&/permission|required|oprávnění/i.test(error.message);}
+function decodeBase64(value:string):Uint8Array{
+  if(typeof value!=="string"||!value.length||value.length>5_600_000||!/^[A-Za-z0-9+/]*={0,2}$/.test(value)||value.length%4!==0)throw new SharePointUploadError("invalid_content");
+  const decoded=Buffer.from(value,"base64");
+  if(!decoded.length||decoded.toString("base64").replace(/=+$/," ").trim()!==value.replace(/=+$/," ").trim())throw new SharePointUploadError("invalid_content");
+  return decoded;
+}
 function mediaStatus(error:unknown){if(error instanceof MediaAccessError)return error.reason==="forbidden"?403:error.reason==="invalid"?400:404;if(permissionError(error))return 403;return error instanceof Error&&/duplicate|constraint|conflict/i.test(error.message)?409:500;}
 function mediaDto(media:{id:string;entityType:MediaEntityType;entityId:string;kind:MediaKind;fileName:string;mimeType:string;storageKey:string;uploadedAt:string;uploadedByUserId:string|null}){
   return{id:media.id,entityType:media.entityType,entityId:media.entityId,kind:media.kind,fileName:media.fileName,mimeType:media.mimeType,url:`/api/media/file/${encodeURIComponent(media.storageKey)}`,uploadedAt:media.uploadedAt,uploadedBy:media.uploadedByUserId??undefined};
