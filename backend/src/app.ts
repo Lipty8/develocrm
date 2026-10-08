@@ -13,6 +13,8 @@ import { CommercialService } from "./commercial/service.js";
 import { ActivityRepository } from "./activity/repository.js";
 import { TaskRepository } from "./tasks/repository.js";
 import { DocumentRepository } from "./documents/repository.js";
+import type { MicrosoftGraphAdapter } from "./documents/graph-adapter.js";
+import { SharePointConnectionService, SharePointConnectionValidationError } from "./documents/connection-service.js";
 import { HandoverRepository } from "./handovers/repository.js";
 import { PaymentRepository } from "./payments/repository.js";
 import { PaymentService } from "./payments/service.js";
@@ -23,7 +25,7 @@ import { mapApiError } from "./http/api-error.js";
 
 const verifiedIdentities = new WeakMap<FastifyRequest, EntraIdentity>();
 
-export function buildApp(dependencies: { database: Database; verifier: EntraTokenVerifier; corsAllowedOrigins?:Set<string> }): FastifyInstance {
+export function buildApp(dependencies: { database: Database; verifier: EntraTokenVerifier; corsAllowedOrigins?:Set<string>;microsoftGraphAdapter?:MicrosoftGraphAdapter;sharepointManagedIdentityClientId?:string }): FastifyInstance {
   const app = Fastify({
     logger: {
       redact: { paths:["req.headers.authorization","req.headers.cookie","request.headers.authorization","request.headers.cookie"], censor:"[REDACTED]" },
@@ -45,6 +47,9 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
   const activities = new ActivityRepository(dependencies.database);
   const taskRepository = new TaskRepository(dependencies.database);
   const documentRepository = new DocumentRepository(dependencies.database);
+  const sharePointConnections=dependencies.microsoftGraphAdapter&&dependencies.sharepointManagedIdentityClientId
+    ?new SharePointConnectionService(documentRepository,dependencies.microsoftGraphAdapter,dependencies.sharepointManagedIdentityClientId)
+    :null;
   const handoverRepository = new HandoverRepository(dependencies.database);
   const paymentRepository = new PaymentRepository(dependencies.database);
   const paymentService = new PaymentService(dependencies.database);
@@ -478,6 +483,30 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
   app.get("/v1/document-connections/sharepoint",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return{connection:await documentRepository.connectionStatus(context)};}
     catch(error){return reply.code(403).send({error:error instanceof Error?error.message:"Stav připojení nelze načíst"});}
+  });
+  app.put<{Body:{name:string;entraTenantId:string;siteId:string;driveId:string}}>("/v1/document-connections/sharepoint",async(request,reply)=>{
+    try{
+      const context=await sessionContext(request,dependencies.verifier,repository);
+      if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});
+      if(!sharePointConnections)return reply.code(503).send({error:"SharePoint integrace není v tomto prostředí nakonfigurovaná"});
+      return await sharePointConnections.configure({...context,...request.body});
+    }catch(error){
+      request.log.warn({event:"sharepoint.connection.configure_failed",correlationId:request.id,errorName:error instanceof Error?error.name:"Error"},"SharePoint connection configuration failed");
+      return reply.code(permissionError(error)?403:409).send({error:permissionError(error)?"Nemáte oprávnění spravovat SharePoint připojení.":"SharePoint připojení se nepodařilo uložit."});
+    }
+  });
+  app.post("/v1/document-connections/sharepoint/validate",async(request,reply)=>{
+    try{
+      const context=await sessionContext(request,dependencies.verifier,repository);
+      if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});
+      if(!sharePointConnections)return reply.code(503).send({error:"SharePoint integrace není v tomto prostředí nakonfigurovaná"});
+      return {validation:await sharePointConnections.validate(context)};
+    }catch(error){
+      const graphError=error instanceof SharePointConnectionValidationError?error:null;
+      request.log.warn({event:"sharepoint.connection.validation_failed",correlationId:request.id,errorName:error instanceof Error?error.name:"Error",errorCode:graphError?.code,graphStatus:graphError?.graphStatus,graphRequestId:graphError?.graphRequestId},"SharePoint connection validation failed");
+      const status=permissionError(error)?403:graphError?.code==="connection_not_found"?404:502;
+      return reply.code(status).send({error:status===403?"Nemáte oprávnění ověřit SharePoint připojení.":"Připojení k SharePointu se nepodařilo ověřit."});
+    }
   });
   app.post<{Body:{projectId:string;typeCode:string;name:string;mimeType?:string;status?:string;note?:string;storageProvider?:"external"}}>("/v1/documents",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await documentRepository.createRecord({...context,...request.body}));}

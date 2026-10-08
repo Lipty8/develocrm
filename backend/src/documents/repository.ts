@@ -39,6 +39,16 @@ export type DocumentDetail = DocumentListItem & {
 
 export type DocumentContext = { tenantId: string; userId: string; membershipId: string };
 
+export type SharePointConnectionConfiguration = {
+  id: string;
+  name: string;
+  entraTenantId: string;
+  siteId: string;
+  driveId: string;
+  authenticationMode: string;
+  credentialReference: string;
+};
+
 type DocumentRow = {
   id: string; project_id: string; project_name: string; name: string; category: string; type_code:string;type_name:string;status_code:DocumentListItem["status"];note:string|null;mime_type: string;
   file_size: string | number | null; storage_provider: "sharepoint" | "preview" | "external"; web_url: string | null;
@@ -143,6 +153,31 @@ export class DocumentRepository {
       const row=(await client.query<{connection_status:"connected"|"error"|"disabled";sync_status:"idle"|"syncing"|"error"|"paused";last_successful_sync_at:string|null}>(`SELECT connection_status,sync_status,last_successful_sync_at FROM sharepoint_connections WHERE tenant_id=$1 AND archived_at IS NULL ORDER BY created_at LIMIT 1`,[input.tenantId])).rows[0];
       return row?{status:row.connection_status,syncStatus:row.sync_status,lastSuccessfulSyncAt:row.last_successful_sync_at}:{status:"not_configured",syncStatus:"idle",lastSuccessfulSyncAt:null};
     });
+  }
+
+  async getConnectionForValidation(input: DocumentContext): Promise<SharePointConnectionConfiguration | null> {
+    return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
+      const row=(await client.query<{id:string;name:string;entra_tenant_id:string;site_id:string;drive_id:string;authentication_mode:string;credential_reference:string}>(`
+        SELECT connection.id,connection.name,connection.entra_tenant_id,connection.site_id,connection.drive_id,
+          connection.authentication_mode,connection.credential_reference
+        FROM sharepoint_connections connection
+        WHERE connection.tenant_id=$1 AND connection.archived_at IS NULL
+          AND app.current_user_has_permission('integrations.manage')
+        ORDER BY connection.created_at LIMIT 1`,[input.tenantId])).rows[0];
+      return row?{id:row.id,name:row.name,entraTenantId:row.entra_tenant_id,siteId:row.site_id,driveId:row.drive_id,authenticationMode:row.authentication_mode,credentialReference:row.credential_reference}:null;
+    });
+  }
+
+  async configureConnection(input:DocumentContext & {name:string;entraTenantId:string;siteId:string;driveId:string;credentialReference:string}):Promise<{id:string}>{
+    return this.command(input,client=>client.query<{id:string}>("SELECT app.configure_sharepoint_connection($1,$2,$3,$4,$5,$6,$7) id",[
+      input.tenantId,input.name,input.entraTenantId,input.siteId,input.driveId,input.credentialReference,input.membershipId,
+    ]));
+  }
+
+  async recordConnectionValidation(input:DocumentContext & {connectionId:string;status:"connected"|"error";errorCode?:string}):Promise<{id:string}>{
+    return this.command(input,client=>client.query<{id:string}>("SELECT app.record_sharepoint_connection_validation($1,$2,$3,$4,$5) id",[
+      input.tenantId,input.connectionId,input.status,input.errorCode??null,input.membershipId,
+    ]));
   }
 
   async createMetadata(input: DocumentContext & { projectId:string;name:string;category:string;mimeType:string;fileSize?:number;storageProvider:string;externalDriveId?:string;externalItemId?:string;webUrl?:string;etag?:string;sensitivity?:string;operation?:string }): Promise<{id:string}> {

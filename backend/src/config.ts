@@ -5,6 +5,7 @@ export type BackendConfig = {
   entraRequiredScope:string;
   environment:"development"|"pilot"|"production"|"test";
   corsAllowedOrigins:Set<string>;
+  sharepointManagedIdentityClientId:string|null;
   port: number;
 };
 
@@ -27,7 +28,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BackendConfig 
   const corsAllowedOrigins=new Set((env.CORS_ALLOWED_ORIGINS??"").split(",").map(value=>value.trim()).filter(Boolean));
   if((environment==="pilot"||environment==="production")&&!corsAllowedOrigins.size)throw new Error("Pilot a produkce vyžadují CORS_ALLOWED_ORIGINS");
   if((environment==="pilot"||environment==="production")&&!entraAllowedTenantIds.size)throw new Error("Pilot a produkce vyžadují ENTRA_ALLOWED_TENANT_IDS");
-  return { databaseUrl, entraClientId, entraAllowedTenantIds, entraRequiredScope, environment, corsAllowedOrigins, port };
+  const sharepointManagedIdentityClientId=env.SHAREPOINT_MANAGED_IDENTITY_CLIENT_ID?.trim()||null;
+  if(sharepointManagedIdentityClientId&&!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sharepointManagedIdentityClientId)){
+    throw new Error("SHAREPOINT_MANAGED_IDENTITY_CLIENT_ID musí být UUID");
+  }
+  return { databaseUrl, entraClientId, entraAllowedTenantIds, entraRequiredScope, environment, corsAllowedOrigins, sharepointManagedIdentityClientId, port };
 }
 
 function required(env: NodeJS.ProcessEnv, key: string): string {

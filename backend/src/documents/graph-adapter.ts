@@ -23,6 +23,9 @@ export type GraphFileVersion = {
   createdAt: string | null;
 };
 
+export type GraphSiteMetadata = { id: string; displayName: string; webUrl: string | null };
+export type GraphDriveMetadata = { id: string; name: string; webUrl: string | null; driveType: string | null };
+
 export type GraphDeltaPage = {
   items: GraphFileMetadata[];
   deletedItemIds: string[];
@@ -34,6 +37,8 @@ export interface GraphTokenProvider {
 }
 
 export interface MicrosoftGraphAdapter {
+  getSite(siteId: string): Promise<GraphSiteMetadata | null>;
+  listSiteDrives(siteId: string): Promise<GraphDriveMetadata[]>;
   listFiles(connection: GraphConnection, parentItemId?: string): Promise<GraphFileMetadata[]>;
   uploadFile(connection: GraphConnection, parentItemId: string, fileName: string, bytes: Uint8Array, mimeType: string): Promise<GraphFileMetadata>;
   getFileMetadata(connection: GraphConnection, itemId: string): Promise<GraphFileMetadata | null>;
@@ -49,8 +54,17 @@ export class GraphUnavailableError extends Error {
   }
 }
 
+export class MicrosoftGraphRequestError extends Error {
+  constructor(readonly status: number, readonly requestId: string | null) {
+    super(`Microsoft Graph request failed (${status})`);
+    this.name = "MicrosoftGraphRequestError";
+  }
+}
+
 /** Preview never pretends to upload to SharePoint and never emits fake Graph identifiers. */
 export class PreviewGraphAdapter implements MicrosoftGraphAdapter {
+  async getSite(): Promise<GraphSiteMetadata | null> { return null; }
+  async listSiteDrives(): Promise<GraphDriveMetadata[]> { return []; }
   async listFiles(): Promise<GraphFileMetadata[]> { return []; }
   async getFileMetadata(): Promise<GraphFileMetadata | null> { return null; }
   async getVersions(): Promise<GraphFileVersion[]> { return []; }
@@ -64,8 +78,24 @@ export class PreviewGraphAdapter implements MicrosoftGraphAdapter {
 export class EntraMicrosoftGraphAdapter implements MicrosoftGraphAdapter {
   constructor(private readonly tokens: GraphTokenProvider, private readonly graphBaseUrl = "https://graph.microsoft.com/v1.0") {}
 
+  async getSite(siteId: string): Promise<GraphSiteMetadata | null> {
+    const response = await this.raw(`/sites/${encodeURIComponent(siteId)}?$select=id,displayName,webUrl`);
+    if (response.status === 404) return null;
+    if (!response.ok) throw graphRequestError(response);
+    const site = await response.json() as Record<string, unknown>;
+    return { id: String(site.id ?? ""), displayName: String(site.displayName ?? ""), webUrl: stringValue(site.webUrl) };
+  }
+
+  async listSiteDrives(siteId: string): Promise<GraphDriveMetadata[]> {
+    const payload = await this.request<{ value?: Array<Record<string, unknown>> }>(`/sites/${encodeURIComponent(siteId)}/drives?$select=id,name,webUrl,driveType`);
+    return (payload.value ?? []).map((drive) => ({
+      id: String(drive.id ?? ""), name: String(drive.name ?? ""), webUrl: stringValue(drive.webUrl), driveType: stringValue(drive.driveType),
+    }));
+  }
+
   async listFiles(connection: GraphConnection, parentItemId = "root"): Promise<GraphFileMetadata[]> {
-    const payload = await this.request<{ value?: unknown[] }>(`/drives/${encodeURIComponent(connection.driveId)}/items/${encodeURIComponent(parentItemId)}/children`);
+    const parentPath=parentItemId==="root"?"root":`items/${encodeURIComponent(parentItemId)}`;
+    const payload = await this.request<{ value?: unknown[] }>(`/drives/${encodeURIComponent(connection.driveId)}/${parentPath}/children`);
     return (payload.value ?? []).map((item) => mapGraphItem(connection.driveId, item));
   }
 
@@ -79,7 +109,7 @@ export class EntraMicrosoftGraphAdapter implements MicrosoftGraphAdapter {
   async getFileMetadata(connection: GraphConnection, itemId: string): Promise<GraphFileMetadata | null> {
     const response = await this.raw(`/drives/${encodeURIComponent(connection.driveId)}/items/${encodeURIComponent(itemId)}`);
     if (response.status === 404) return null;
-    if (!response.ok) throw new Error(`Microsoft Graph metadata request failed (${response.status})`);
+    if (!response.ok) throw graphRequestError(response);
     return mapGraphItem(connection.driveId, await response.json());
   }
 
@@ -125,7 +155,7 @@ export class EntraMicrosoftGraphAdapter implements MicrosoftGraphAdapter {
 
   private async request<T>(path: string, init?: RequestInit, absolute = false): Promise<T> {
     const response = await this.raw(path, init, absolute);
-    if (!response.ok) throw new Error(`Microsoft Graph request failed (${response.status})`);
+    if (!response.ok) throw graphRequestError(response);
     return response.json() as Promise<T>;
   }
 
@@ -136,6 +166,10 @@ export class EntraMicrosoftGraphAdapter implements MicrosoftGraphAdapter {
       headers: { authorization: `Bearer ${token}`, accept: "application/json", ...(init?.headers ?? {}) },
     });
   }
+}
+
+function graphRequestError(response: Response): MicrosoftGraphRequestError {
+  return new MicrosoftGraphRequestError(response.status, response.headers.get("request-id") ?? response.headers.get("client-request-id"));
 }
 
 function mapGraphItem(driveId: string, input: unknown): GraphFileMetadata {
