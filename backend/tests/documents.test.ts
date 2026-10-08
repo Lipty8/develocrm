@@ -21,7 +21,7 @@ const beforeSeed = [
   "0001_block_a_identity.sql", "0002_block_b_inventory.sql", "0003_block_c_sales.sql",
   "0004_block_d_pricing_contracts.sql", "0005_pilot_import_compatibility.sql", "0006_crud_operations.sql",
 ];
-const afterSeed = ["0007_practical_editing_rbac.sql", "0008_completion_workflows.sql", "0009_documents_sharepoint_foundation.sql", "0010_document_workspace.sql", "0050_sharepoint_document_upload.sql"];
+const afterSeed = ["0007_practical_editing_rbac.sql", "0008_completion_workflows.sql", "0009_documents_sharepoint_foundation.sql", "0010_document_workspace.sql", "0050_sharepoint_document_upload.sql", "0051_default_document_types.sql"];
 async function database() {
   const db = new PGlite();
   for (const name of beforeSeed) await db.exec(await readFile(new URL(`../migrations/${name}`, import.meta.url), "utf8"));
@@ -64,6 +64,10 @@ test("migrace dokumentů zavede konkrétní vazby, composite FK, RLS a FORCE", a
   const linkTables = await db.query<{ table_name: string }>("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('project_documents','unit_documents','party_documents','contract_documents')");
   assert.equal(linkTables.rows.length, 4);
   assert.equal((await db.query("SELECT table_name FROM information_schema.tables WHERE table_name='document_links'")).rows.length, 0);
+  assert.equal((await db.query("SELECT id FROM document_types WHERE tenant_id=$1",[tenant])).rows.length,9);
+  const futureTenant="d0000000-0000-4000-8000-000000000099";
+  await db.query("INSERT INTO tenants(id,name,slug,status) VALUES($1,'Nový workspace','novy-workspace','active')",[futureTenant]);
+  assert.equal((await db.query("SELECT id FROM document_types WHERE tenant_id=$1",[futureTenant])).rows.length,9);
   await db.close();
 });
 
@@ -100,7 +104,7 @@ test("document_versions jsou oddělené od contract_versions a append-only", asy
 
 test("upload reservation je idempotentní, projektově izolovaná a finalizuje existující document model",async()=>{
   const db=await database();
-  await db.query("INSERT INTO document_types(tenant_id,code,name) VALUES($1,'other','Jiné')",[tenant]);
+  await db.query("INSERT INTO document_types(tenant_id,code,name) VALUES($1,'other','Jiné') ON CONFLICT(tenant_id,code) DO NOTHING",[tenant]);
   await asApp(db);
   const values=[tenant,project,"smoke-upload-0001","a".repeat(64),"other","Technický smoke test","smoke.txt","text/plain",12,"sha256:"+"b".repeat(64),"v1","draft","Technický test",unit,null,null,null,member] as const;
   const sql="SELECT app.reserve_document_upload($1,$2,$3,$4,'create',NULL,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) id";
@@ -250,7 +254,7 @@ test("document workspace má rozšiřitelné typy, sales-case vazby a append-onl
   const db = await database();
   const tables = await db.query<{ table_name:string }>("SELECT table_name FROM information_schema.tables WHERE table_name=ANY($1::text[])", [["document_types","sales_case_documents","document_events"]]);
   assert.equal(tables.rows.length, 3);
-  await db.query("INSERT INTO document_types(tenant_id,code,name) VALUES($1,'future_purchase_contract','Smlouva o budoucí kupní')",[tenant]);
+  await db.query("INSERT INTO document_types(tenant_id,code,name) VALUES($1,'future_purchase_contract','Smlouva o budoucí kupní') ON CONFLICT(tenant_id,code) DO NOTHING",[tenant]);
   await asApp(db);
   const documentId=(await db.query<{id:string}>("SELECT app.create_document_record($1,$2,'future_purchase_contract','SBK A203','application/pdf','draft','První návrh','external',NULL,NULL,NULL,$3) id",[tenant,project,member])).rows[0].id;
   await db.query("SELECT app.link_document_to_sales_case($1,$2,'c6000000-0000-4000-8000-000000000001',$3)",[tenant,documentId,member]);
@@ -267,6 +271,7 @@ test("document workspace má rozšiřitelné typy, sales-case vazby a append-onl
 
 test("workflow dokumentu odmítne nepovolený přechod a seed poskytuje realistické vazby", async () => {
   const db=await database();
+  await db.query("DELETE FROM document_types WHERE tenant_id=$1",[tenant]);
   await db.exec(await readFile(new URL("../seeds/0005_preview_documents.sql",import.meta.url),"utf8"));
   await asApp(db);
   const seeded=await db.query<{name:string;status_code:string}>("SELECT name,status_code FROM documents WHERE id='dc200000-0000-4000-8000-000000000001'");
