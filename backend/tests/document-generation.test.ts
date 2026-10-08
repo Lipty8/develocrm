@@ -62,4 +62,5 @@ test("persistence vrstva vynucuje tenant, projekt, append-only template verze a 
   assert.match(migration,/FORCE ROW LEVEL SECURITY/g);
   const repository=await readFile(new URL("../src/documents/template-generation-repository.ts",import.meta.url),"utf8");
   assert.match(repository,/SELECT \$1::uuid,\$3::uuid,\$4::text,\$5::text,\$6::text,\$2::uuid/);
+  assert.match(repository,/idempotency_key=\$2`,\[input\.tenantId,input\.idempotencyKey\]/);
 });

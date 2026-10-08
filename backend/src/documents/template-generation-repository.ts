@@ -54,7 +54,7 @@ export class DocumentTemplateGenerationRepository{
 
   async reserve(input:DocumentContext&{projectId:string;template:TemplateSource;idempotencyKey:string;requestHash:string;unitId?:string;partyId?:string;salesCaseId?:string;contractId?:string}):Promise<GenerationOperation>{
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
-      const existing=(await client.query<Record<string,unknown>>(`SELECT * FROM document_generation_operations WHERE tenant_id=$1 AND idempotency_key=$3`,[input.tenantId,input.membershipId,input.idempotencyKey])).rows[0];
+      const existing=(await client.query<Record<string,unknown>>(`SELECT * FROM document_generation_operations WHERE tenant_id=$1 AND idempotency_key=$2`,[input.tenantId,input.idempotencyKey])).rows[0];
       if(existing){if(existing.request_hash!==input.requestHash)throw new Error("idempotency key payload mismatch");return mapOperation(existing,input.template);}
       const data=(await client.query<{project_name:string;project_code:string;unit_code:string|null;party_name:string|null;total_price:string|null}>(`
         SELECT p.name project_name,p.code project_code,u.code unit_code,party.display_name party_name,
