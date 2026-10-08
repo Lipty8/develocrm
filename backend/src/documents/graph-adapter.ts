@@ -42,6 +42,7 @@ export interface MicrosoftGraphAdapter {
   listFiles(connection: GraphConnection, parentItemId?: string): Promise<GraphFileMetadata[]>;
   uploadFile(connection: GraphConnection, parentItemId: string, fileName: string, bytes: Uint8Array, mimeType: string): Promise<GraphFileMetadata>;
   getFileMetadata(connection: GraphConnection, itemId: string): Promise<GraphFileMetadata | null>;
+  downloadFile(connection: GraphConnection, itemId: string, versionId?: string): Promise<Uint8Array>;
   createFolder(connection: GraphConnection, parentItemId: string, folderName: string): Promise<GraphFileMetadata>;
   moveOrRenameFile(connection: GraphConnection, itemId: string, parentItemId: string, newName?: string): Promise<GraphFileMetadata>;
   getVersions(connection: GraphConnection, itemId: string): Promise<GraphFileVersion[]>;
@@ -67,6 +68,7 @@ export class PreviewGraphAdapter implements MicrosoftGraphAdapter {
   async listSiteDrives(): Promise<GraphDriveMetadata[]> { return []; }
   async listFiles(): Promise<GraphFileMetadata[]> { return []; }
   async getFileMetadata(): Promise<GraphFileMetadata | null> { return null; }
+  async downloadFile(): Promise<Uint8Array> { throw new GraphUnavailableError(); }
   async getVersions(): Promise<GraphFileVersion[]> { return []; }
   async delta(): Promise<GraphDeltaPage> { return { items: [], deletedItemIds: [], nextCursor: null }; }
   async uploadFile(): Promise<GraphFileMetadata> { throw new GraphUnavailableError(); }
@@ -111,6 +113,15 @@ export class EntraMicrosoftGraphAdapter implements MicrosoftGraphAdapter {
     if (response.status === 404) return null;
     if (!response.ok) throw graphRequestError(response);
     return mapGraphItem(connection.driveId, await response.json());
+  }
+
+  async downloadFile(connection: GraphConnection, itemId: string, versionId?: string): Promise<Uint8Array> {
+    const suffix=versionId?`/versions/${encodeURIComponent(versionId)}/content`:"/content";
+    const response=await this.raw(`/drives/${encodeURIComponent(connection.driveId)}/items/${encodeURIComponent(itemId)}${suffix}`);
+    if(!response.ok)throw graphRequestError(response);
+    const bytes=new Uint8Array(await response.arrayBuffer());
+    if(bytes.byteLength<1||bytes.byteLength>8*1024*1024)throw new MicrosoftGraphRequestError(413,response.headers.get("request-id"));
+    return bytes;
   }
 
   async createFolder(connection: GraphConnection, parentItemId: string, folderName: string): Promise<GraphFileMetadata> {

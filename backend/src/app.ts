@@ -16,6 +16,9 @@ import { DocumentRepository } from "./documents/repository.js";
 import type { MicrosoftGraphAdapter } from "./documents/graph-adapter.js";
 import { SharePointConnectionService, SharePointConnectionValidationError } from "./documents/connection-service.js";
 import { SharePointDocumentUploadService, SharePointUploadError } from "./documents/upload-service.js";
+import { DocumentTemplateGenerationRepository, type PlaceholderSchema } from "./documents/template-generation-repository.js";
+import { DocumentGenerationError, DocumentTemplateGenerationService } from "./documents/template-generation-service.js";
+import { DocxTemplateError } from "./documents/docx-template.js";
 import { HandoverRepository } from "./handovers/repository.js";
 import { PaymentRepository } from "./payments/repository.js";
 import { PaymentService } from "./payments/service.js";
@@ -54,6 +57,9 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
   const sharePointUploads=dependencies.microsoftGraphAdapter&&dependencies.sharepointManagedIdentityClientId
     ?new SharePointDocumentUploadService(documentRepository,dependencies.microsoftGraphAdapter,dependencies.sharepointManagedIdentityClientId)
     :null;
+  const templateGenerationRepository=new DocumentTemplateGenerationRepository(dependencies.database);
+  const templateGeneration=sharePointUploads&&dependencies.microsoftGraphAdapter
+    ?new DocumentTemplateGenerationService(templateGenerationRepository,documentRepository,sharePointUploads,dependencies.microsoftGraphAdapter):null;
   const handoverRepository = new HandoverRepository(dependencies.database);
   const paymentRepository = new PaymentRepository(dependencies.database);
   const paymentService = new PaymentService(dependencies.database);
@@ -532,6 +538,20 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
       return reply.code(status).send({error:status===403?"Nemáte oprávnění nahrát dokument.":status===400?"Zkontrolujte název a obsah souboru.":
         status===503?"SharePoint není pro tento pracovní prostor dostupný.":"Dokument se nepodařilo uložit do SharePointu."});
     }
+  });
+  app.post<{Body:{projectId:string;code:string;name:string;outputTypeCode:string;versionLabel:string;sourceDocumentId:string;sourceDocumentVersionId:string;schema:PlaceholderSchema}}>("/v1/document-templates",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});
+      if(!templateGeneration)return reply.code(503).send({error:"SharePoint integrace není v tomto prostředí nakonfigurovaná"});
+      return reply.code(201).send({template:await templateGeneration.register({...context,...request.body})});
+    }catch(error){request.log.warn({event:"document.template.registration_failed",correlationId:request.id,errorName:error instanceof Error?error.name:"Error",errorCode:error instanceof DocumentGenerationError||error instanceof DocxTemplateError?error.code:undefined},"document template registration failed");
+      return reply.code(permissionError(error)?403:error instanceof DocumentGenerationError&&error.code==="source_not_found"?404:422).send({error:"Šablonu se nepodařilo bezpečně zaregistrovat."});}
+  });
+  app.post<{Body:{projectId:string;templateVersionId:string;idempotencyKey:string;unitId?:string;partyId?:string;salesCaseId?:string;contractId?:string;documentId?:string;documentName?:string}}>("/v1/documents/generate",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});
+      if(!templateGeneration)return reply.code(503).send({error:"SharePoint integrace není v tomto prostředí nakonfigurovaná"});
+      const generated=await templateGeneration.generate({...context,...request.body});return reply.code(generated.replayed?200:201).send({generation:generated});
+    }catch(error){request.log.warn({event:"document.generation_failed",correlationId:request.id,errorName:error instanceof Error?error.name:"Error",errorCode:error instanceof DocumentGenerationError||error instanceof DocxTemplateError?error.code:undefined},"document generation failed");
+      return reply.code(permissionError(error)?403:error instanceof DocumentGenerationError&&error.code==="template_not_found"?404:422).send({error:"Dokument se nepodařilo vytvořit. Zkontrolujte šablonu a povinné údaje."});}
   });
   app.post<{Body:{projectId:string;typeCode:string;name:string;mimeType?:string;status?:string;note?:string;storageProvider?:"external"}}>("/v1/documents",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await documentRepository.createRecord({...context,...request.body}));}

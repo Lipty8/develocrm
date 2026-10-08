@@ -30,6 +30,7 @@ function harness(options:{finalizeFailureOnce?:boolean;uploadFailure?:unknown;ve
     uploadFile:async(_connection,parent,name)=>{uploadCalls++;if(options.uploadFailure&&uploadCalls===1)throw options.uploadFailure;
       const existing=[...items.values()].find(item=>item.parentItemId===parent&&item.name===name);const item=file(existing?.itemId??`item-${items.size}`,name,parent,`etag-${uploadCalls}`);items.set(item.itemId,item);return item;},
     getFileMetadata:async(_connection,itemId)=>items.get(itemId)??null,moveOrRenameFile:async()=>{throw new Error("not used");},
+    downloadFile:async()=>new Uint8Array(),
     getVersions:async()=>[{id:"2.0",label:"2.0",size:4,etag:"etag",createdAt:null}],
   };
   const repository={

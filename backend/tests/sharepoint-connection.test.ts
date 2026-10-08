@@ -15,7 +15,7 @@ function graph(overrides:Partial<MicrosoftGraphAdapter>={}):MicrosoftGraphAdapte
   return {
     getSite:async()=>({id:"site-1",displayName:"DeveloCRM",webUrl:null}),
     listSiteDrives:async()=>[{id:"drive-1",name:"Dejvice TEST",webUrl:null,driveType:"documentLibrary"}],
-    listFiles:async()=>[],uploadFile:async()=>{throw new Error("write disabled in validation");},getFileMetadata:async()=>null,
+    listFiles:async()=>[],uploadFile:async()=>{throw new Error("write disabled in validation");},getFileMetadata:async()=>null,downloadFile:async()=>{throw new Error("download disabled in validation");},
     createFolder:async()=>{throw new Error("write disabled in validation");},moveOrRenameFile:async()=>{throw new Error("write disabled in validation");},
     getVersions:async()=>[],delta:async()=>({items:[],deletedItemIds:[],nextCursor:null}),...overrides,
   };
