@@ -16,8 +16,9 @@ export class DocumentTemplateGenerationService{
     sourceDocumentId:string;sourceDocumentVersionId:string;schema:PlaceholderSchema}){
     validateSchema(input.schema);
     const source=await this.repository.sourceForRegistration(input);if(!source)throw new DocumentGenerationError("source_not_found");
+    if(!source.externalVersionId)throw new DocumentGenerationError("template_source_version_unavailable");
     const connection=await this.documents.getConnectionForUpload(input);if(!connection||connection.driveId!==source.driveId)throw new DocumentGenerationError("source_drive_mismatch");
-    const bytes=await this.graph.downloadFile({siteId:connection.siteId,driveId:connection.driveId},source.itemId,source.externalVersionId??undefined);
+    const bytes=await this.graph.downloadFile({siteId:connection.siteId,driveId:connection.driveId},source.itemId,source.externalVersionId);
     const contentHash=`sha256:${hash(bytes)}`;if(!source.contentHash||source.contentHash!==contentHash)throw new DocumentGenerationError("template_hash_mismatch");
     const inspection=inspectDocxTemplate(bytes);const fields=Object.keys(input.schema.fields).sort();
     const unknown=inspection.tokens.filter(token=>!TECHNICAL_PLACEHOLDERS.includes(token as typeof TECHNICAL_PLACEHOLDERS[number]));
@@ -30,12 +31,13 @@ export class DocumentTemplateGenerationService{
     salesCaseId?:string;contractId?:string;documentId?:string;documentName?:string}){
     if(!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,159}$/.test(input.idempotencyKey))throw new DocumentGenerationError("invalid_idempotency_key");
     const template=await this.repository.getTemplate(input);if(!template)throw new DocumentGenerationError("template_not_found");
+    if(!template.externalVersionId)throw new DocumentGenerationError("template_source_version_unavailable");
     const requestHash=hash(JSON.stringify({projectId:input.projectId,templateVersionId:input.templateVersionId,unitId:input.unitId??null,
       partyId:input.partyId??null,salesCaseId:input.salesCaseId??null,contractId:input.contractId??null,documentId:input.documentId??null,documentName:input.documentName??null}));
     const operation=await this.repository.reserve({...input,template,requestHash});
     if(operation.state==="completed")return{operationId:operation.id,documentId:operation.outputDocumentId,documentVersionId:operation.outputDocumentVersionId,replayed:true};
     const connection=await this.documents.getConnectionForUpload(input);if(!connection||connection.driveId!==template.driveId)throw new DocumentGenerationError("template_drive_mismatch");
-    const source=await this.graph.downloadFile({siteId:connection.siteId,driveId:connection.driveId},template.itemId,template.externalVersionId??undefined);
+    const source=await this.graph.downloadFile({siteId:connection.siteId,driveId:connection.driveId},template.itemId,template.externalVersionId);
     if(`sha256:${hash(source)}`!==template.contentHash)throw new DocumentGenerationError("template_hash_mismatch");
     const required=Object.entries(template.schema.fields).filter(([,field])=>field.required).map(([token])=>token);
     const rendered=renderDocxTemplate(source,operation.snapshot,{allowedTokens:Object.keys(template.schema.fields),requiredTokens:required});

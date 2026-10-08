@@ -33,6 +33,13 @@ test("retry dokončené operace nevytvoří druhý upload",async()=>{const h=har
 test("chybějící povinná hodnota zastaví render",async()=>{const h=harness({snapshot:{"project.name":"Hrdlička","unit.code":"417"}});await assert.rejects(h.service.generate({...context,projectId,templateVersionId,idempotencyKey:"generation-test-03"}),e=>e instanceof DocxTemplateError&&e.code==="template_value_missing");assert.equal(h.uploads,0);});
 test("změněný obsah immutable šablony je odmítnut podle hashe",async()=>{const h=harness({templateHash:"sha256:"+"0".repeat(64)});await assert.rejects(h.service.generate({...context,projectId,templateVersionId,idempotencyKey:"generation-test-04"}),e=>e instanceof DocumentGenerationError&&e.code==="template_hash_mismatch");});
 test("Graph/upload failure ponechá generování nedokončené pro bezpečný retry",async()=>{const h=harness({uploadError:new Error("graph timeout")});await assert.rejects(h.service.generate({...context,projectId,templateVersionId,idempotencyKey:"generation-test-05"}),/graph timeout/);assert.equal(h.completions,0);});
+test("generování vyžaduje skutečné ID neměnné SharePoint verze šablony",async()=>{
+  const h=harness();(h.service as unknown as {repository:{getTemplate:()=>Promise<Record<string,unknown>>}}).repository.getTemplate=async()=>({
+    templateId:"template",templateVersionId,projectId,templateCode:"technical-test",templateName:"Technický test",outputTypeCode:"other",versionLabel:"v1",
+    contentHash:hash(docx("x")),schema,driveId:"drive",itemId:"item",externalVersionId:null,
+  });
+  await assert.rejects(h.service.generate({...context,projectId,templateVersionId,idempotencyKey:"generation-test-06"}),e=>e instanceof DocumentGenerationError&&e.code==="template_source_version_unavailable");
+});
 test("registrace odmítne neznámý placeholder a poškozený DOCX",async()=>{
   const unknown=harness({source:docx("{{internal.secret}}")});await assert.rejects(unknown.service.register({...context,projectId,code:"technical",name:"Technical",outputTypeCode:"other",versionLabel:"v1",sourceDocumentId:"d",sourceDocumentVersionId:"v",schema:{fields:{"internal.secret":{required:true}}}}),e=>e instanceof DocumentGenerationError&&e.code==="invalid_schema");
   const corrupt=harness({source:new TextEncoder().encode("not-docx")});await assert.rejects(corrupt.service.register({...context,projectId,code:"technical",name:"Technical",outputTypeCode:"other",versionLabel:"v1",sourceDocumentId:"d",sourceDocumentVersionId:"v",schema}),e=>e instanceof DocxTemplateError&&e.code==="invalid_docx");

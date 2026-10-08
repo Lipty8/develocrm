@@ -117,8 +117,10 @@ export class SharePointDocumentUploadService{
   }
 
   private async externalVersionId(connection:GraphConnection,item:GraphFileMetadata):Promise<string|null>{
-    try{return(await this.graph.getVersions(connection,item.itemId))[0]?.id??item.etag;}
-    catch{return item.etag;}
+    // An ETag is not a Graph driveItemVersion id. Persist only an actual
+    // version identifier so consumers never construct /versions/{etag}/content.
+    try{return(await this.graph.getVersions(connection,item.itemId))[0]?.id??null;}
+    catch{return null;}
   }
 }
 

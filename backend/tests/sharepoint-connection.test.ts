@@ -65,6 +65,16 @@ test("production Graph adapter uses only the configured site and drive for read 
   }finally{globalThis.fetch=originalFetch;}
 });
 
+test("exact driveItem version download uses the isolated Graph beta content endpoint",async()=>{
+  const requests:string[]=[];const originalFetch=globalThis.fetch;
+  globalThis.fetch=(async(input:URL|RequestInfo)=>{requests.push(String(input));return new Response(new Uint8Array([1,2,3]),{status:200});}) as typeof fetch;
+  try{
+    const adapter=new EntraMicrosoftGraphAdapter({getAccessToken:async()=>"token"});
+    assert.deepEqual(await adapter.downloadFile({siteId:"site",driveId:"drive"},"item","1.0"),new Uint8Array([1,2,3]));
+    assert.equal(requests[0],"https://graph.microsoft.com/beta/drives/drive/items/item/versions/1.0/content");
+  }finally{globalThis.fetch=originalFetch;}
+});
+
 test("connection configuration is tenant scoped and requires integrations.manage",async()=>{
   const db=new PGlite(),directory=new URL("../migrations/",import.meta.url);
   for(const name of (await readdir(directory)).filter(name=>/^\d+.*\.sql$/.test(name)).sort())await db.exec(await readFile(new URL(name,directory),"utf8"));

@@ -117,7 +117,13 @@ export class EntraMicrosoftGraphAdapter implements MicrosoftGraphAdapter {
 
   async downloadFile(connection: GraphConnection, itemId: string, versionId?: string): Promise<Uint8Array> {
     const suffix=versionId?`/versions/${encodeURIComponent(versionId)}/content`:"/content";
-    const response=await this.raw(`/drives/${encodeURIComponent(connection.driveId)}/items/${encodeURIComponent(itemId)}${suffix}`);
+    // Listing driveItem versions is available in Graph v1.0, while downloading
+    // one exact historical version is currently exposed only by Graph beta.
+    // Keep beta isolated to this read-only call; current-file reads stay on v1.0.
+    const absolute=versionId
+      ?`${this.graphBaseUrl.replace(/\/v1\.0\/?$/, "/beta")}/drives/${encodeURIComponent(connection.driveId)}/items/${encodeURIComponent(itemId)}${suffix}`
+      :undefined;
+    const response=await this.raw(absolute??`/drives/${encodeURIComponent(connection.driveId)}/items/${encodeURIComponent(itemId)}${suffix}`,undefined,Boolean(absolute));
     if(!response.ok)throw graphRequestError(response);
     const bytes=new Uint8Array(await response.arrayBuffer());
     if(bytes.byteLength<1||bytes.byteLength>8*1024*1024)throw new MicrosoftGraphRequestError(413,response.headers.get("request-id"));
