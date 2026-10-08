@@ -123,7 +123,11 @@ export class EntraMicrosoftGraphAdapter implements MicrosoftGraphAdapter {
     const absolute=versionId
       ?`${this.graphBaseUrl.replace(/\/v1\.0\/?$/, "/beta")}/drives/${encodeURIComponent(connection.driveId)}/items/${encodeURIComponent(itemId)}${suffix}`
       :undefined;
-    const response=await this.raw(absolute??`/drives/${encodeURIComponent(connection.driveId)}/items/${encodeURIComponent(itemId)}${suffix}`,undefined,Boolean(absolute));
+    let response=await this.raw(absolute??`/drives/${encodeURIComponent(connection.driveId)}/items/${encodeURIComponent(itemId)}${suffix}`,undefined,Boolean(absolute));
+    // Graph returns 400 when the requested version is still the current one;
+    // its contract requires /content for that case. The caller verifies the
+    // downloaded bytes against the immutable CRM SHA-256 before using them.
+    if(versionId&&response.status===400)response=await this.raw(`/drives/${encodeURIComponent(connection.driveId)}/items/${encodeURIComponent(itemId)}/content`);
     if(!response.ok)throw graphRequestError(response);
     const bytes=new Uint8Array(await response.arrayBuffer());
     if(bytes.byteLength<1||bytes.byteLength>8*1024*1024)throw new MicrosoftGraphRequestError(413,response.headers.get("request-id"));

@@ -65,13 +65,28 @@ test("production Graph adapter uses only the configured site and drive for read 
   }finally{globalThis.fetch=originalFetch;}
 });
 
-test("exact driveItem version download uses the isolated Graph beta content endpoint",async()=>{
+test("historical driveItem version download uses the isolated Graph beta content endpoint",async()=>{
   const requests:string[]=[];const originalFetch=globalThis.fetch;
   globalThis.fetch=(async(input:URL|RequestInfo)=>{requests.push(String(input));return new Response(new Uint8Array([1,2,3]),{status:200});}) as typeof fetch;
   try{
     const adapter=new EntraMicrosoftGraphAdapter({getAccessToken:async()=>"token"});
     assert.deepEqual(await adapter.downloadFile({siteId:"site",driveId:"drive"},"item","1.0"),new Uint8Array([1,2,3]));
     assert.equal(requests[0],"https://graph.microsoft.com/beta/drives/drive/items/item/versions/1.0/content");
+  }finally{globalThis.fetch=originalFetch;}
+});
+
+test("current driveItem version falls back from Graph 400 to current content",async()=>{
+  const requests:string[]=[];const originalFetch=globalThis.fetch;
+  globalThis.fetch=(async(input:URL|RequestInfo)=>{const url=String(input);requests.push(url);return url.includes("/beta/")
+    ?new Response(JSON.stringify({error:{code:"badRequest"}}),{status:400,headers:{"content-type":"application/json"}})
+    :new Response(new Uint8Array([4,5,6]),{status:200});}) as typeof fetch;
+  try{
+    const adapter=new EntraMicrosoftGraphAdapter({getAccessToken:async()=>"token"});
+    assert.deepEqual(await adapter.downloadFile({siteId:"site",driveId:"drive"},"item","1.0"),new Uint8Array([4,5,6]));
+    assert.deepEqual(requests,[
+      "https://graph.microsoft.com/beta/drives/drive/items/item/versions/1.0/content",
+      "https://graph.microsoft.com/v1.0/drives/drive/items/item/content",
+    ]);
   }finally{globalThis.fetch=originalFetch;}
 });
 
