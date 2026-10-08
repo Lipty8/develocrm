@@ -24,14 +24,16 @@ export class DocumentTemplateGenerationRepository{
   async register(input:DocumentContext&{projectId:string;code:string;name:string;outputTypeCode:string;versionLabel:string;sourceDocumentId:string;sourceDocumentVersionId:string;contentHash:string;schema:PlaceholderSchema}):Promise<{templateId:string;templateVersionId:string}>{
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
       const template=(await client.query<{id:string}>(`INSERT INTO document_templates(tenant_id,project_id,code,name,output_type_code,created_by_membership_id)
-        SELECT $1,$3,$4,$5,$6,$2 WHERE app.has_project_permission($1,$2,$3,'documents.upload')
+        SELECT $1::uuid,$3::uuid,$4::text,$5::text,$6::text,$2::uuid
+        WHERE app.has_project_permission($1::uuid,$2::uuid,$3::uuid,'documents.upload')
         ON CONFLICT(tenant_id,project_id,code) DO UPDATE SET name=EXCLUDED.name
         RETURNING id`,[input.tenantId,input.membershipId,input.projectId,input.code,input.name,input.outputTypeCode])).rows[0];
       if(!template)throw new Error("documents.upload permission required");
       const version=(await client.query<{id:string}>(`INSERT INTO document_template_versions(tenant_id,project_id,template_id,source_document_id,source_document_version_id,version_label,content_hash,placeholder_schema,created_by_membership_id)
         VALUES($1,$3,$4,$5,$6,$7,$8,$9,$2) RETURNING id`,[input.tenantId,input.membershipId,input.projectId,template.id,input.sourceDocumentId,input.sourceDocumentVersionId,input.versionLabel,input.contentHash,input.schema])).rows[0];
       await client.query(`INSERT INTO audit_log(tenant_id,actor_user_id,action,entity_type,entity_id,after_data)
-        SELECT $1,m.user_id,'document_template.version_registered','document_template_version',$3,jsonb_build_object('projectId',$4,'templateId',$5,'contentHash',$6)
+        SELECT $1,m.user_id,'document_template.version_registered','document_template_version',$3,
+          jsonb_build_object('projectId',$4::uuid,'templateId',$5::uuid,'contentHash',$6::text)
         FROM tenant_memberships m WHERE m.tenant_id=$1 AND m.id=$2`,[input.tenantId,input.membershipId,version.id,input.projectId,template.id,input.contentHash]);
       return{templateId:template.id,templateVersionId:version.id};
     });
@@ -83,10 +85,11 @@ export class DocumentTemplateGenerationRepository{
         WHERE tenant_id=$1 AND id=$3 AND created_by_membership_id=$2 AND state='reserved'`,[input.tenantId,input.membershipId,input.operationId,input.documentId,input.documentVersionId,input.renderedContentHash]);
       if(!result.rowCount){const done=await client.query(`SELECT 1 FROM document_generation_operations WHERE tenant_id=$1 AND id=$2 AND state='completed'`,[input.tenantId,input.operationId]);if(!done.rowCount)throw new Error("generation operation not found");}
       await client.query(`INSERT INTO audit_log(tenant_id,actor_user_id,action,entity_type,entity_id,after_data)
-        SELECT $1,m.user_id,'document.generated','document_version',$4,jsonb_build_object('generationOperationId',$3,'documentId',$5,'renderedContentHash',$6)
+        SELECT $1,m.user_id,'document.generated','document_version',$4,
+          jsonb_build_object('generationOperationId',$3::uuid,'documentId',$5::uuid,'renderedContentHash',$6::text)
         FROM tenant_memberships m WHERE m.tenant_id=$1 AND m.id=$2 AND NOT EXISTS(SELECT 1 FROM audit_log a WHERE a.tenant_id=$1 AND a.action='document.generated' AND a.entity_id=$4)`,[input.tenantId,input.membershipId,input.operationId,input.documentVersionId,input.documentId,input.renderedContentHash]);
       if(result.rowCount)await client.query(`INSERT INTO outbox_events(tenant_id,aggregate_type,aggregate_id,event_type,payload)
-        VALUES($1,'document',$2,'document.generated',jsonb_build_object('schemaVersion',1,'documentId',$2,'versionId',$3,'generationOperationId',$4))`,[input.tenantId,input.documentId,input.documentVersionId,input.operationId]);
+        VALUES($1,'document',$2,'document.generated',jsonb_build_object('schemaVersion',1,'documentId',$2::uuid,'versionId',$3::uuid,'generationOperationId',$4::uuid))`,[input.tenantId,input.documentId,input.documentVersionId,input.operationId]);
     });
   }
 }
