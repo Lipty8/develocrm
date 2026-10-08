@@ -28,6 +28,15 @@ function harness(options:{source?:Uint8Array;snapshot?:Record<string,string>;upl
   return{service:new DocumentTemplateGenerationService(repository as never,documents as never,uploadsService as never,graph as never),get uploads(){return uploads;},get completions(){return completions;}};
 }
 
+test("registrace pinuje hash skutečných bajtů uložených v SharePointu",async()=>{
+  const source=docx("Projekt {{project.name}}, jednotka {{unit.code}}, klient {{buyer.name}}");let storedHash="";
+  const h=harness({source});const repository=(h.service as unknown as {repository:{sourceForRegistration:()=>Promise<Record<string,unknown>>;register:(input:{contentHash:string})=>Promise<Record<string,string>>}}).repository;
+  repository.sourceForRegistration=async()=>({projectId,driveId:"drive",itemId:"item",externalVersionId:"1.0",contentHash:"sha256:"+"0".repeat(64)});
+  repository.register=async input=>{storedHash=input.contentHash;return{templateId:"template",templateVersionId};};
+  await h.service.register({...context,projectId,code:"technical",name:"Technical",outputTypeCode:"other",versionLabel:"v1",sourceDocumentId:"d",sourceDocumentVersionId:"v",schema});
+  assert.equal(storedHash,hash(source));
+});
+
 test("validní generování používá strict renderer a existující upload service",async()=>{const h=harness();const result=await h.service.generate({...context,projectId,templateVersionId,idempotencyKey:"generation-test-01"});assert.equal(result.documentId,"document");assert.equal(h.uploads,1);assert.equal(h.completions,1);});
 test("retry dokončené operace nevytvoří druhý upload",async()=>{const h=harness({completed:true});const result=await h.service.generate({...context,projectId,templateVersionId,idempotencyKey:"generation-test-02"});assert.equal(result.replayed,true);assert.equal(h.uploads,0);});
 test("chybějící povinná hodnota zastaví render",async()=>{const h=harness({snapshot:{"project.name":"Hrdlička","unit.code":"417"}});await assert.rejects(h.service.generate({...context,projectId,templateVersionId,idempotencyKey:"generation-test-03"}),e=>e instanceof DocxTemplateError&&e.code==="template_value_missing");assert.equal(h.uploads,0);});

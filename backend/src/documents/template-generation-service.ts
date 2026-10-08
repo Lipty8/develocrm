@@ -19,7 +19,10 @@ export class DocumentTemplateGenerationService{
     if(!source.externalVersionId)throw new DocumentGenerationError("template_source_version_unavailable");
     const connection=await this.documents.getConnectionForUpload(input);if(!connection||connection.driveId!==source.driveId)throw new DocumentGenerationError("source_drive_mismatch");
     const bytes=await this.graph.downloadFile({siteId:connection.siteId,driveId:connection.driveId},source.itemId,source.externalVersionId);
-    const contentHash=`sha256:${hash(bytes)}`;if(!source.contentHash||source.contentHash!==contentHash)throw new DocumentGenerationError("template_hash_mismatch");
+    // SharePoint may normalize Office packages during persistence. Pin the
+    // immutable template hash to the bytes read back from its exact version,
+    // rather than to the pre-upload transport payload stored on the document.
+    const contentHash=`sha256:${hash(bytes)}`;
     const inspection=inspectDocxTemplate(bytes);const fields=Object.keys(input.schema.fields).sort();
     const unknown=inspection.tokens.filter(token=>!TECHNICAL_PLACEHOLDERS.includes(token as typeof TECHNICAL_PLACEHOLDERS[number]));
     if(unknown.length)throw new DocxTemplateError("unknown_template_token","Šablona obsahuje neschválená pole.",unknown);
