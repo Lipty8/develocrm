@@ -35,8 +35,9 @@ export class DocumentTemplateGenerationRepository{
         VALUES($1,$3,$4,$5,$6,$7,$8,$9,$10,$11,CASE WHEN $10='approved' THEN now() END,CASE WHEN $10='approved' THEN $2::uuid END,$2)
         ON CONFLICT(tenant_id,template_id,version_label) DO NOTHING RETURNING id`,values)).rows[0];
       let replayed=false;
-      if(!version){version=(await client.query<{id:string}>(`SELECT id FROM document_template_versions WHERE tenant_id=$1 AND template_id=$4 AND version_label=$7
-          AND source_document_id=$5 AND source_document_version_id=$6 AND content_hash=$8 AND placeholder_schema=$9::jsonb AND approval_status=$10 AND effective_from=$11::date`,values)).rows[0];
+      if(!version){version=(await client.query<{id:string}>(`SELECT id FROM document_template_versions WHERE tenant_id=$1 AND template_id=$2 AND version_label=$3
+          AND source_document_id=$4 AND source_document_version_id=$5 AND content_hash=$6 AND placeholder_schema=$7::jsonb AND approval_status=$8 AND effective_from=$9::date`,
+          [input.tenantId,template.id,input.versionLabel,input.sourceDocumentId,input.sourceDocumentVersionId,input.contentHash,input.schema,input.approvalStatus??"draft",input.effectiveFrom??new Date().toISOString().slice(0,10)])).rows[0];
         if(!version)throw new Error("template version label already represents different content");replayed=true;}
       if(replayed)return{templateId:template.id,templateVersionId:version.id};
       await client.query(`INSERT INTO audit_log(tenant_id,actor_user_id,action,entity_type,entity_id,after_data)

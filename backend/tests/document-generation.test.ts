@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { DocumentTemplateGenerationService, DocumentGenerationError } from "../src/documents/template-generation-service.js";
+import { DocumentTemplateGenerationRepository } from "../src/documents/template-generation-repository.js";
 import { DocxTemplateError, inspectDocxTemplate } from "../src/documents/docx-template.js";
 
 const context={tenantId:"10000000-0000-4000-8000-000000000001",userId:"20000000-0000-4000-8000-000000000001",membershipId:"30000000-0000-4000-8000-000000000001"};
@@ -63,4 +64,18 @@ test("persistence vrstva vynucuje tenant, projekt, append-only template verze a 
   const repository=await readFile(new URL("../src/documents/template-generation-repository.ts",import.meta.url),"utf8");
   assert.match(repository,/SELECT \$1::uuid,\$3::uuid,\$4::text,\$5::text,\$6::text,\$7::text,\$2::uuid/);
   assert.match(repository,/idempotency_key=\$2`,\[input\.tenantId,input\.idempotencyKey\]/);
+});
+
+test("idempotentní registrace šablony nemá mezery v prepared-statement parametrech",async()=>{
+  const calls:Array<{sql:string;values:unknown[]}>=[];let step=0;
+  const client={query:async(sql:string,values:unknown[]=[])=>{calls.push({sql,values});step++;
+    if(step===1)return{rows:[{id:"60000000-0000-4000-8000-000000000001"}]};
+    if(step===2)return{rows:[]};
+    if(step===3)return{rows:[{id:templateVersionId}]};
+    return{rows:[]};}};
+  const database={withContext:async(_context:unknown,work:(input:typeof client)=>Promise<unknown>)=>work(client)};
+  const repository=new DocumentTemplateGenerationRepository(database as never);
+  const result=await repository.register({...context,projectId,code:"technical",name:"Technická šablona",outputTypeCode:"other",versionLabel:"v1",sourceDocumentId:"70000000-0000-4000-8000-000000000001",sourceDocumentVersionId:"70000000-0000-4000-8000-000000000002",contentHash:"sha256:test",schema,approvalStatus:"approved",effectiveFrom:"2026-10-09"});
+  assert.equal(result.templateVersionId,templateVersionId);
+  for(const call of calls){const indexes=[...call.sql.matchAll(/\$(\d+)/g)].map(match=>Number(match[1]));const max=Math.max(0,...indexes);assert.equal(max,call.values.length);for(let index=1;index<=max;index++)assert.ok(indexes.includes(index),`SQL chybí parametr $${index}`);}
 });
