@@ -19,6 +19,8 @@ import { SharePointDocumentUploadService, SharePointUploadError } from "./docume
 import { DocumentTemplateGenerationRepository, type PlaceholderSchema } from "./documents/template-generation-repository.js";
 import { DocumentGenerationError, DocumentTemplateGenerationService } from "./documents/template-generation-service.js";
 import { DocxTemplateError } from "./documents/docx-template.js";
+import {RsGenerationRepository} from "./contracts/rs-generation-repository.js";
+import {RsGenerationError,RsGenerationService} from "./contracts/rs-generation-service.js";
 import { HandoverRepository } from "./handovers/repository.js";
 import { PaymentRepository } from "./payments/repository.js";
 import { PaymentService } from "./payments/service.js";
@@ -60,6 +62,7 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
   const templateGenerationRepository=new DocumentTemplateGenerationRepository(dependencies.database);
   const templateGeneration=sharePointUploads&&dependencies.microsoftGraphAdapter
     ?new DocumentTemplateGenerationService(templateGenerationRepository,documentRepository,sharePointUploads,dependencies.microsoftGraphAdapter):null;
+  const rsGeneration=templateGeneration?new RsGenerationService(new RsGenerationRepository(dependencies.database),templateGeneration):null;
   const handoverRepository = new HandoverRepository(dependencies.database);
   const paymentRepository = new PaymentRepository(dependencies.database);
   const paymentService = new PaymentService(dependencies.database);
@@ -539,7 +542,7 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
         status===503?"SharePoint není pro tento pracovní prostor dostupný.":"Dokument se nepodařilo uložit do SharePointu."});
     }
   });
-  app.post<{Body:{projectId:string;code:string;name:string;outputTypeCode:string;versionLabel:string;sourceDocumentId:string;sourceDocumentVersionId:string;schema:PlaceholderSchema}}>("/v1/document-templates",async(request,reply)=>{
+  app.post<{Body:{projectId:string;code:string;name:string;outputTypeCode:string;contractType?:"rs"|"sbk"|"ks";versionLabel:string;sourceDocumentId:string;sourceDocumentVersionId:string;schema:PlaceholderSchema;approvalStatus?:"draft"|"approved"|"retired";effectiveFrom?:string}}>("/v1/document-templates",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});
       if(!templateGeneration)return reply.code(503).send({error:"SharePoint integrace není v tomto prostředí nakonfigurovaná"});
       return reply.code(201).send({template:await templateGeneration.register({...context,...request.body})});
@@ -552,6 +555,22 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
       const generated=await templateGeneration.generate({...context,...request.body});return reply.code(generated.replayed?200:201).send({generation:generated});
     }catch(error){request.log.warn({event:"document.generation_failed",correlationId:request.id,errorName:error instanceof Error?error.name:"Error",errorCode:error instanceof DocumentGenerationError||error instanceof DocxTemplateError?error.code:undefined},"document generation failed");
       return reply.code(permissionError(error)?403:error instanceof DocumentGenerationError&&error.code==="template_not_found"?404:422).send({error:"Dokument se nepodařilo vytvořit. Zkontrolujte šablonu a povinné údaje."});}
+  });
+  app.get<{Params:{contractId:string}}>("/v1/contracts/:contractId/rs-readiness",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});
+      if(!rsGeneration)return reply.code(503).send({error:"Generování smluv není v tomto prostředí dostupné"});
+      return{readiness:await rsGeneration.readiness({...context,contractId:request.params.contractId})};
+    }catch(error){request.log.warn({event:"contract.rs_readiness_failed",correlationId:request.id,contractId:request.params.contractId,errorName:error instanceof Error?error.name:"Error"},"RS readiness failed");
+      return reply.code(permissionError(error)?403:409).send({error:permissionError(error)?"Nemáte oprávnění zobrazit připravenost smlouvy.":"Připravenost rezervační smlouvy se nepodařilo ověřit.",correlationId:request.id});}
+  });
+  app.post<{Params:{contractId:string};Body:{idempotencyKey:string}}>("/v1/contracts/:contractId/generate-rs",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});
+      if(!rsGeneration)return reply.code(503).send({error:"Generování smluv není v tomto prostředí dostupné"});
+      const generation=await rsGeneration.generate({...context,contractId:request.params.contractId,idempotencyKey:request.body.idempotencyKey});
+      return reply.code(generation.replayed?200:201).send({generation});
+    }catch(error){const rsError=error instanceof RsGenerationError?error:null;request.log.warn({event:"contract.rs_generation_failed",correlationId:request.id,contractId:request.params.contractId,errorName:error instanceof Error?error.name:"Error",errorCode:rsError?.code},"RS generation failed");
+      const status=permissionError(error)?403:rsError?.code==="contract_not_found"?404:rsError?.code==="not_ready"?422:409;
+      return reply.code(status).send({error:status===403?"Nemáte oprávnění vytvořit rezervační smlouvu.":status===404?"Rezervační smlouva nebyla nalezena.":status===422?"Doplňte povinné údaje před vytvořením smlouvy.":"Rezervační smlouvu se nepodařilo vytvořit.",issues:rsError?.issues??[],correlationId:request.id});}
   });
   app.post<{Body:{projectId:string;typeCode:string;name:string;mimeType?:string;status?:string;note?:string;storageProvider?:"external"}}>("/v1/documents",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await documentRepository.createRecord({...context,...request.body}));}

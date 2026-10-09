@@ -8,6 +8,8 @@ import type {NextContractAction,SalesProcessProjection} from "../../backend/src/
 export type UnitNextContractAction=NextContractAction&{unitId:string;unitCode:string;salesCaseId:string|null;buyerNames:string[];salesProcess:SalesProcessProjection};
 export type ContractCreateResult={id:string;versionId:string;paymentObligationId:string|null;paymentAmount:number|null;type?:"rs"|"sbk"|"ks";reference?:string;title?:string};
 export type ContextualContractInput={unitId:string;type:"rs"|"sbk"|"ks";idempotencyKey:string;paymentCalculationType?:"percentage"|"fixed";paymentInputValue?:number;paymentDueAt?:string};
+export type RsReadinessIssue={code:string;field:string;message:string};
+export type RsReadiness={ready:boolean;issues:RsReadinessIssue[];contractId:string;projectId?:string;templateVersionId?:string|null;currentDocument?:{documentId:string;documentVersionId:string;version:number;webUrl:string|null}|null};
 
 export type CommercialSnapshot = {
   currentPrices: Record<string, number>;
@@ -33,6 +35,8 @@ export interface CommercialRepository {
   createContractVersion(input:{contractId:string;name:string;source?:string;basedOnVersionId?:string}):Promise<{id:string}>;
   signContract(input:{contractId:string;versionId:string;signedAt:string;note?:string}):Promise<{completed:boolean;alreadySigned:boolean;versionId:string}>;
   createContractAssignment(input:{unitId:string;buyers?:Array<{partyId:string;role:"buyer"|"co_buyer";isPrimary:boolean;share?:number|null}>;newParty?:{kind:"individual"|"organization";salutation?:string;firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;email?:string;phone?:string};effectiveAt:string;note?:string;idempotencyKey:string}):Promise<{contractId:string;versionId:string;type:string;parentContractId:string}>;
+  getRsReadiness(contractId:string,signal?:AbortSignal):Promise<RsReadiness>;
+  generateRs(contractId:string,idempotencyKey:string):Promise<{operationId:string;documentId:string;documentVersionId:string;contractVersionId:string;contractVersion:number;replayed:boolean}>;
 }
 
 type PreviewContractEdit = Pick<ContractRecord, "statusCode" | "state" | "updated" | "updatedAt" | "history">;
@@ -159,6 +163,8 @@ class ApiCommercialRepository implements CommercialRepository {
     if(response.ok)return response.json() as Promise<{contractId:string;versionId:string;type:string;parentContractId:string}>;
     const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??"Postoupení smlouvy nelze vytvořit");
   }
+  async getRsReadiness(contractId:string,signal?:AbortSignal){const response=await apiFetch(`/api/commercial/contracts/${encodeURIComponent(contractId)}/rs-readiness`,{signal,cache:"no-store"});const payload=await response.json().catch(()=>({})) as {readiness?:RsReadiness;error?:string};if(response.ok&&payload.readiness)return payload.readiness;throw new Error(payload.error??"Připravenost rezervační smlouvy nelze ověřit");}
+  async generateRs(contractId:string,idempotencyKey:string){const response=await apiFetch(`/api/commercial/contracts/${encodeURIComponent(contractId)}/generate-rs`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({idempotencyKey})});const payload=await response.json().catch(()=>({})) as {generation?:{operationId:string;documentId:string;documentVersionId:string;contractVersionId:string;contractVersion:number;replayed:boolean};error?:string;issues?:RsReadinessIssue[]};if(response.ok&&payload.generation)return payload.generation;throw new Error(payload.issues?.map(item=>item.message).join(" ")||payload.error||"Rezervační smlouvu nelze vytvořit");}
 }
 
 function readContractEdits(): Record<string, PreviewContractEdit> {

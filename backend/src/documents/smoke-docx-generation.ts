@@ -27,7 +27,7 @@ try{
     bytes:sourceBytes,versionLabel:"template-v1",status:"draft",note:"Technický smoke-test artefakt",unitId:business.unit_id,partyId:business.party_id});
   const registered=await generation.register({...context,projectId,code:`technical-${release}`,name:"Technické ověření generování",outputTypeCode:"other",versionLabel:"v1",
     sourceDocumentId:source.documentId,sourceDocumentVersionId:source.documentVersionId,schema:{fields:{"project.name":{required:true},"project.code":{required:true},
-      "unit.code":{required:true},"buyer.name":{required:true},"generation.date":{required:true},"unit.totalPrice":{required:true}}}});
+      "unit.code":{required:true},"buyer.name":{required:true},"generation.date":{required:true},"unit.totalPrice":{required:true}}},approvalStatus:"approved"});
   const request={...context,projectId,templateVersionId:registered.templateVersionId,idempotencyKey:`docx-smoke-generation-${release}`,unitId:business.unit_id,partyId:business.party_id,documentName:`TECHNICKÝ GENEROVANÝ DOCX ${release}`};
   const first=await generation.generate(request),second=await generation.generate(request);
   if(first.documentId!==second.documentId||first.documentVersionId!==second.documentVersionId||!second.replayed)throw new Error("generation retry created a duplicate");

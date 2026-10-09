@@ -6,6 +6,8 @@ import type { SharePointDocumentUploadService } from "./upload-service.js";
 import { DocumentTemplateGenerationRepository, type PlaceholderSchema } from "./template-generation-repository.js";
 
 export const TECHNICAL_PLACEHOLDERS=["project.name","project.code","unit.code","buyer.name","generation.date","unit.totalPrice"] as const;
+export const RS_PLACEHOLDERS=["seller.name","seller.address","seller.registryEntry","seller.registrationNumber","seller.representative","seller.email","seller.dataBox","seller.bankAccount","buyer.salutation","buyer.name","buyer.address","buyer.birthDate","buyer.email","buyer.phone","buyer.dataBoxLine","project.name","project.completionYear","contract.reservationPeriodDays","unit.subjectClause","unit.balconyClause","unit.gardenClause","unit.outdoorParkingClause","unit.cellarClause","unit.garageClause","payment.reservationFeeClause","contract.totalPriceClause","contract.date"] as const;
+const SUPPORTED_PLACEHOLDERS=new Set<string>([...TECHNICAL_PLACEHOLDERS,...RS_PLACEHOLDERS]);
 export class DocumentGenerationError extends Error{constructor(readonly code:string){super("Dokument se nepodařilo vytvořit.");this.name="DocumentGenerationError";}}
 
 export class DocumentTemplateGenerationService{
@@ -13,7 +15,7 @@ export class DocumentTemplateGenerationService{
     private readonly uploads:SharePointDocumentUploadService,private readonly graph:MicrosoftGraphAdapter){}
 
   async register(input:DocumentContext&{projectId:string;code:string;name:string;outputTypeCode:string;versionLabel:string;
-    sourceDocumentId:string;sourceDocumentVersionId:string;schema:PlaceholderSchema}){
+    sourceDocumentId:string;sourceDocumentVersionId:string;schema:PlaceholderSchema;contractType?:"rs"|"sbk"|"ks";approvalStatus?:"draft"|"approved"|"retired";effectiveFrom?:string}){
     validateSchema(input.schema);
     const source=await this.repository.sourceForRegistration(input);if(!source)throw new DocumentGenerationError("source_not_found");
     if(!source.externalVersionId)throw new DocumentGenerationError("template_source_version_unavailable");
@@ -24,19 +26,19 @@ export class DocumentTemplateGenerationService{
     // rather than to the pre-upload transport payload stored on the document.
     const contentHash=`sha256:${hash(bytes)}`;
     const inspection=inspectDocxTemplate(bytes);const fields=Object.keys(input.schema.fields).sort();
-    const unknown=inspection.tokens.filter(token=>!TECHNICAL_PLACEHOLDERS.includes(token as typeof TECHNICAL_PLACEHOLDERS[number]));
+    const unknown=inspection.tokens.filter(token=>!SUPPORTED_PLACEHOLDERS.has(token));
     if(unknown.length)throw new DocxTemplateError("unknown_template_token","Šablona obsahuje neschválená pole.",unknown);
     if(inspection.tokens.join("\0")!==fields.join("\0"))throw new DocumentGenerationError("schema_token_mismatch");
     return this.repository.register({...input,contentHash});
   }
 
   async generate(input:DocumentContext&{projectId:string;templateVersionId:string;idempotencyKey:string;unitId?:string;partyId?:string;
-    salesCaseId?:string;contractId?:string;documentId?:string;documentName?:string}){
+    salesCaseId?:string;contractId?:string;documentId?:string;documentName?:string;snapshot?:Record<string,string>}){
     if(!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,159}$/.test(input.idempotencyKey))throw new DocumentGenerationError("invalid_idempotency_key");
     const template=await this.repository.getTemplate(input);if(!template)throw new DocumentGenerationError("template_not_found");
     if(!template.externalVersionId)throw new DocumentGenerationError("template_source_version_unavailable");
     const requestHash=hash(JSON.stringify({projectId:input.projectId,templateVersionId:input.templateVersionId,unitId:input.unitId??null,
-      partyId:input.partyId??null,salesCaseId:input.salesCaseId??null,contractId:input.contractId??null,documentId:input.documentId??null,documentName:input.documentName??null}));
+      partyId:input.partyId??null,salesCaseId:input.salesCaseId??null,contractId:input.contractId??null,documentId:input.documentId??null,documentName:input.documentName??null,snapshot:input.snapshot??null}));
     const operation=await this.repository.reserve({...input,template,requestHash});
     if(operation.state==="completed")return{operationId:operation.id,documentId:operation.outputDocumentId,documentVersionId:operation.outputDocumentVersionId,replayed:true};
     const connection=await this.documents.getConnectionForUpload(input);if(!connection||connection.driveId!==template.driveId)throw new DocumentGenerationError("template_drive_mismatch");
@@ -58,6 +60,6 @@ export class DocumentTemplateGenerationService{
 function validateSchema(schema:PlaceholderSchema):void{
   if(!schema||typeof schema!=="object"||!schema.fields||typeof schema.fields!=="object"||Array.isArray(schema.fields))throw new DocumentGenerationError("invalid_schema");
   const fields=Object.keys(schema.fields);if(!fields.length)throw new DocumentGenerationError("invalid_schema");
-  for(const token of fields){if(!TECHNICAL_PLACEHOLDERS.includes(token as typeof TECHNICAL_PLACEHOLDERS[number])||typeof schema.fields[token]?.required!=="boolean")throw new DocumentGenerationError("invalid_schema");}
+  for(const token of fields){if(!SUPPORTED_PLACEHOLDERS.has(token)||typeof schema.fields[token]?.required!=="boolean")throw new DocumentGenerationError("invalid_schema");}
 }
 function hash(value:Uint8Array|string):string{return createHash("sha256").update(value).digest("hex");}

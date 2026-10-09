@@ -3,14 +3,14 @@ import type { DocumentContext } from "./repository.js";
 
 export type PlaceholderSchema={fields:Record<string,{required:boolean}>};
 export type TemplateSource={templateId:string;templateVersionId:string;projectId:string;templateCode:string;templateName:string;outputTypeCode:string;
-  versionLabel:string;contentHash:string;schema:PlaceholderSchema;driveId:string;itemId:string;externalVersionId:string|null};
+  versionLabel:string;contentHash:string;schema:PlaceholderSchema;approvalStatus:"draft"|"approved"|"retired";effectiveFrom:string;driveId:string;itemId:string;externalVersionId:string|null};
 export type GenerationOperation={id:string;state:"reserved"|"completed";projectId:string;template:TemplateSource;snapshot:Record<string,string>;
   outputDocumentId:string|null;outputDocumentVersionId:string|null;unitId:string|null;partyId:string|null;salesCaseId:string|null;contractId:string|null;createdAt:string};
 
 export class DocumentTemplateGenerationRepository{
   constructor(private readonly database:Database){}
 
-  async sourceForRegistration(input:DocumentContext&{projectId:string;sourceDocumentId:string;sourceDocumentVersionId:string}):Promise<Omit<TemplateSource,"templateId"|"templateVersionId"|"templateCode"|"templateName"|"outputTypeCode"|"versionLabel"|"schema">|null>{
+  async sourceForRegistration(input:DocumentContext&{projectId:string;sourceDocumentId:string;sourceDocumentVersionId:string}):Promise<Omit<TemplateSource,"templateId"|"templateVersionId"|"templateCode"|"templateName"|"outputTypeCode"|"versionLabel"|"schema"|"approvalStatus"|"effectiveFrom">|null>{
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
       const row=(await client.query<{project_id:string;external_drive_id:string;external_item_id:string;external_version_id:string|null;content_hash:string}>(`
         SELECT d.project_id,d.external_drive_id,d.external_item_id,v.external_version_id,v.content_hash
@@ -21,16 +21,24 @@ export class DocumentTemplateGenerationRepository{
     });
   }
 
-  async register(input:DocumentContext&{projectId:string;code:string;name:string;outputTypeCode:string;versionLabel:string;sourceDocumentId:string;sourceDocumentVersionId:string;contentHash:string;schema:PlaceholderSchema}):Promise<{templateId:string;templateVersionId:string}>{
+  async register(input:DocumentContext&{projectId:string;code:string;name:string;outputTypeCode:string;contractType?:"rs"|"sbk"|"ks";versionLabel:string;sourceDocumentId:string;sourceDocumentVersionId:string;contentHash:string;schema:PlaceholderSchema;approvalStatus?:"draft"|"approved"|"retired";effectiveFrom?:string}):Promise<{templateId:string;templateVersionId:string}>{
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
-      const template=(await client.query<{id:string}>(`INSERT INTO document_templates(tenant_id,project_id,code,name,output_type_code,created_by_membership_id)
-        SELECT $1::uuid,$3::uuid,$4::text,$5::text,$6::text,$2::uuid
+      const template=(await client.query<{id:string}>(`INSERT INTO document_templates(tenant_id,project_id,code,name,output_type_code,contract_type,created_by_membership_id)
+        SELECT $1::uuid,$3::uuid,$4::text,$5::text,$6::text,$7::text,$2::uuid
         WHERE app.has_project_permission($1::uuid,$2::uuid,$3::uuid,'documents.upload')
-        ON CONFLICT(tenant_id,project_id,code) DO UPDATE SET name=EXCLUDED.name
-        RETURNING id`,[input.tenantId,input.membershipId,input.projectId,input.code,input.name,input.outputTypeCode])).rows[0];
+          AND ($8::text<>'approved' OR app.has_project_permission($1::uuid,$2::uuid,$3::uuid,'contract.approve'))
+        ON CONFLICT(tenant_id,project_id,code) DO UPDATE SET name=EXCLUDED.name,contract_type=COALESCE(document_templates.contract_type,EXCLUDED.contract_type),status='active'
+        RETURNING id`,[input.tenantId,input.membershipId,input.projectId,input.code,input.name,input.outputTypeCode,input.contractType??null,input.approvalStatus??"draft"])).rows[0];
       if(!template)throw new Error("documents.upload permission required");
-      const version=(await client.query<{id:string}>(`INSERT INTO document_template_versions(tenant_id,project_id,template_id,source_document_id,source_document_version_id,version_label,content_hash,placeholder_schema,created_by_membership_id)
-        VALUES($1,$3,$4,$5,$6,$7,$8,$9,$2) RETURNING id`,[input.tenantId,input.membershipId,input.projectId,template.id,input.sourceDocumentId,input.sourceDocumentVersionId,input.versionLabel,input.contentHash,input.schema])).rows[0];
+      const values=[input.tenantId,input.membershipId,input.projectId,template.id,input.sourceDocumentId,input.sourceDocumentVersionId,input.versionLabel,input.contentHash,input.schema,input.approvalStatus??"draft",input.effectiveFrom??new Date().toISOString().slice(0,10)];
+      let version=(await client.query<{id:string}>(`INSERT INTO document_template_versions(tenant_id,project_id,template_id,source_document_id,source_document_version_id,version_label,content_hash,placeholder_schema,approval_status,effective_from,approved_at,approved_by_membership_id,created_by_membership_id)
+        VALUES($1,$3,$4,$5,$6,$7,$8,$9,$10,$11,CASE WHEN $10='approved' THEN now() END,CASE WHEN $10='approved' THEN $2::uuid END,$2)
+        ON CONFLICT(tenant_id,template_id,version_label) DO NOTHING RETURNING id`,values)).rows[0];
+      let replayed=false;
+      if(!version){version=(await client.query<{id:string}>(`SELECT id FROM document_template_versions WHERE tenant_id=$1 AND template_id=$4 AND version_label=$7
+          AND source_document_id=$5 AND source_document_version_id=$6 AND content_hash=$8 AND placeholder_schema=$9::jsonb AND approval_status=$10 AND effective_from=$11::date`,values)).rows[0];
+        if(!version)throw new Error("template version label already represents different content");replayed=true;}
+      if(replayed)return{templateId:template.id,templateVersionId:version.id};
       await client.query(`INSERT INTO audit_log(tenant_id,actor_user_id,action,entity_type,entity_id,after_data)
         SELECT $1,m.user_id,'document_template.version_registered','document_template_version',$3,
           jsonb_build_object('projectId',$4::uuid,'templateId',$5::uuid,'contentHash',$6::text)
@@ -42,17 +50,17 @@ export class DocumentTemplateGenerationRepository{
   async getTemplate(input:DocumentContext&{templateVersionId:string;projectId:string}):Promise<TemplateSource|null>{
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
       const row=(await client.query<Record<string,unknown>>(`SELECT t.id template_id,tv.id template_version_id,t.project_id,t.code,t.name,t.output_type_code,
-          tv.version_label,tv.content_hash,tv.placeholder_schema,d.external_drive_id,d.external_item_id,v.external_version_id
+          tv.version_label,tv.content_hash,tv.placeholder_schema,tv.approval_status,tv.effective_from,d.external_drive_id,d.external_item_id,v.external_version_id
         FROM document_template_versions tv JOIN document_templates t ON t.tenant_id=tv.tenant_id AND t.id=tv.template_id
         JOIN documents d ON d.tenant_id=tv.tenant_id AND d.project_id=tv.project_id AND d.id=tv.source_document_id
         JOIN document_versions v ON v.tenant_id=tv.tenant_id AND v.id=tv.source_document_version_id
-        WHERE tv.tenant_id=$1 AND tv.id=$4 AND tv.project_id=$3 AND t.status='active'
+        WHERE tv.tenant_id=$1 AND tv.id=$4 AND tv.project_id=$3 AND t.status='active' AND tv.approval_status='approved' AND tv.effective_from<=CURRENT_DATE
           AND app.has_project_permission(tv.tenant_id,$2,tv.project_id,'documents.upload')`,[input.tenantId,input.membershipId,input.projectId,input.templateVersionId])).rows[0];
       return row?mapTemplate(row):null;
     });
   }
 
-  async reserve(input:DocumentContext&{projectId:string;template:TemplateSource;idempotencyKey:string;requestHash:string;unitId?:string;partyId?:string;salesCaseId?:string;contractId?:string}):Promise<GenerationOperation>{
+  async reserve(input:DocumentContext&{projectId:string;template:TemplateSource;idempotencyKey:string;requestHash:string;unitId?:string;partyId?:string;salesCaseId?:string;contractId?:string;snapshot?:Record<string,string>}):Promise<GenerationOperation>{
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
       const existing=(await client.query<Record<string,unknown>>(`SELECT * FROM document_generation_operations WHERE tenant_id=$1 AND idempotency_key=$2`,[input.tenantId,input.idempotencyKey])).rows[0];
       if(existing){if(existing.request_hash!==input.requestHash)throw new Error("idempotency key payload mismatch");return mapOperation(existing,input.template);}
@@ -71,7 +79,7 @@ export class DocumentTemplateGenerationRepository{
       const all:Record<string,string|undefined>={"project.name":data.project_name,"project.code":data.project_code,"unit.code":data.unit_code??undefined,
         "buyer.name":data.party_name??undefined,"generation.date":new Intl.DateTimeFormat("cs-CZ",{dateStyle:"medium",timeZone:"Europe/Prague"}).format(new Date(generatedAt)),
         "unit.totalPrice":data.total_price==null?undefined:new Intl.NumberFormat("cs-CZ",{style:"currency",currency:"CZK",maximumFractionDigits:0}).format(Number(data.total_price))};
-      const snapshot:Record<string,string>={};for(const token of Object.keys(input.template.schema.fields)){if(all[token]!==undefined)snapshot[token]=all[token]!;}
+      const snapshot:Record<string,string>=input.snapshot??{};if(!input.snapshot)for(const token of Object.keys(input.template.schema.fields)){if(all[token]!==undefined)snapshot[token]=all[token]!;}
       const snapshotHash=await sha256Json(snapshot);
       const row=(await client.query<Record<string,unknown>>(`INSERT INTO document_generation_operations(tenant_id,project_id,idempotency_key,request_hash,template_version_id,unit_id,party_id,sales_case_id,contract_id,generation_snapshot,snapshot_hash,created_by_membership_id)
         VALUES($1,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$2) RETURNING *`,[input.tenantId,input.membershipId,input.projectId,input.idempotencyKey,input.requestHash,input.template.templateVersionId,input.unitId??null,input.partyId??null,input.salesCaseId??null,input.contractId??null,snapshot,snapshotHash])).rows[0];
@@ -94,6 +102,6 @@ export class DocumentTemplateGenerationRepository{
   }
 }
 
-function mapTemplate(r:Record<string,unknown>):TemplateSource{return{templateId:String(r.template_id),templateVersionId:String(r.template_version_id),projectId:String(r.project_id),templateCode:String(r.code),templateName:String(r.name),outputTypeCode:String(r.output_type_code),versionLabel:String(r.version_label),contentHash:String(r.content_hash),schema:r.placeholder_schema as PlaceholderSchema,driveId:String(r.external_drive_id),itemId:String(r.external_item_id),externalVersionId:r.external_version_id?String(r.external_version_id):null};}
+function mapTemplate(r:Record<string,unknown>):TemplateSource{return{templateId:String(r.template_id),templateVersionId:String(r.template_version_id),projectId:String(r.project_id),templateCode:String(r.code),templateName:String(r.name),outputTypeCode:String(r.output_type_code),versionLabel:String(r.version_label),contentHash:String(r.content_hash),schema:r.placeholder_schema as PlaceholderSchema,approvalStatus:String(r.approval_status) as TemplateSource["approvalStatus"],effectiveFrom:String(r.effective_from),driveId:String(r.external_drive_id),itemId:String(r.external_item_id),externalVersionId:r.external_version_id?String(r.external_version_id):null};}
 function mapOperation(r:Record<string,unknown>,template:TemplateSource):GenerationOperation{return{id:String(r.id),state:String(r.state) as GenerationOperation["state"],projectId:String(r.project_id),template,snapshot:r.generation_snapshot as Record<string,string>,outputDocumentId:r.output_document_id?String(r.output_document_id):null,outputDocumentVersionId:r.output_document_version_id?String(r.output_document_version_id):null,unitId:r.unit_id?String(r.unit_id):null,partyId:r.party_id?String(r.party_id):null,salesCaseId:r.sales_case_id?String(r.sales_case_id):null,contractId:r.contract_id?String(r.contract_id):null,createdAt:String(r.created_at)};}
 async function sha256Json(value:unknown):Promise<string>{const bytes=new TextEncoder().encode(JSON.stringify(value));return Buffer.from(await crypto.subtle.digest("SHA-256",bytes)).toString("hex");}
