@@ -60,7 +60,7 @@ export class RsGenerationRepository{
 
   async bind(input:DocumentContext&{contractId:string;operationId:string;documentId:string;documentVersionId:string;templateVersionId:string;snapshot:Record<string,string>}):Promise<{versionId:string;versionNumber:number}>{
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
-        const existing=(await client.query<{id:string;version_number:number}>(`SELECT id,version_number FROM contract_versions WHERE tenant_id=$1 AND generation_operation_id=$3`,[input.tenantId,input.membershipId,input.operationId])).rows[0];
+        const existing=(await client.query<{id:string;version_number:number}>(`SELECT id,version_number FROM contract_versions WHERE tenant_id=$1 AND generation_operation_id=$2`,[input.tenantId,input.operationId])).rows[0];
         if(existing)return{versionId:existing.id,versionNumber:existing.version_number};
         const contract=(await client.query<{project_id:string;reference:string}>(`SELECT project_id,reference FROM contracts WHERE tenant_id=$1 AND id=$3 AND contract_type='rs' AND current_status NOT IN('signed','cancelled','terminated')
           AND app.has_project_permission(tenant_id,$2,project_id,'contract.manage') FOR UPDATE`,[input.tenantId,input.membershipId,input.contractId])).rows[0];
@@ -68,9 +68,9 @@ export class RsGenerationRepository{
         const previous=(await client.query<{id:string;version_number:number;source_type:string;document_id:string|null}>(`SELECT id,version_number,source_type,document_id FROM contract_versions WHERE tenant_id=$1 AND contract_id=$2 ORDER BY version_number DESC LIMIT 1 FOR UPDATE`,[input.tenantId,input.contractId])).rows[0];
         let versionId:string;let versionNumber:number;
         if(previous&&previous.version_number===1&&previous.source_type==='manual'&&!previous.document_id){
-          const updated=(await client.query<{id:string;version_number:number}>(`UPDATE contract_versions SET source_type='generated',display_name=$4,generation_payload=$5,
-            document_id=$6,document_version_id=$7,template_version_id=$8,generation_operation_id=$9
-            WHERE tenant_id=$1 AND id=$3 RETURNING id,version_number`,[input.tenantId,input.membershipId,previous.id,`${contract.reference}_v01`,input.snapshot,input.documentId,input.documentVersionId,input.templateVersionId,input.operationId])).rows[0];
+          const updated=(await client.query<{id:string;version_number:number}>(`UPDATE contract_versions SET source_type='generated',display_name=$3,generation_payload=$4,
+            document_id=$5,document_version_id=$6,template_version_id=$7,generation_operation_id=$8
+            WHERE tenant_id=$1 AND id=$2 RETURNING id,version_number`,[input.tenantId,previous.id,`${contract.reference}_v01`,input.snapshot,input.documentId,input.documentVersionId,input.templateVersionId,input.operationId])).rows[0];
           versionId=updated.id;versionNumber=updated.version_number;
         }else{
           await client.query(`UPDATE contract_versions SET version_status='superseded' WHERE tenant_id=$1 AND contract_id=$2 AND version_status IN('working','approved_for_signing')`,[input.tenantId,input.contractId]);

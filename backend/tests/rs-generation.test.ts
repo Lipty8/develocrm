@@ -1,5 +1,6 @@
 import test from "node:test";import assert from "node:assert/strict";import {readFile} from "node:fs/promises";
 import {RsGenerationError,RsGenerationService} from "../src/contracts/rs-generation-service.js";
+import {RsGenerationRepository} from "../src/contracts/rs-generation-repository.js";
 import {inspectDocxTemplate,renderDocxTemplate} from "../src/documents/docx-template.js";
 import {RS_PLACEHOLDERS} from "../src/documents/template-generation-service.js";
 
@@ -32,3 +33,17 @@ test("parametrizovaná právní šablona má přesné schema a render nezanechá
 });
 
 test("nepřipravená RS se nevygeneruje",async()=>{const current=source({templateVersionId:null});const service=new RsGenerationService({load:async()=>current} as never,{generate:async()=>assert.fail("renderer neměl být volán")} as never);await assert.rejects(service.generate({...context,contractId:current.contractId,idempotencyKey:"rs-test-87654321"}),error=>error instanceof RsGenerationError&&error.code==="not_ready");});
+
+test("RS bind prepared statements nemají neotypované mezery v parametrech",async()=>{
+  const calls:Array<{sql:string;values:unknown[]}>=[];let step=0;
+  const client={query:async(sql:string,values:unknown[]=[])=>{calls.push({sql,values});step++;
+    if(step===1)return{rows:[]};
+    if(step===2)return{rows:[{project_id:"20000000-0000-0000-0000-000000000002",reference:"RS-417"}]};
+    if(step===3)return{rows:[{id:"30000000-0000-0000-0000-000000000001",version_number:1,source_type:"manual",document_id:null}]};
+    if(step===4)return{rows:[{id:"30000000-0000-0000-0000-000000000001",version_number:1}]};
+    return{rows:[]};}};
+  const database={withContext:async(_context:unknown,work:(input:typeof client)=>Promise<unknown>)=>work(client)};
+  const repository=new RsGenerationRepository(database as never);
+  await repository.bind({...context,contractId:source().contractId,operationId:"40000000-0000-0000-0000-000000000001",documentId:"40000000-0000-0000-0000-000000000002",documentVersionId:"40000000-0000-0000-0000-000000000003",templateVersionId:"40000000-0000-0000-0000-000000000004",snapshot:{"project.name":"Rezidence Dejvice"}});
+  for(const call of calls){const indexes=[...call.sql.matchAll(/\$(\d+)/g)].map(match=>Number(match[1]));const max=Math.max(0,...indexes);assert.equal(max,call.values.length);for(let index=1;index<=max;index++)assert.ok(indexes.includes(index),`SQL chybí parametr $${index}`);}
+});
