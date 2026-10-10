@@ -207,6 +207,7 @@ test("repository a migrace vynucují projektová oprávnění, lifecycle a nemě
   assert.match(repository, /documents\.review/);
   assert.match(repository, /correlationId:input\.correlationId/);
   assert.match(repository, /document_template\.created/);
+  assert.match(repository, /\$5::jsonb->>'valid'/);
   assert.match(repository, /existing\.output_type_code=EXCLUDED\.output_type_code/);
   assert.match(repository, /existing\.contract_type IS NOT DISTINCT FROM EXCLUDED\.contract_type/);
   assert.match(repository, /t\.tenant_id=\$1/);

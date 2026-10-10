@@ -86,10 +86,10 @@ export class DocumentTemplateManagementRepository{
         WHERE tenant_id=$1 AND template_id=$3 AND id=$4 AND app.has_project_permission(tenant_id,$2,project_id,'documents.upload')`,[input.tenantId,input.membershipId,input.templateId,input.versionId])).rows[0];
       if(current?.approval_status==="validated"&&JSON.stringify(current.validation_result)===JSON.stringify(input.validation))return;
       if(!current||current.approval_status!=="draft")throw new Error("draft template version not found or documents.upload permission required");
-      const result=await client.query(`UPDATE document_template_versions tv SET validation_result=$5,
-          approval_status=CASE WHEN ($5->>'valid')::boolean THEN 'validated' ELSE 'draft' END,
-          validated_at=CASE WHEN ($5->>'valid')::boolean THEN now() ELSE NULL END,
-          validated_by_membership_id=CASE WHEN ($5->>'valid')::boolean THEN $2 ELSE NULL END
+      const result=await client.query(`UPDATE document_template_versions tv SET validation_result=$5::jsonb,
+          approval_status=CASE WHEN ($5::jsonb->>'valid')::boolean THEN 'validated' ELSE 'draft' END,
+          validated_at=CASE WHEN ($5::jsonb->>'valid')::boolean THEN now() ELSE NULL END,
+          validated_by_membership_id=CASE WHEN ($5::jsonb->>'valid')::boolean THEN $2 ELSE NULL END
         FROM document_templates t WHERE tv.tenant_id=$1 AND tv.id=$4 AND tv.template_id=$3 AND t.tenant_id=tv.tenant_id AND t.id=tv.template_id
           AND tv.approval_status='draft' AND app.has_project_permission(tv.tenant_id,$2,tv.project_id,'documents.upload')`,
         [input.tenantId,input.membershipId,input.templateId,input.versionId,input.validation]);
