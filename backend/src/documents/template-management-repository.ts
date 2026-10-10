@@ -86,14 +86,9 @@ export class DocumentTemplateManagementRepository{
         WHERE tenant_id=$1 AND template_id=$3 AND id=$4 AND app.has_project_permission(tenant_id,$2,project_id,'documents.upload')`,[input.tenantId,input.membershipId,input.templateId,input.versionId])).rows[0];
       if(current?.approval_status==="validated"&&JSON.stringify(current.validation_result)===JSON.stringify(input.validation))return;
       if(!current||current.approval_status!=="draft")throw new Error("draft template version not found or documents.upload permission required");
-      const result=await client.query(`UPDATE document_template_versions tv SET validation_result=$5::jsonb,
-          approval_status=CASE WHEN ($5::jsonb->>'valid')::boolean THEN 'validated' ELSE 'draft' END,
-          validated_at=CASE WHEN ($5::jsonb->>'valid')::boolean THEN now() ELSE NULL END,
-          validated_by_membership_id=CASE WHEN ($5::jsonb->>'valid')::boolean THEN $2 ELSE NULL END
-        FROM document_templates t WHERE tv.tenant_id=$1 AND tv.id=$4 AND tv.template_id=$3 AND t.tenant_id=tv.tenant_id AND t.id=tv.template_id
-          AND tv.approval_status='draft' AND app.has_project_permission(tv.tenant_id,$2,tv.project_id,'documents.upload')`,
-        [input.tenantId,input.membershipId,input.templateId,input.versionId,input.validation]);
-      if(!result.rowCount)throw new Error("draft template version not found or documents.upload permission required");
+      const updated=(await client.query<{updated:boolean}>(`SELECT app.record_document_template_validation($1,$2,$3,$4,$5::jsonb) updated`,
+        [input.tenantId,input.membershipId,input.templateId,input.versionId,input.validation])).rows[0]?.updated;
+      if(!updated)throw new Error("draft template version not found or documents.upload permission required");
       await this.audit(client,input,input.validation.valid?"document_template.version_validated":"document_template.validation_failed",input.versionId,{templateId:input.templateId,contentHash:input.contentHash,valid:input.validation.valid,errors:input.validation.errors});
     });
   }
@@ -105,10 +100,8 @@ export class DocumentTemplateManagementRepository{
           AND app.has_project_permission(tv.tenant_id,$2,tv.project_id,'documents.review') FOR UPDATE`,[input.tenantId,input.membershipId,input.templateId,input.versionId])).rows[0];
       if(target?.approval_status==="approved")return;
       if(!target||target.approval_status!=="validated")throw new Error("validated template version not found or documents.review permission required");
-      await client.query(`UPDATE document_template_versions SET approval_status='retired',retired_at=now(),retired_by_membership_id=$2
-        WHERE tenant_id=$1 AND template_id=$3 AND approval_status='approved' AND id<>$4`,[input.tenantId,input.membershipId,input.templateId,input.versionId]);
-      await client.query(`UPDATE document_template_versions SET approval_status='approved',approved_at=now(),approved_by_membership_id=$2
-        WHERE tenant_id=$1 AND template_id=$3 AND id=$4 AND approval_status='validated'`,[input.tenantId,input.membershipId,input.templateId,input.versionId]);
+      const approved=(await client.query<{approved:boolean}>(`SELECT app.approve_document_template_version($1,$2,$3,$4) approved`,[input.tenantId,input.membershipId,input.templateId,input.versionId])).rows[0]?.approved;
+      if(!approved)throw new Error("validated template version not found or documents.review permission required");
       await this.audit(client,input,"document_template.version_approved",input.versionId,{templateId:input.templateId,contentHash:target.content_hash});
       await client.query(`INSERT INTO outbox_events(tenant_id,aggregate_type,aggregate_id,event_type,payload)
         VALUES($1,'document_template',$2,'document_template.version_approved.v1',jsonb_build_object('templateId',$2::uuid,'versionId',$3::uuid))`,[input.tenantId,input.templateId,input.versionId]);
@@ -121,11 +114,8 @@ export class DocumentTemplateManagementRepository{
         WHERE tenant_id=$1 AND template_id=$3 AND id=$4 AND app.has_project_permission(tenant_id,$2,project_id,'documents.review') FOR UPDATE`,[input.tenantId,input.membershipId,input.templateId,input.versionId])).rows[0];
       if(current?.approval_status==="retired")return;
       if(!current)throw new Error("template version not found or documents.review permission required");
-      const result=await client.query(`UPDATE document_template_versions tv SET approval_status='retired',retired_at=now(),retired_by_membership_id=$2
-        FROM document_templates t WHERE tv.tenant_id=$1 AND tv.template_id=$3 AND tv.id=$4 AND tv.approval_status<>'retired'
-          AND t.tenant_id=tv.tenant_id AND t.id=tv.template_id AND app.has_project_permission(tv.tenant_id,$2,tv.project_id,'documents.review')`,
-        [input.tenantId,input.membershipId,input.templateId,input.versionId]);
-      if(!result.rowCount)throw new Error("template version not found or documents.review permission required");
+      const retired=(await client.query<{retired:boolean}>(`SELECT app.retire_document_template_version($1,$2,$3,$4) retired`,[input.tenantId,input.membershipId,input.templateId,input.versionId])).rows[0]?.retired;
+      if(!retired)throw new Error("template version not found or documents.review permission required");
       await this.audit(client,input,"document_template.version_retired",input.versionId,{templateId:input.templateId,contentHash:current.content_hash});
       await client.query(`INSERT INTO outbox_events(tenant_id,aggregate_type,aggregate_id,event_type,payload)
         VALUES($1,'document_template',$2,'document_template.version_retired.v1',jsonb_build_object('templateId',$2::uuid,'versionId',$3::uuid))`,[input.tenantId,input.templateId,input.versionId]);

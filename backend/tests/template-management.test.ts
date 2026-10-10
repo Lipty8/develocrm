@@ -207,7 +207,9 @@ test("repository a migrace vynucují projektová oprávnění, lifecycle a nemě
   assert.match(repository, /documents\.review/);
   assert.match(repository, /correlationId:input\.correlationId/);
   assert.match(repository, /document_template\.created/);
-  assert.match(repository, /\$5::jsonb->>'valid'/);
+  assert.match(repository, /app\.record_document_template_validation/);
+  assert.match(repository, /app\.approve_document_template_version/);
+  assert.match(repository, /app\.retire_document_template_version/);
   assert.match(repository, /existing\.output_type_code=EXCLUDED\.output_type_code/);
   assert.match(repository, /existing\.contract_type IS NOT DISTINCT FROM EXCLUDED\.contract_type/);
   assert.match(repository, /t\.tenant_id=\$1/);
@@ -281,6 +283,7 @@ test("databáze dovolí pouze řízený lifecycle a schválený obsah zůstane n
   const validation = { valid: true, tokens: ["project.name"], unknownTokens: [], missingTokens: [], malformedTokens: [], legacyMarkers: [], errors: [] };
   await db.query("UPDATE document_template_versions SET validation_result=$1,approval_status='validated',validated_at=now(),validated_by_membership_id=$2 WHERE id=$3", [validation, membership, templateVersion]);
   await db.query("UPDATE document_template_versions SET approval_status='approved',approved_at=now(),approved_by_membership_id=$1 WHERE id=$2", [membership, templateVersion]);
+  assert.equal((await db.query<{ allowed: boolean }>("SELECT has_function_privilege('develocrm_app','app.record_document_template_validation(uuid,uuid,uuid,uuid,jsonb)','EXECUTE') allowed")).rows[0].allowed, true);
   await assert.rejects(db.query("UPDATE document_template_versions SET content_hash=$1 WHERE id=$2", [`sha256:${"b".repeat(64)}`, templateVersion]), /content is immutable/);
   await db.query("UPDATE document_template_versions SET approval_status='retired',retired_at=now(),retired_by_membership_id=$1 WHERE id=$2", [membership, templateVersion]);
   await assert.rejects(db.query("UPDATE document_template_versions SET approval_status='approved',retired_at=NULL,retired_by_membership_id=NULL WHERE id=$1", [templateVersion]), /invalid document template lifecycle transition/);
