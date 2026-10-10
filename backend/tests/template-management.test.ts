@@ -213,10 +213,44 @@ test("repository a migrace vynucují projektová oprávnění, lifecycle a nemě
   assert.match(repository, /t\.project_id=\$3/);
   assert.match(migration, /draft','validated','approved','retired/);
   assert.match(migration, /document_template_versions_one_approved_uq/);
+  assert.match(migration, /row_number\(\) OVER/);
+  assert.match(migration, /approval_rank>1/);
   assert.match(migration, /document template version content is immutable/);
   assert.match(migration, /invalid document template lifecycle transition/);
   assert.match(migration, /validated_by_membership_id/);
   assert.match(migration, /retired_by_membership_id/);
+});
+
+test("migrace 0054 bezpečně vyřadí starší duplicitně schválené verze", async () => {
+  const db = new PGlite();
+  const migrations = (await readdir(new URL("../migrations/", import.meta.url))).filter((name) => name.endsWith(".sql") && name < "0054_").sort();
+  for (const name of migrations) await db.exec(await readFile(new URL(`../migrations/${name}`, import.meta.url), "utf8"));
+  const tenant = "91000000-0000-4000-8000-000000000001";
+  const user = "92000000-0000-4000-8000-000000000001";
+  const membership = "93000000-0000-4000-8000-000000000001";
+  const project = "94000000-0000-4000-8000-000000000001";
+  const document = "95000000-0000-4000-8000-000000000001";
+  const documentVersion = "96000000-0000-4000-8000-000000000001";
+  const template = "97000000-0000-4000-8000-000000000001";
+  await db.query("INSERT INTO tenants(id,name,slug,status) VALUES($1,'Template upgrade','template-upgrade','active')", [tenant]);
+  await db.query("INSERT INTO users(id,entra_issuer,entra_subject,email,display_name) VALUES($1,'test','upgrade-user','upgrade@example.test','Upgrade User')", [user]);
+  await db.query("INSERT INTO tenant_memberships(id,tenant_id,user_id,status,accepted_at) VALUES($1,$2,$3,'active',now())", [membership, tenant, user]);
+  await db.query("INSERT INTO projects(id,tenant_id,code,name,slug,lifecycle_status) VALUES($1,$2,'UPG','Upgrade projekt','upgrade-project','active')", [project, tenant]);
+  await db.query(`INSERT INTO documents(id,tenant_id,project_id,name,category,mime_type,storage_provider,external_drive_id,external_item_id,created_by_membership_id,document_type_id)
+    SELECT $1,$2,$3,'Zdroj šablony','other',$4,'sharepoint','drive','item',$5,id FROM document_types WHERE tenant_id=$2 AND code='other'`, [document, tenant, project, DOCX_MIME, membership]);
+  await db.query(`INSERT INTO document_versions(id,tenant_id,project_id,document_id,version_identifier,external_version_id,version_label,created_by_membership_id)
+    VALUES($1,$2,$3,$4,'source-v1','1.0','v1',$5)`, [documentVersion, tenant, project, document, membership]);
+  await db.query(`INSERT INTO document_templates(id,tenant_id,project_id,code,name,output_type_code,created_by_membership_id)
+    VALUES($1,$2,$3,'technical-upgrade','Technická šablona','other',$4)`, [template, tenant, project, membership]);
+  for (const [index, approvedAt] of ["2026-10-08T08:00:00Z", "2026-10-09T08:00:00Z"].entries()) {
+    await db.query(`INSERT INTO document_template_versions(tenant_id,project_id,template_id,source_document_id,source_document_version_id,version_label,content_hash,placeholder_schema,approval_status,effective_from,approved_at,approved_by_membership_id,created_by_membership_id,created_at)
+      VALUES($1,$2,$3,$4,$5,$6,$7,'{"fields":{"project.name":{"required":true}}}','approved',CURRENT_DATE,$8,$9,$9,$8)`,
+      [tenant, project, template, document, documentVersion, `v${index + 1}`, `sha256:${String(index + 1).repeat(64)}`, approvedAt, membership]);
+  }
+  await db.exec(await readFile(new URL("../migrations/0054_document_template_management.sql", import.meta.url), "utf8"));
+  const states = (await db.query<{ approval_status: string; version_label: string }>("SELECT approval_status,version_label FROM document_template_versions WHERE template_id=$1 ORDER BY version_label", [template])).rows;
+  assert.deepEqual(states, [{ approval_status: "retired", version_label: "v1" }, { approval_status: "approved", version_label: "v2" }]);
+  await db.close();
 });
 
 test("databáze dovolí pouze řízený lifecycle a schválený obsah zůstane neměnný", async () => {

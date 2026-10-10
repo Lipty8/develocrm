@@ -20,6 +20,20 @@ UPDATE document_template_versions SET
   validation_result=jsonb_build_object('valid',true,'tokens',ARRAY(SELECT jsonb_object_keys(placeholder_schema->'fields')),'errors','[]'::jsonb),
   validated_at=created_at,validated_by_membership_id=created_by_membership_id
 WHERE approval_status='approved';
+WITH ranked_approved AS (
+  SELECT id,row_number() OVER(
+    PARTITION BY tenant_id,template_id
+    ORDER BY approved_at DESC NULLS LAST,created_at DESC,id DESC
+  ) AS approval_rank
+  FROM document_template_versions
+  WHERE approval_status='approved'
+)
+UPDATE document_template_versions version SET
+  approval_status='retired',
+  retired_at=COALESCE(version.approved_at,version.created_at),
+  retired_by_membership_id=COALESCE(version.approved_by_membership_id,version.created_by_membership_id)
+FROM ranked_approved ranked
+WHERE version.id=ranked.id AND ranked.approval_rank>1;
 ALTER TABLE document_template_versions ADD CONSTRAINT document_template_versions_approval_status_check
   CHECK(approval_status IN('draft','validated','approved','retired'));
 ALTER TABLE document_template_versions ADD CONSTRAINT document_template_versions_validation_shape CHECK(
