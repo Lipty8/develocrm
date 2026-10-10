@@ -208,6 +208,9 @@ test("repository a migrace vynucují projektová oprávnění, lifecycle a nemě
   assert.match(repository, /correlationId:input\.correlationId/);
   assert.match(repository, /document_template\.created/);
   assert.match(repository, /app\.record_document_template_validation/);
+  assert.match(repository, /validation_result=\$5::jsonb same_validation/);
+  assert.doesNotMatch(repository, /JSON\.stringify\(current\.validation_result\)/);
+  assert.doesNotMatch(repository, /documents\.review[^`]*FOR UPDATE/);
   assert.match(repository, /app\.approve_document_template_version/);
   assert.match(repository, /app\.retire_document_template_version/);
   assert.match(repository, /existing\.output_type_code=EXCLUDED\.output_type_code/);

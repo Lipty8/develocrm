@@ -82,9 +82,9 @@ export class DocumentTemplateManagementRepository{
 
   async recordValidation(input:TemplateContext&{templateId:string;versionId:string;contentHash:string;validation:TemplateValidationReport}):Promise<void>{
     await this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
-      const current=(await client.query<{approval_status:TemplateLifecycle;validation_result:TemplateValidationReport}>(`SELECT approval_status,validation_result FROM document_template_versions
-        WHERE tenant_id=$1 AND template_id=$3 AND id=$4 AND app.has_project_permission(tenant_id,$2,project_id,'documents.upload')`,[input.tenantId,input.membershipId,input.templateId,input.versionId])).rows[0];
-      if(current?.approval_status==="validated"&&JSON.stringify(current.validation_result)===JSON.stringify(input.validation))return;
+      const current=(await client.query<{approval_status:TemplateLifecycle;same_validation:boolean}>(`SELECT approval_status,validation_result=$5::jsonb same_validation FROM document_template_versions
+        WHERE tenant_id=$1 AND template_id=$3 AND id=$4 AND app.has_project_permission(tenant_id,$2,project_id,'documents.upload')`,[input.tenantId,input.membershipId,input.templateId,input.versionId,input.validation])).rows[0];
+      if(current?.approval_status==="validated"&&current.same_validation)return;
       if(!current||current.approval_status!=="draft")throw new Error("draft template version not found or documents.upload permission required");
       const updated=(await client.query<{updated:boolean}>(`SELECT app.record_document_template_validation($1,$2,$3,$4,$5::jsonb) updated`,
         [input.tenantId,input.membershipId,input.templateId,input.versionId,input.validation])).rows[0]?.updated;
@@ -97,7 +97,7 @@ export class DocumentTemplateManagementRepository{
     await this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
       const target=(await client.query<{project_id:string;content_hash:string;approval_status:TemplateLifecycle}>(`SELECT tv.project_id,tv.content_hash,tv.approval_status FROM document_template_versions tv
         WHERE tv.tenant_id=$1 AND tv.template_id=$3 AND tv.id=$4
-          AND app.has_project_permission(tv.tenant_id,$2,tv.project_id,'documents.review') FOR UPDATE`,[input.tenantId,input.membershipId,input.templateId,input.versionId])).rows[0];
+          AND app.has_project_permission(tv.tenant_id,$2,tv.project_id,'documents.review')`,[input.tenantId,input.membershipId,input.templateId,input.versionId])).rows[0];
       if(target?.approval_status==="approved")return;
       if(!target||target.approval_status!=="validated")throw new Error("validated template version not found or documents.review permission required");
       const approved=(await client.query<{approved:boolean}>(`SELECT app.approve_document_template_version($1,$2,$3,$4) approved`,[input.tenantId,input.membershipId,input.templateId,input.versionId])).rows[0]?.approved;
@@ -111,7 +111,7 @@ export class DocumentTemplateManagementRepository{
   async retire(input:TemplateContext&{templateId:string;versionId:string}):Promise<void>{
     await this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
       const current=(await client.query<{approval_status:TemplateLifecycle;content_hash:string}>(`SELECT approval_status,content_hash FROM document_template_versions
-        WHERE tenant_id=$1 AND template_id=$3 AND id=$4 AND app.has_project_permission(tenant_id,$2,project_id,'documents.review') FOR UPDATE`,[input.tenantId,input.membershipId,input.templateId,input.versionId])).rows[0];
+        WHERE tenant_id=$1 AND template_id=$3 AND id=$4 AND app.has_project_permission(tenant_id,$2,project_id,'documents.review')`,[input.tenantId,input.membershipId,input.templateId,input.versionId])).rows[0];
       if(current?.approval_status==="retired")return;
       if(!current)throw new Error("template version not found or documents.review permission required");
       const retired=(await client.query<{retired:boolean}>(`SELECT app.retire_document_template_version($1,$2,$3,$4) retired`,[input.tenantId,input.membershipId,input.templateId,input.versionId])).rows[0]?.retired;
