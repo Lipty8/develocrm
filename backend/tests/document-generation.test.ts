@@ -54,6 +54,10 @@ test("registrace odmítne neznámý placeholder a poškozený DOCX",async()=>{
   const unknown=harness({source:docx("{{internal.secret}}")});await assert.rejects(unknown.service.register({...context,projectId,code:"technical",name:"Technical",outputTypeCode:"other",versionLabel:"v1",sourceDocumentId:"d",sourceDocumentVersionId:"v",schema:{fields:{"internal.secret":{required:true}}}}),e=>e instanceof DocumentGenerationError&&e.code==="invalid_schema");
   const corrupt=harness({source:new TextEncoder().encode("not-docx")});await assert.rejects(corrupt.service.register({...context,projectId,code:"technical",name:"Technical",outputTypeCode:"other",versionLabel:"v1",sourceDocumentId:"d",sourceDocumentVersionId:"v",schema}),e=>e instanceof DocxTemplateError&&e.code==="invalid_docx");
 });
+test("přímá registrace nemůže obejít validaci a schválení lifecycle",async()=>{
+  const h=harness();
+  await assert.rejects(h.service.register({...context,projectId,code:"technical",name:"Technical",outputTypeCode:"other",versionLabel:"v1",sourceDocumentId:"d",sourceDocumentVersionId:"v",schema,approvalStatus:"approved"}),e=>e instanceof DocumentGenerationError&&e.code==="template_approval_requires_lifecycle");
+});
 test("persistence vrstva vynucuje tenant, projekt, append-only template verze a neměnný snapshot",async()=>{
   const migration=await readFile(new URL("../migrations/0052_document_template_generation.sql",import.meta.url),"utf8");
   assert.match(migration,/document_generation_unit_fk FOREIGN KEY\(tenant_id,project_id,unit_id\)/);

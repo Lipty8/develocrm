@@ -5,6 +5,7 @@ export type DocxTemplateValue = string | number | boolean | null | undefined;
 export type DocxTemplateInspection = {
   tokens: string[];
   legacyMarkers: string[];
+  malformedTokens: string[];
   xmlParts: string[];
 };
 
@@ -26,6 +27,9 @@ export type DocxTemplateErrorCode =
   | "legacy_placeholders_present"
   | "required_token_missing_from_template"
   | "unknown_template_token"
+  | "malformed_template_token"
+  | "unsafe_docx_archive"
+  | "template_too_large"
   | "template_value_missing"
   | "unresolved_template_token";
 
@@ -43,6 +47,9 @@ export class DocxTemplateError extends Error {
 const TOKEN_PATTERN = /{{\s*([A-Za-z][A-Za-z0-9_.-]*)\s*}}/g;
 const XML_PART_PATTERN = /^word\/(?:document|header\d*|footer\d*|footnotes|endnotes)\.xml$/;
 const LEGACY_MARKER_PATTERNS = [/\[\s*[•●]\s*]/g, /\[\s*(?:doplnit|vyplnit)\s*]/gi];
+const MAX_COMPRESSED_BYTES=4*1024*1024;
+const MAX_UNCOMPRESSED_BYTES=32*1024*1024;
+const MAX_ARCHIVE_PARTS=2048;
 
 /**
  * Reads only user-visible Word XML parts. It never treats arbitrary ZIP content
@@ -57,6 +64,7 @@ export function inspectDocxTemplate(bytes: Uint8Array): DocxTemplateInspection {
 
   const tokens = new Set<string>();
   const legacyMarkers = new Set<string>();
+  const malformedTokens = new Set<string>();
   for (const name of xmlParts) {
     const xml = strFromU8(archive[name]);
     const visibleText = extractVisibleText(xml);
@@ -64,8 +72,12 @@ export function inspectDocxTemplate(bytes: Uint8Array): DocxTemplateInspection {
     for (const pattern of LEGACY_MARKER_PATTERNS) {
       for (const match of visibleText.matchAll(pattern)) legacyMarkers.add(match[0]);
     }
+    const textWithoutValidTokens = visibleText.replace(TOKEN_PATTERN, "");
+    for (const marker of textWithoutValidTokens.match(/\{\{[^{}\r\n]*|\}\}/g) ?? []) {
+      malformedTokens.add(marker.trim());
+    }
   }
-  return { tokens: [...tokens].sort(), legacyMarkers: [...legacyMarkers].sort(), xmlParts };
+  return { tokens: [...tokens].sort(), legacyMarkers: [...legacyMarkers].sort(), malformedTokens:[...malformedTokens].sort(), xmlParts };
 }
 
 /**
@@ -87,6 +99,7 @@ export function renderDocxTemplate(
       inspection.legacyMarkers,
     );
   }
+  if(inspection.malformedTokens.length>0)throw new DocxTemplateError("malformed_template_token","Šablona obsahuje neplatně zapsaná pole.",inspection.malformedTokens);
   if (inspection.tokens.length === 0) {
     throw new DocxTemplateError(
       "template_not_parameterized",
@@ -143,9 +156,19 @@ export function renderDocxTemplate(
 }
 
 function openDocx(bytes: Uint8Array): Record<string, Uint8Array> {
+  if(bytes.byteLength<1||bytes.byteLength>MAX_COMPRESSED_BYTES)throw new DocxTemplateError("template_too_large","Soubor šablony překračuje povolenou velikost.");
   try {
-    return unzipSync(bytes);
-  } catch {
+    let partCount=0,totalSize=0;
+    const archive=unzipSync(bytes,{filter:file=>{
+      partCount+=1;totalSize+=file.originalSize;
+      if(partCount>MAX_ARCHIVE_PARTS||totalSize>MAX_UNCOMPRESSED_BYTES)throw new DocxTemplateError("template_too_large","Rozbalený obsah šablony překračuje bezpečný limit.");
+      if(file.name.startsWith("/")||file.name.includes("\\")||file.name.split("/").includes(".."))throw new DocxTemplateError("unsafe_docx_archive","Šablona obsahuje nebezpečnou cestu souboru.");
+      return true;
+    }});
+    if(!archive["[Content_Types].xml"]||!archive["word/document.xml"])throw new DocxTemplateError("invalid_docx","Soubor nemá úplnou strukturu dokumentu Word.");
+    return archive;
+  } catch(error) {
+    if(error instanceof DocxTemplateError)throw error;
     throw new DocxTemplateError("invalid_docx", "Soubor není platný dokument DOCX.");
   }
 }

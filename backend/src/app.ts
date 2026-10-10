@@ -1,4 +1,4 @@
-import Fastify, { type FastifyError, type FastifyInstance, type FastifyRequest } from "fastify";
+import Fastify, { type FastifyError, type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { EntraIdentity } from "./auth/entra.js";
 import { EntraTokenVerifier } from "./auth/entra.js";
 import type { Database } from "./database.js";
@@ -19,6 +19,8 @@ import { SharePointDocumentUploadService, SharePointUploadError } from "./docume
 import { DocumentTemplateGenerationRepository, type PlaceholderSchema } from "./documents/template-generation-repository.js";
 import { DocumentGenerationError, DocumentTemplateGenerationService } from "./documents/template-generation-service.js";
 import { DocxTemplateError } from "./documents/docx-template.js";
+import {DocumentTemplateManagementRepository} from "./documents/template-management-repository.js";
+import {DocumentTemplateManagementService,TemplateManagementError} from "./documents/template-management-service.js";
 import {RsGenerationRepository} from "./contracts/rs-generation-repository.js";
 import {RsGenerationError,RsGenerationService} from "./contracts/rs-generation-service.js";
 import { HandoverRepository } from "./handovers/repository.js";
@@ -62,6 +64,8 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
   const templateGenerationRepository=new DocumentTemplateGenerationRepository(dependencies.database);
   const templateGeneration=sharePointUploads&&dependencies.microsoftGraphAdapter
     ?new DocumentTemplateGenerationService(templateGenerationRepository,documentRepository,sharePointUploads,dependencies.microsoftGraphAdapter):null;
+  const templateManagement=sharePointUploads&&dependencies.microsoftGraphAdapter
+    ?new DocumentTemplateManagementService(new DocumentTemplateManagementRepository(dependencies.database),templateGenerationRepository,documentRepository,sharePointUploads,dependencies.microsoftGraphAdapter):null;
   const rsGeneration=templateGeneration?new RsGenerationService(new RsGenerationRepository(dependencies.database),templateGeneration):null;
   const handoverRepository = new HandoverRepository(dependencies.database);
   const paymentRepository = new PaymentRepository(dependencies.database);
@@ -549,6 +553,46 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
     }catch(error){request.log.warn({event:"document.template.registration_failed",correlationId:request.id,errorName:error instanceof Error?error.name:"Error",errorCode:error instanceof DocumentGenerationError||error instanceof DocxTemplateError?error.code:undefined},"document template registration failed");
       return reply.code(permissionError(error)?403:error instanceof DocumentGenerationError&&error.code==="source_not_found"?404:422).send({error:"Šablonu se nepodařilo bezpečně zaregistrovat."});}
   });
+  app.get<{Querystring:{projectId?:string;outputTypeCode?:string}}>("/v1/document-templates",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});
+      if(!templateManagement)return reply.code(503).send({error:"SharePoint integrace není v tomto prostředí nakonfigurovaná"});
+      return{templates:await templateManagement.list({...context,...request.query})};
+    }catch(error){return templateErrorReply(request,reply,error);}
+  });
+  app.get<{Params:{templateId:string}}>("/v1/document-templates/:templateId",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});
+      if(!templateManagement)return reply.code(503).send({error:"SharePoint integrace není v tomto prostředí nakonfigurovaná"});
+      const templates=await templateManagement.list({...context,templateId:request.params.templateId});return templates[0]?{template:templates[0]}:reply.code(404).send({error:"Šablona nebyla nalezena"});
+    }catch(error){return templateErrorReply(request,reply,error);}
+  });
+  app.post<{Body:{projectId:string;code:string;name:string;outputTypeCode:string;variantKey?:string;versionLabel:string;effectiveFrom?:string;fileName:string;mimeType:string;contentBase64:string}}>("/v1/document-templates/upload",{bodyLimit:6*1024*1024},async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});
+      if(!templateManagement)return reply.code(503).send({error:"SharePoint integrace není v tomto prostředí nakonfigurovaná"});
+      const{contentBase64,...input}=request.body;const result=await templateManagement.upload({...context,...input,bytes:decodeBase64(contentBase64),correlationId:request.id});return reply.code(result.replayed?200:201).send({version:result});
+    }catch(error){return templateErrorReply(request,reply,error);}
+  });
+  app.post<{Params:{templateId:string;versionId:string}}>("/v1/document-templates/:templateId/versions/:versionId/validate",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});if(!templateManagement)return reply.code(503).send({error:"Správa šablon není dostupná"});
+      return{validation:await templateManagement.validate({...context,...request.params,correlationId:request.id})};}catch(error){return templateErrorReply(request,reply,error);}
+  });
+  app.post<{Params:{templateId:string;versionId:string}}>("/v1/document-templates/:templateId/versions/:versionId/approve",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});if(!templateManagement)return reply.code(503).send({error:"Správa šablon není dostupná"});
+      await templateManagement.approve({...context,...request.params,correlationId:request.id});return{ok:true};}catch(error){return templateErrorReply(request,reply,error);}
+  });
+  app.post<{Params:{templateId:string;versionId:string}}>("/v1/document-templates/:templateId/versions/:versionId/retire",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});if(!templateManagement)return reply.code(503).send({error:"Správa šablon není dostupná"});
+      await templateManagement.retire({...context,...request.params,correlationId:request.id});return{ok:true};}catch(error){return templateErrorReply(request,reply,error);}
+  });
+  app.get<{Params:{templateId:string;versionId:string}}>("/v1/document-templates/:templateId/versions/:versionId/preview",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});if(!templateManagement)return reply.code(503).send({error:"Správa šablon není dostupná"});
+      const bytes=await templateManagement.preview({...context,...request.params});return reply.header("content-type","application/vnd.openxmlformats-officedocument.wordprocessingml.document").header("content-disposition",`attachment; filename="template-preview-${request.params.versionId}.docx"`).send(Buffer.from(bytes));
+    }catch(error){return templateErrorReply(request,reply,error);}
+  });
+  app.get<{Params:{templateId:string;versionId:string}}>("/v1/document-templates/:templateId/versions/:versionId/source",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});if(!templateManagement)return reply.code(503).send({error:"Správa šablon není dostupná"});
+      const source=await templateManagement.source({...context,...request.params});return reply.header("content-type","application/vnd.openxmlformats-officedocument.wordprocessingml.document").header("content-disposition",`attachment; filename*=UTF-8''${encodeURIComponent(source.fileName)}`).send(Buffer.from(source.bytes));
+    }catch(error){return templateErrorReply(request,reply,error);}
+  });
   app.post<{Body:{projectId:string;templateVersionId:string;idempotencyKey:string;unitId?:string;partyId?:string;salesCaseId?:string;contractId?:string;documentId?:string;documentName?:string}}>("/v1/documents/generate",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});
       if(!templateGeneration)return reply.code(503).send({error:"SharePoint integrace není v tomto prostředí nakonfigurovaná"});
@@ -632,6 +676,11 @@ function headerValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 function permissionError(error:unknown){return error instanceof Error&&/permission|required|oprávnění/i.test(error.message);}
+function templateErrorReply(request:FastifyRequest,reply:FastifyReply,error:unknown){const code=error instanceof TemplateManagementError||error instanceof DocxTemplateError?error.code:undefined;
+  request.log.warn({event:"document_template.operation_failed",correlationId:request.id,errorName:error instanceof Error?error.name:"Error",errorCode:code},"document template operation failed");
+  const status=permissionError(error)||code==="permission_required"?403:code?.includes("not_found")?404:code?.startsWith("invalid_")||code==="unsupported_template_type"||error instanceof DocxTemplateError?422:409;
+  const message=status===403?"Nemáte oprávnění provést tuto změnu šablony.":status===404?"Šablona nebo její verze nebyla nalezena.":status===422?"Šablona není platná. Zkontrolujte soubor a datová pole.":"Změnu šablony se nepodařilo dokončit.";
+  return reply.code(status).send({error:message,code,details:error instanceof TemplateManagementError||error instanceof DocxTemplateError?error.details:[],correlationId:request.id});}
 function decodeBase64(value:string):Uint8Array{
   if(typeof value!=="string"||!value.length||value.length>5_600_000||!/^[A-Za-z0-9+/]*={0,2}$/.test(value)||value.length%4!==0)throw new SharePointUploadError("invalid_content");
   const decoded=Buffer.from(value,"base64");

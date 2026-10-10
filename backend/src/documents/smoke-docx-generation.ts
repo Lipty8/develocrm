@@ -6,6 +6,7 @@ import { DocumentRepository, type DocumentContext } from "./repository.js";
 import { SharePointDocumentUploadService } from "./upload-service.js";
 import { DocumentTemplateGenerationRepository } from "./template-generation-repository.js";
 import { DocumentTemplateGenerationService } from "./template-generation-service.js";
+import { DocumentTemplateManagementRepository } from "./template-management-repository.js";
 import { inspectDocxTemplate } from "./docx-template.js";
 
 const databaseUrl=required("DATABASE_URL"),clientId=required("SHAREPOINT_MANAGED_IDENTITY_CLIENT_ID");
@@ -14,6 +15,7 @@ const projectId=required("DOCX_SMOKE_PROJECT_ID"),release=required("DOCX_SMOKE_R
 const database=new Database(databaseUrl),graph=new EntraMicrosoftGraphAdapter(new ManagedIdentityGraphTokenProvider(clientId));
 const documents=new DocumentRepository(database),uploads=new SharePointDocumentUploadService(documents,graph,clientId);
 const templates=new DocumentTemplateGenerationRepository(database),generation=new DocumentTemplateGenerationService(templates,documents,uploads,graph);
+const templateManagement=new DocumentTemplateManagementRepository(database);
 
 try{
   const business=await database.withContext({tenantId:context.tenantId,userId:context.userId},async client=>(await client.query<{unit_id:string;party_id:string}>(`
@@ -27,7 +29,12 @@ try{
     bytes:sourceBytes,versionLabel:"template-v1",status:"draft",note:"Technický smoke-test artefakt",unitId:business.unit_id,partyId:business.party_id});
   const registered=await generation.register({...context,projectId,code:`technical-${release}`,name:"Technické ověření generování",outputTypeCode:"other",versionLabel:"v1",
     sourceDocumentId:source.documentId,sourceDocumentVersionId:source.documentVersionId,schema:{fields:{"project.name":{required:true},"project.code":{required:true},
-      "unit.code":{required:true},"buyer.name":{required:true},"generation.date":{required:true},"unit.totalPrice":{required:true}}},approvalStatus:"approved"});
+      "unit.code":{required:true},"buyer.name":{required:true},"generation.date":{required:true},"unit.totalPrice":{required:true}}},approvalStatus:"draft"});
+  const registeredVersion=(await templateManagement.list({...context,templateId:registered.templateId}))[0]?.versions.find(version=>version.id===registered.templateVersionId);
+  if(!registeredVersion)throw new Error("registered template version unavailable");
+  await templateManagement.recordValidation({...context,templateId:registered.templateId,versionId:registered.templateVersionId,contentHash:registeredVersion.contentHash,
+    validation:{valid:true,tokens:["buyer.name","generation.date","project.code","project.name","unit.code","unit.totalPrice"],unknownTokens:[],missingTokens:[],malformedTokens:[],legacyMarkers:[],errors:[]}});
+  await templateManagement.approve({...context,templateId:registered.templateId,versionId:registered.templateVersionId});
   const request={...context,projectId,templateVersionId:registered.templateVersionId,idempotencyKey:`docx-smoke-generation-${release}`,unitId:business.unit_id,partyId:business.party_id,documentName:`TECHNICKÝ GENEROVANÝ DOCX ${release}`};
   const first=await generation.generate(request),second=await generation.generate(request);
   if(first.documentId!==second.documentId||first.documentVersionId!==second.documentVersionId||!second.replayed)throw new Error("generation retry created a duplicate");
@@ -36,6 +43,9 @@ try{
   const generatedBytes=await graph.downloadFile({siteId:connection.siteId,driveId:connection.driveId},detail.externalItemId,detail.versions[0]?.externalVersionId??undefined);
   const archive=unzipSync(generatedBytes),inspection=inspectDocxTemplate(generatedBytes),xml=strFromU8(archive["word/document.xml"]??new Uint8Array());
   if(inspection.tokens.length||!archive["[Content_Types].xml"]||!archive["_rels/.rels"]||!xml.includes("Hrdlička")&&!xml.includes("Rezidence"))throw new Error("generated DOCX validation failed");
+  await templateManagement.retire({...context,templateId:registered.templateId,versionId:registered.templateVersionId});
+  await documents.archive({...context,documentId:first.documentId!,reason:"Úklid technického DOCX smoke-test výstupu"});
+  await documents.archive({...context,documentId:source.documentId,reason:"Úklid technické DOCX smoke-test šablony"});
   console.log(JSON.stringify({ok:true,sourceStored:Boolean(source.itemId),templateHashStored:true,snapshotStored:true,generatedStored:Boolean(detail.externalItemId),
     noUnresolvedPlaceholders:inspection.tokens.length===0,idempotentReplay:second.replayed,sameDocument:first.documentId===second.documentId,sameVersion:first.documentVersionId===second.documentVersionId,
     docxParts:Object.keys(archive).length,contentBytes:generatedBytes.byteLength}));

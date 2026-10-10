@@ -1,13 +1,13 @@
 import { createHash } from "node:crypto";
 import { inspectDocxTemplate, renderDocxTemplate, DocxTemplateError } from "./docx-template.js";
+import {RS_PLACEHOLDERS,TECHNICAL_PLACEHOLDERS,supportedTemplateTokens} from "./template-catalog.js";
 import type { MicrosoftGraphAdapter } from "./graph-adapter.js";
 import type { DocumentContext, DocumentRepository } from "./repository.js";
 import type { SharePointDocumentUploadService } from "./upload-service.js";
 import { DocumentTemplateGenerationRepository, type PlaceholderSchema } from "./template-generation-repository.js";
 
-export const TECHNICAL_PLACEHOLDERS=["project.name","project.code","unit.code","buyer.name","generation.date","unit.totalPrice"] as const;
-export const RS_PLACEHOLDERS=["seller.name","seller.address","seller.registryEntry","seller.registrationNumber","seller.representative","seller.email","seller.dataBox","seller.bankAccount","buyer.salutation","buyer.name","buyer.address","buyer.birthDate","buyer.email","buyer.phone","buyer.dataBoxLine","project.name","project.completionYear","contract.reservationPeriodDays","unit.subjectClause","unit.balconyClause","unit.gardenClause","unit.outdoorParkingClause","unit.cellarClause","unit.garageClause","payment.reservationFeeClause","contract.totalPriceClause","contract.date"] as const;
-const SUPPORTED_PLACEHOLDERS=new Set<string>([...TECHNICAL_PLACEHOLDERS,...RS_PLACEHOLDERS]);
+export {RS_PLACEHOLDERS,TECHNICAL_PLACEHOLDERS};
+const SUPPORTED_PLACEHOLDERS=supportedTemplateTokens();
 export class DocumentGenerationError extends Error{constructor(readonly code:string){super("Dokument se nepodařilo vytvořit.");this.name="DocumentGenerationError";}}
 
 export class DocumentTemplateGenerationService{
@@ -16,6 +16,7 @@ export class DocumentTemplateGenerationService{
 
   async register(input:DocumentContext&{projectId:string;code:string;name:string;outputTypeCode:string;versionLabel:string;
     sourceDocumentId:string;sourceDocumentVersionId:string;schema:PlaceholderSchema;contractType?:"rs"|"sbk"|"ks";approvalStatus?:"draft"|"approved"|"retired";effectiveFrom?:string}){
+    if(input.approvalStatus&&input.approvalStatus!=="draft")throw new DocumentGenerationError("template_approval_requires_lifecycle");
     validateSchema(input.schema);
     const source=await this.repository.sourceForRegistration(input);if(!source)throw new DocumentGenerationError("source_not_found");
     if(!source.externalVersionId)throw new DocumentGenerationError("template_source_version_unavailable");

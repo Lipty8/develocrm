@@ -84,3 +84,34 @@ test("renderer ověří, že šablona obsahuje všechna povinná pole", () => {
       && error.details[0] === "seller.companyId",
   );
 });
+
+test("inspekce odmítne nebezpečnou ZIP cestu", () => {
+  const unsafe = zipSync({
+    "[Content_Types].xml": strToU8("<Types/>"),
+    "word/document.xml": strToU8('<w:document xmlns:w="x"><w:body/></w:document>'),
+    "../outside.xml": strToU8("unsafe"),
+  });
+  assert.throws(
+    () => inspectDocxTemplate(unsafe),
+    (error: unknown) => error instanceof DocxTemplateError && error.code === "unsafe_docx_archive",
+  );
+});
+
+test("inspekce rozliší poškozený zápis pole od platného tokenu", () => {
+  const template = docx("<w:p><w:r><w:t>{{project.name}} {{buyer.name}</w:t></w:r></w:p>");
+  const inspection = inspectDocxTemplate(template);
+  assert.deepEqual(inspection.tokens, ["project.name"]);
+  assert.deepEqual(inspection.malformedTokens, ["{{buyer.name"]);
+  assert.throws(
+    () => renderDocxTemplate(template, { "project.name": "Hrdlička" }),
+    (error: unknown) => error instanceof DocxTemplateError && error.code === "malformed_template_token",
+  );
+});
+
+test("inspekce odmítne neúplnou DOCX strukturu", () => {
+  const incomplete = zipSync({ "word/document.xml": strToU8("<w:document/>") });
+  assert.throws(
+    () => inspectDocxTemplate(incomplete),
+    (error: unknown) => error instanceof DocxTemplateError && error.code === "invalid_docx",
+  );
+});
