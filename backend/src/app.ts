@@ -415,14 +415,14 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
     try { const identity=await authenticate(request,dependencies.verifier); const tenantId=headerValue(request.headers["x-tenant-id"]); if(!tenantId)return reply.code(400).send({error:"Chybí x-tenant-id"}); const user=await repository.resolveUser(identity); const session=await repository.getSession(user,identity,tenantId);
       if(!session||!await sales.hasHoldPermission({tenantId,userId:user.id,membershipId:session.workspace.membershipId,holdId:request.params.holdId,permission:"holds.cancel"}))return reply.code(403).send({error:"Chybí oprávnění holds.cancel"});
       return reply.send(await holds.cancel({tenantId,userId:user.id,holdId:request.params.holdId,membershipId:session.workspace.membershipId,reason:request.body.reason}));
-    } catch(error){return reply.code(409).send({error:error instanceof Error?error.message:"Zrušení rezervace se nezdařilo"});}
+    } catch(error){request.log.warn({err:error,correlationId:request.id},"hold cancellation rejected");return reply.code(409).send({error:error instanceof Error?error.message:"Zrušení rezervace se nezdařilo",correlationId:request.id});}
   });
 
   app.post<{ Params:{ holdId:string } }>("/v1/holds/:holdId/expire", async (request,reply) => {
     try { const identity=await authenticate(request,dependencies.verifier); const tenantId=headerValue(request.headers["x-tenant-id"]); if(!tenantId)return reply.code(400).send({error:"Chybí x-tenant-id"}); const user=await repository.resolveUser(identity); const session=await repository.getSession(user,identity,tenantId);
-      if(!session||!await sales.hasHoldPermission({tenantId,userId:user.id,membershipId:session.workspace.membershipId,holdId:request.params.holdId,permission:"holds.confirm"}))return reply.code(403).send({error:"Chybí oprávnění holds.confirm"});
+      if(!session||!await sales.hasHoldPermission({tenantId,userId:user.id,membershipId:session.workspace.membershipId,holdId:request.params.holdId,permission:"holds.manage"}))return reply.code(403).send({error:"Chybí oprávnění holds.manage"});
       return reply.send(await holds.expire({tenantId,userId:user.id,holdId:request.params.holdId,membershipId:session.workspace.membershipId}));
-    } catch(error){return reply.code(409).send({error:error instanceof Error?error.message:"Expirace rezervace se nezdařila"});}
+    } catch(error){request.log.warn({err:error,correlationId:request.id},"hold expiry rejected");return reply.code(409).send({error:error instanceof Error?error.message:"Expirace rezervace se nezdařila",correlationId:request.id});}
   });
 
   app.post<{ Params: { unitId: string }; Body: { reason?: string } }>("/v1/units/:unitId/block", async (request, reply) => {

@@ -238,8 +238,8 @@ export class SalesRepository {
            WHERE interest.tenant_id=unit.tenant_id AND interest.unit_id=unit.id
              AND ${partyAccess}
          ) interests ON true
-         LEFT JOIN LATERAL (SELECT jsonb_build_object('id',id,'type',hold_type,'expiresAt',expires_at) item FROM unit_holds
-           WHERE tenant_id=unit.tenant_id AND unit_id=unit.id AND status='active' AND expires_at>now() ORDER BY expires_at DESC LIMIT 1) hold ON true
+         LEFT JOIN LATERAL (SELECT jsonb_build_object('id',id,'type',hold_type,'expiresAt',expires_at,'isExpirable',hold_type='pre_reservation') item FROM unit_holds
+           WHERE tenant_id=unit.tenant_id AND unit_id=unit.id AND status='active' AND (hold_type='reservation' OR expires_at>now()) ORDER BY expires_at DESC LIMIT 1) hold ON true
          WHERE unit.tenant_id=$1 AND unit.archived_at IS NULL
            AND EXISTS(SELECT 1 FROM projects active_project WHERE active_project.tenant_id=unit.tenant_id AND active_project.id=unit.project_id AND active_project.archived_at IS NULL)
            AND app.has_project_permission(unit.tenant_id,$2,unit.project_id,'sales_case.read')`,

@@ -61,6 +61,7 @@ export function getSalesProcessState(input:SalesProcessInput):SalesProcessProjec
   else if(active(sbk)){completedThrough=2;activeIndex=3;activeContract=sbk;}
   else if(signed(rs)){completedThrough=2;activeIndex=3;}
   else if(active(rs)){completedThrough=1;activeIndex=2;activeContract=rs;}
+  else if(input.salesStage==="pre_reservation"&&!input.holdType){activeIndex=0;completedThrough=-1;}
   else if(input.salesStage&&input.salesStage in stageIndex){activeIndex=stageIndex[input.salesStage];completedThrough=activeIndex-1;}
   else if(input.salesStage==="pre_reservation"||input.holdType==="pre_reservation"){completedThrough=0;activeIndex=1;}
   else if(input.hasActiveSalesCase||input.hasInterest){completedThrough=-1;activeIndex=0;}
@@ -71,7 +72,7 @@ export function getSalesProcessState(input:SalesProcessInput):SalesProcessProjec
     nextContractAction.kind==="open_contracts"?"Nejdříve dokončete rozpracovanou smlouvu.":null;
   return{
     completedThrough,activeIndex,currentStage,nextContractAction,unavailableReason,
-    commercialStatusLabel:input.commercialStatus?commercialStatusLabels[input.commercialStatus]??input.commercialStatus:salesProcessSteps[activeIndex]?.label??"Zájem",
+    commercialStatusLabel:input.handoverCompleted?"Předáno":signed(ks)?"KS":signed(sbk)?"SBK":signed(rs)&&!["contracted","sold","handed_over","SBK","KS","Předáno"].includes(input.commercialStatus??"")?"Rezervovaná":input.commercialStatus?commercialStatusLabels[input.commercialStatus]??input.commercialStatus:salesProcessSteps[activeIndex]?.label??"Zájem",
     steps:salesProcessSteps.map((step,index)=>{
       if(index===0||index===1)return{...step,state:(index<=completedThrough?"complete":index===activeIndex?"current":"pending") as "complete"|"current"|"pending"};
       if(step.code==="rs"||step.code==="sbk"||step.code==="ks"){

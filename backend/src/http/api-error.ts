@@ -25,7 +25,10 @@ export function mapApiError(input: unknown, statusCode: number, correlationId: s
   if (!TECHNICAL_PATTERN.test(source) && /[áčďéěíňóřšťúůýž]/i.test(source) && source.length <= 240) {
     message = source;
   }
-  if (/permission|required|oprávnění/i.test(source)) {
+  if (/SIGNED_CONTRACT_PROTECTS_RESERVATION/.test(source)) {
+    code = "SIGNED_CONTRACT_PROTECTS_RESERVATION";
+    message = "Jednotku nelze uvolnit, protože má podepsanou smlouvu.";
+  } else if (/permission|required|oprávnění/i.test(source)) {
     code = "FORBIDDEN";
     message = "Nemáte oprávnění provést tuto operaci.";
   } else if (/not found|nenalezen/i.test(source)) {
