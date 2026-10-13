@@ -1,4 +1,5 @@
 import type { Database } from "../database.js";
+import {snapshotHash} from '../shared/snapshot-integrity.js';
 import type { DocumentContext } from "./repository.js";
 
 export type PlaceholderSchema={fields:Record<string,{required:boolean}>};
@@ -89,9 +90,9 @@ export class DocumentTemplateGenerationRepository{
         "buyer.name":data.party_name??undefined,"generation.date":new Intl.DateTimeFormat("cs-CZ",{dateStyle:"medium",timeZone:"Europe/Prague"}).format(new Date(generatedAt)),
         "unit.totalPrice":data.total_price==null?undefined:new Intl.NumberFormat("cs-CZ",{style:"currency",currency:"CZK",maximumFractionDigits:0}).format(Number(data.total_price))};
       const snapshot:Record<string,string>=input.snapshot??{};if(!input.snapshot)for(const token of Object.keys(input.template.schema.fields)){if(all[token]!==undefined)snapshot[token]=all[token]!;}
-      const snapshotHash=await sha256Json(snapshot);
-      const row=(await client.query<Record<string,unknown>>(`INSERT INTO document_generation_operations(tenant_id,project_id,idempotency_key,request_hash,template_version_id,unit_id,party_id,sales_case_id,contract_id,generation_snapshot,snapshot_hash,created_by_membership_id)
-        VALUES($1,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$2) RETURNING *`,[input.tenantId,input.membershipId,input.projectId,input.idempotencyKey,input.requestHash,input.template.templateVersionId,input.unitId??null,input.partyId??null,input.salesCaseId??null,input.contractId??null,snapshot,snapshotHash])).rows[0];
+      const digest=snapshotHash(snapshot);
+      const row=(await client.query<Record<string,unknown>>(`INSERT INTO document_generation_operations(tenant_id,project_id,idempotency_key,request_hash,template_version_id,unit_id,party_id,sales_case_id,contract_id,generation_snapshot,snapshot_hash,snapshot_hash_scheme,created_by_membership_id)
+        VALUES($1,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'canonical-json-v1',$2) RETURNING *`,[input.tenantId,input.membershipId,input.projectId,input.idempotencyKey,input.requestHash,input.template.templateVersionId,input.unitId??null,input.partyId??null,input.salesCaseId??null,input.contractId??null,snapshot,digest])).rows[0];
       return mapOperation(row,input.template);
     });
   }
@@ -113,4 +114,3 @@ export class DocumentTemplateGenerationRepository{
 
 function mapTemplate(r:Record<string,unknown>):TemplateSource{return{templateId:String(r.template_id),templateVersionId:String(r.template_version_id),projectId:String(r.project_id),templateCode:String(r.code),templateName:String(r.name),outputTypeCode:String(r.output_type_code),versionLabel:String(r.version_label),contentHash:String(r.content_hash),schema:r.placeholder_schema as PlaceholderSchema,approvalStatus:String(r.approval_status) as TemplateSource["approvalStatus"],effectiveFrom:String(r.effective_from),driveId:String(r.external_drive_id),itemId:String(r.external_item_id),externalVersionId:r.external_version_id?String(r.external_version_id):null};}
 function mapOperation(r:Record<string,unknown>,template:TemplateSource):GenerationOperation{return{id:String(r.id),state:String(r.state) as GenerationOperation["state"],projectId:String(r.project_id),template,snapshot:r.generation_snapshot as Record<string,string>,outputDocumentId:r.output_document_id?String(r.output_document_id):null,outputDocumentVersionId:r.output_document_version_id?String(r.output_document_version_id):null,unitId:r.unit_id?String(r.unit_id):null,partyId:r.party_id?String(r.party_id):null,salesCaseId:r.sales_case_id?String(r.sales_case_id):null,contractId:r.contract_id?String(r.contract_id):null,createdAt:String(r.created_at)};}
-async function sha256Json(value:unknown):Promise<string>{const bytes=new TextEncoder().encode(JSON.stringify(value));return Buffer.from(await crypto.subtle.digest("SHA-256",bytes)).toString("hex");}

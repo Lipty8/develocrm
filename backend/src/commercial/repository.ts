@@ -1,5 +1,6 @@
 import type { Database } from "../database.js";
 import { contractStatusLabel, recommendedContractAction } from "../shared/contract-workflow.js";
+import {signedEvidenceState} from '../diagnostics/consistency-checker.js';
 
 export type PriceItem={id:string;unit:string;type:string;amount:number;amountNet?:number;currency:string;validFrom:string;validTo:string|null;reason:string;author:string;approver:string|null};
 export type ContractHistoryItem={id:string;fromStatus:string|null;toStatus:string;occurredAt:string;actor:string;note:string;source:"manual"|"automation"|"signature"|"import"};
@@ -111,6 +112,10 @@ export class CommercialRepository {
         if(priceHistories[row.unit_id])priceHistories[row.unit]=priceHistories[row.unit_id];
       }
       const mapped=contracts.rows.map(row=>({id:row.id,salesCaseId:row.sales_case_id,unit:row.unit,projectId:row.project_id,project:row.project,client:row.parties.filter(p=>p.isCurrent&&(['buyer','co_buyer','assignee'].includes(p.role))).map(p=>p.name).join(' a '),type:typeLabel(row.type),typeCode:row.type,state:contractStatusLabel(row.status),statusCode:row.status,updated:row.updated_at,updatedAt:row.updated_at,owner:row.owner.split(' ')[0]??row.owner,action:recommendedContractAction({status:row.status,type:row.type}).label,title:row.title,reference:row.reference,parentContractId:row.parent_contract_id,parentReference:row.parent_reference,assignmentEffectiveAt:row.assignment_effective_at,amendmentNumber:row.amendment_number,baseContractType:row.base_contract_type,history:row.history,notes:row.notes,parties:row.parties,versions:row.versions}));
+      for(const contract of mapped)contract.versions=contract.versions.map(version=>{
+        const evidence=version as typeof version&{documentVersionId?:string|null;documentReady?:boolean};
+        return{...version,evidenceState:signedEvidenceState({tenantId:input.tenantId,projectId:contract.projectId,contractId:contract.id,versionId:version.id,status:version.status,signedAt:version.signedAt,documentVersionId:evidence.documentVersionId,documentReady:evidence.documentReady})};
+      });
       const contractSummary=contracts.rows.reduce<Record<string,number>>((sum,row)=>(sum[row.status]=(sum[row.status]??0)+1,sum),{});
       return {currentPrices,priceBreakdowns,priceHistories,priceProposals:proposals.rows.map(row=>({id:row.id,unit:row.unit,priceType:row.price_type,currentAmount:row.current_amount,proposedAmount:row.proposed_amount,validFrom:row.valid_from,reason:row.reason,status:row.status,proposer:row.proposer,decider:row.decider})),contracts:mapped,contractSummary};
     });

@@ -25,7 +25,7 @@ const management=new DocumentTemplateManagementService(new DocumentTemplateManag
 const rsRepo=new RsGenerationRepository(database),rs=new RsGenerationService(rsRepo,generation),evidence=new ContractDocumentEvidenceService(database,graph,uploads,mi);
 const commercial=new CommercialService(database),inventory=new InventoryImportService(database),catalog=new InventoryRepository(database);
 const mode=process.env.EVIDENCE_SMOKE_MODE??'prepare';const projectName='TECH SMOKE · Price + signed document 0057';
-if(!['prepare','verify'].includes(mode))throw new Error('INVALID_SMOKE_MODE');
+if(!['prepare','verify','inspect'].includes(mode))throw new Error('INVALID_SMOKE_MODE');
 try{
   await database.withContext(context,async client=>{
     const runtime=(await client.query<{safe:boolean}>("SELECT NOT rolsuper AND NOT rolbypassrls AND pg_has_role(current_user,'develocrm_app','member') safe FROM pg_roles WHERE rolname=current_user")).rows[0];
@@ -36,7 +36,7 @@ try{
     WHERE tv.tenant_id=$1 AND t.contract_type='rs' AND t.status='active' AND tv.approval_status='approved' AND tv.effective_from<=CURRENT_DATE
       AND t.code<>'technical-rs-0057' AND app.has_project_permission(tv.tenant_id,$2,tv.project_id,'documents.read')
     ORDER BY tv.created_at DESC LIMIT 1`,[context.tenantId,context.membershipId])).rows[0]);
-  if(!source)throw new Error('APPROVED_SOURCE_RS_TEMPLATE_REQUIRED');
+  if(!source&&mode==='prepare')throw new Error('APPROVED_SOURCE_RS_TEMPLATE_REQUIRED');
   let project=await database.withContext(context,async client=>(await client.query<{id:string;name:string}>("SELECT id,name FROM projects WHERE tenant_id=$1 AND code='TECH57'",[context.tenantId])).rows[0]);
   if(project&&project.name!==projectName)throw new Error('SMOKE_PROJECT_NOT_TECHNICAL');
   if(!project){if(mode!=='prepare')throw new Error('SMOKE_PROJECT_MISSING');const created=await catalog.createProject({...context,name:projectName,code:'TECH57',slug:'tech-price-document-0057',constructionStatus:'preparation',plannedHandoverFrom:'2027-12-01',defaultCurrency:'CZK',note:'Technický test. Nejde o skutečný obchod.'});project={...created,name:projectName};}
@@ -91,10 +91,12 @@ try{
     const latest=await database.withContext(context,async client=>(await client.query<{id:string;signed_at:string;version_status:string}>('SELECT id,signed_at,version_status FROM contract_versions WHERE tenant_id=$1 AND contract_id=$2 ORDER BY version_number DESC LIMIT 1',[context.tenantId,contract!.id])).rows[0]);
     const exact=await evidence.exactFile({...context,contractId:contract.id,versionId:latest.id});
     if(inspectDocxTemplate(exact.bytes).tokens.length)throw new Error('UNRESOLVED_DOCUMENT_FIELDS');
-    if(mode==='verify'){
+    if(mode==='verify'||mode==='inspect'){
       if(latest.version_status!=='signed')throw new Error('SMOKE_CONTRACT_NOT_SIGNED');
       const before=await database.withContext(context,async client=>(await client.query<{count:number}>('SELECT count(*)::int count FROM audit_log WHERE tenant_id=$1 AND entity_id=$2',[context.tenantId,contract!.id])).rows[0].count);
-      const retry=await commercial.signContract({...context,contractId:contract.id,versionId:latest.id,signedAt:latest.signed_at,note:'TECH SMOKE – opakování evidence podpisu'});if(!retry.alreadySigned)throw new Error('SIGNATURE_RETRY_NOT_IDEMPOTENT');
+      if(mode==='verify'){
+        const retry=await commercial.signContract({...context,contractId:contract.id,versionId:latest.id,signedAt:latest.signed_at,note:'TECH SMOKE – opakování evidence podpisu'});if(!retry.alreadySigned)throw new Error('SIGNATURE_RETRY_NOT_IDEMPOTENT');
+      }
       const state=await database.withContext(context,async client=>(await client.query<{commercial_status:string;current_stage:string;holds:number;expirable:boolean;payments:number;audit_count:number}>(`SELECT u.commercial_status,sc.current_stage,
         (SELECT count(*)::int FROM unit_holds h WHERE h.tenant_id=u.tenant_id AND h.unit_id=u.id AND h.status='active') holds,
         (SELECT bool_or(is_expirable) FROM unit_holds h WHERE h.tenant_id=u.tenant_id AND h.unit_id=u.id AND h.status='active') expirable,

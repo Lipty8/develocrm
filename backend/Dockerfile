@@ -14,6 +14,7 @@ RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --prod --frozen-lockfile
 COPY --from=build /app/backend/dist ./backend/dist
+COPY --from=build /app/backend/migrations ./backend/migrations
 USER node
 EXPOSE 3001
 CMD ["node","backend/dist/server.js"]

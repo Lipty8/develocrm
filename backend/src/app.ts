@@ -31,6 +31,7 @@ import { ClientChangeRepository } from "./client-changes/repository.js";
 import { ComplaintRepository } from "./complaints/repository.js";
 import { MediaAccessError, MediaRepository, type MediaEntityType, type MediaKind } from "./media/repository.js";
 import { mapApiError } from "./http/api-error.js";
+import {ConsistencyChecker} from './diagnostics/consistency-checker.js';
 
 const verifiedIdentities = new WeakMap<FastifyRequest, EntraIdentity>();
 
@@ -76,6 +77,7 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
   const clientChangeRepository = new ClientChangeRepository(dependencies.database);
   const complaintRepository = new ComplaintRepository(dependencies.database);
   const mediaRepository = new MediaRepository(dependencies.database);
+  const consistencyChecker=new ConsistencyChecker(dependencies.database,dependencies.microsoftGraphAdapter,dependencies.sharepointManagedIdentityClientId);
 
   app.setErrorHandler((error,request,reply)=>{
     const normalized=error instanceof Error?error:new Error("Unknown request failure");
@@ -172,6 +174,22 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
       return { roles };
     } catch {
       return reply.code(401).send({ error: "Neplatné přihlášení" });
+    }
+  });
+
+  app.get<{Querystring:{projectId?:string;physical?:string}}>("/v1/admin/consistency",async(request,reply)=>{
+    const context=await sessionContext(request,dependencies.verifier,repository);
+    if(!context)return reply.code(403).send({error:'Systémové kontroly nejsou přístupné.'});
+    if(request.query.projectId&&!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(request.query.projectId))return reply.code(400).send({error:'Neplatný projekt.'});
+    if(request.query.physical&&!['true','false'].includes(request.query.physical))return reply.code(400).send({error:'Neplatný režim kontroly.'});
+    try{
+      const report=await consistencyChecker.run({...context,projectId:request.query.projectId,physical:request.query.physical==='true'});
+      request.log.info({event:'consistency.check.completed',correlationId:request.id,runId:report.runId,summary:report.summary,complete:report.complete});
+      return{...report,correlationId:request.id};
+    }catch(error){
+      const forbidden=permissionError(error);
+      request.log.warn({event:'consistency.check.failed',correlationId:request.id,code:forbidden?'forbidden':'check_failed'});
+      return reply.code(forbidden?403:503).send({error:forbidden?'K systémovým kontrolám nemáte oprávnění.':'Systémové kontroly se nepodařilo dokončit.',correlationId:request.id});
     }
   });
 

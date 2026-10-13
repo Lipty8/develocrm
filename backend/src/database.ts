@@ -18,10 +18,10 @@ export class Database {
     this.pool = new Pool({ connectionString, max: 10, idleTimeoutMillis: 30_000 });
   }
 
-  async withContext<T>(context: DatabaseContext, work: (client: PoolClient) => Promise<T>): Promise<T> {
+  async withContext<T>(context: DatabaseContext, work: (client: PoolClient) => Promise<T>, options?: {readOnly:true}): Promise<T> {
     const client = await this.pool.connect();
     try {
-      await client.query("BEGIN");
+      await client.query(options?.readOnly ? "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY" : "BEGIN");
       await setLocal(client, "app.tenant_id", context.tenantId);
       await setLocal(client, "app.user_id", context.userId);
       await setLocal(client, "app.identity_issuer", context.identityIssuer);

@@ -19,6 +19,7 @@ import {RsGenerationRepository} from "../src/contracts/rs-generation-repository.
 import {RsGenerationService} from "../src/contracts/rs-generation-service.js";
 import {InventoryRepository} from "../src/inventory/repository.js";
 import {CommercialRepository} from "../src/commercial/repository.js";
+import {ConsistencyChecker} from '../src/diagnostics/consistency-checker.js';
 
 async function fixture(){
   const db=new PGlite();const directory=new URL("../migrations/",import.meta.url);
@@ -116,6 +117,16 @@ test('price creation and signed document integrity against all migrations',async
       }
       const c=await f.start();
       await assert.rejects(f.uploads.upload({...f.context,projectId:f.projectId,unitId:c.unitId,salesCaseId:c.salesCaseId,contractId:c.contract_id,typeCode:'reservation_contract',idempotencyKey:randomUUID(),documentName:'Technical failed',fileName:'failed.pdf',mimeType:'application/pdf',bytes:f.fileBytes,versionLabel:'v1',status:'failed'}),/document_status_check/);
+    });
+    await t.test('real SQL checker after RS generation, signature, and reservation remains read-only',async()=>{
+      const counts=async()=>(await f.db.query("SELECT (SELECT count(*) FROM audit_log)::int audits,(SELECT count(*) FROM outbox_events)::int outbox,(SELECT count(*) FROM document_versions)::int versions")).rows;
+      const before=await counts();
+      const report=await new ConsistencyChecker(f.database).run(f.context);
+      assert(report.complete);assert(report.projectsChecked>0);
+      const generated=(await f.db.query<{id:string;version_id:string}>("SELECT c.id,cv.id version_id FROM contracts c JOIN contract_versions cv ON cv.contract_id=c.id JOIN units u ON u.id=c.unit_id WHERE u.code='GENERATED57' AND cv.version_status='signed'")).rows[0];
+      assert(generated);assert(!report.findings.some(v=>v.entityId===generated.id||v.entityId===generated.version_id));
+      assert(report.findings.some(v=>v.code==='SIGNED_EVIDENCE_MISSING'&&v.severity==='critical')); // different tenant seed cannot inherit pilot exceptions
+      assert.deepEqual(await counts(),before);
     });
   }finally{await f.db.close();}
 });

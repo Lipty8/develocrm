@@ -3,7 +3,7 @@ import {useState} from "react";
 import {apiFetch} from "../lib/api-client";
 import {formatPragueDateTime} from "../lib/date-time";
 
-export type ContractDocumentVersion={id:string;number:number;status:string;documentVersionId?:string|null;documentReady?:boolean;documentName?:string|null;signatureRecordedAt?:string|null};
+export type ContractDocumentVersion={id:string;number:number;status:string;documentVersionId?:string|null;documentReady?:boolean;documentName?:string|null;signatureRecordedAt?:string|null;evidenceState?:'pending'|'documented'|'legacy_missing'|'invalid'};
 export function ContractDocumentEvidence({contractId,version,canUpload,onChanged}:{contractId:string;version?:ContractDocumentVersion;canUpload:boolean;onChanged:()=>void}){
   const [file,setFile]=useState<File|null>(null);const [busy,setBusy]=useState(false);const [error,setError]=useState("");const [key,setKey]=useState(()=>crypto.randomUUID());
   const signed=version?.status==='signed';
@@ -21,7 +21,8 @@ export function ContractDocumentEvidence({contractId,version,canUpload,onChanged
   }catch(e){setError(e instanceof Error?e.message:"Dokument není dostupný.");}}
   return <section className="card module-card"><div className="tab-card-header"><div><h2>{signed?"Podepsaný dokument":version?.documentReady?"Dokument připraven":"Finální dokument smlouvy"}</h2>
     {version?.documentVersionId&&<p>Verze {version.number} · {version.documentName}{signed&&version.signatureRecordedAt?` · Evidováno ${formatPragueDateTime(version.signatureRecordedAt)}`:""}</p>}
-    {!version?.documentReady&&<p>{signed?"Podepsaný dokument není v CRM doložen. Původní evidence podpisu zůstává v historii.":"Před evidencí podpisu připravte finální dokument."}</p>}</div>
+    {signed&&version?.evidenceState==='legacy_missing'&&<p>Historický podpis · čeká na doložení podepsaného dokumentu. Původní evidence podpisu zůstává zachována.</p>}
+    {!version?.documentReady&&version?.evidenceState!=='legacy_missing'&&<p role={signed?'alert':undefined}>{signed?"Podepsaný dokument nelze ověřit. Obraťte se na administrátora.":"Před evidencí podpisu připravte finální dokument."}</p>}</div>
     {version?.documentReady&&<button className="secondary-button" onClick={open}>Otevřít přesný dokument ze SharePointu</button>}</div>
     {canUpload&&!signed&&<div className="form-row"><label><span>Externí dokument (DOCX nebo PDF, do 4 MB)</span><input type="file" accept=".docx,.pdf" disabled={busy} onChange={event=>{setFile(event.target.files?.[0]??null);setKey(crypto.randomUUID());setError("");}}/></label>
       <button className="secondary-button" disabled={!file||busy} onClick={upload}>{busy?"Ukládám…":"Nahrát externí dokument"}</button></div>}
