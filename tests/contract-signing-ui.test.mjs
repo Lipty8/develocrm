@@ -10,6 +10,7 @@ test("detail smlouvy nabízí řízené označení aktuální verze jako podepsa
   assert.match(app,/Evidovat podpis/);
   assert.match(app,/documentReady===true&&verifiedVersion===evidenceKey/);
   assert.match(app,/ContractDocumentEvidence/);
+  assert.match(app,/import\s*\{\s*apiFetch\s*\}\s*from\s*["']\.\/lib\/api-client["']/);
   assert.match(app,/Datum podpisu/);
   assert.match(app,/Poznámka \(volitelné\)/);
   assert.match(app,/contract\.versions\?\.\[0\]/);

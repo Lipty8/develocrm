@@ -8,6 +8,7 @@ import { ListColumnFilter, TableColumnFilter } from "./components/table-column-f
 import { RowActionMenu } from "./components/row-action-menu";
 import { SummaryStats, toggledSummaryFilter } from "./components/summary-stats";
 import {ContractDocumentEvidence,type ContractDocumentVersion} from "./components/contract-document-evidence";
+import {apiFetch} from "./lib/api-client";
 import {
   Activity,
   AlertTriangle,
