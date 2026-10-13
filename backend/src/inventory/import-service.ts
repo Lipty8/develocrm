@@ -1,5 +1,6 @@
 import type {PoolClient} from "pg";
 import type {Database} from "../database.js";
+import {createHash} from "node:crypto";
 
 export type InventoryEntityType="unit"|"cellar"|"parking";
 export type InventoryImportRow={
@@ -22,8 +23,16 @@ export class InventoryImportService{
 
   confirm(input:Context&{projectId:string;entityType:InventoryEntityType;rows:InventoryImportRow[];strategy:"update"|"skip";idempotencyKey:string;fileName?:string}){
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
-      const previous=await client.query<{id:string;result:InventoryImportPreview}>("SELECT id,result FROM project_inventory_import_batches WHERE tenant_id=$1 AND project_id=$2 AND idempotency_key=$3",[input.tenantId,input.projectId,input.idempotencyKey]);
-      if(previous.rows[0])return{batchId:previous.rows[0].id,preview:previous.rows[0].result,replayed:true};
+      await this.assertAllowed(client,input);
+      // Serialize retries and independent imports for one project before reading
+      // the batch or inventory. Unit/price creation stays in this transaction.
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`${input.tenantId}:${input.projectId}:inventory`]);
+      const requestHash=createHash("sha256").update(JSON.stringify({entityType:input.entityType,rows:input.rows,strategy:input.strategy})).digest("hex");
+      const previous=await client.query<{id:string;result:InventoryImportPreview;request_hash:string|null}>("SELECT id,result,request_hash FROM project_inventory_import_batches WHERE tenant_id=$1 AND project_id=$2 AND idempotency_key=$3",[input.tenantId,input.projectId,input.idempotencyKey]);
+      if(previous.rows[0]){
+        if(previous.rows[0].request_hash!==requestHash)throw new Error("Opakovaný požadavek má jiné údaje. Použijte nový požadavek.");
+        return{batchId:previous.rows[0].id,preview:previous.rows[0].result,replayed:true};
+      }
       const preview=await this.validate(client,input);
       if(preview.summary.errors)throw new Error("Import obsahuje chyby. Opravte je před potvrzením.");
       let created=0,updated=0,skipped=0;
@@ -37,9 +46,9 @@ export class InventoryImportService{
       }
       const result={...preview,summary:{...preview.summary,created,updated,skipped}};
       const batch=await client.query<{id:string}>(`INSERT INTO project_inventory_import_batches(
-        tenant_id,project_id,entity_type,idempotency_key,file_name,strategy,source_rows,created_count,updated_count,skipped_count,result,imported_by_membership_id
-      ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,[
-        input.tenantId,input.projectId,input.entityType,input.idempotencyKey,input.fileName??null,input.strategy,input.rows.length,created,updated,skipped,JSON.stringify(result),input.membershipId,
+        tenant_id,project_id,entity_type,idempotency_key,file_name,strategy,source_rows,created_count,updated_count,skipped_count,result,imported_by_membership_id,request_hash
+      ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,[
+        input.tenantId,input.projectId,input.entityType,input.idempotencyKey,input.fileName??null,input.strategy,input.rows.length,created,updated,skipped,JSON.stringify(result),input.membershipId,requestHash,
       ]);
       await client.query("INSERT INTO audit_log(tenant_id,actor_user_id,action,entity_type,entity_id,after_data,metadata) VALUES($1,$2,'project.inventory_imported','project_import',$3,$4,$5)",[input.tenantId,input.userId,batch.rows[0].id,JSON.stringify({entityType:input.entityType,created,updated,skipped}),JSON.stringify({projectId:input.projectId})]);
       await client.query("INSERT INTO outbox_events(tenant_id,aggregate_type,aggregate_id,event_type,payload) VALUES($1,'project',$2,'project.inventory_imported.v1',$3)",[input.tenantId,input.projectId,JSON.stringify({batchId:batch.rows[0].id,projectId:input.projectId,entityType:input.entityType,created,updated,skipped})]);
@@ -47,15 +56,13 @@ export class InventoryImportService{
     });
   }
 
-  async createUnit(input:Context&{projectId:string;row:InventoryImportRow}){
-    const result=await this.confirm({...input,entityType:"unit",rows:[input.row],strategy:"update",idempotencyKey:`manual-unit-${crypto.randomUUID()}`,fileName:"Ruční založení"});
+  async createUnit(input:Context&{projectId:string;row:InventoryImportRow;idempotencyKey?:string}){
+    const result=await this.confirm({...input,entityType:"unit",rows:[input.row],strategy:"skip",idempotencyKey:input.idempotencyKey??`manual-unit-${crypto.randomUUID()}`,fileName:"Ruční založení"});
     return result;
   }
 
   private async validate(client:PoolClient,input:Context&{projectId:string;entityType:InventoryEntityType;rows:InventoryImportRow[];strategy?:"update"|"skip"}):Promise<InventoryImportPreview>{
-    const permission=input.entityType==="unit"?"unit.manage":"accessory.manage";
-    const allowed=await client.query<{allowed:boolean}>("SELECT EXISTS(SELECT 1 FROM projects WHERE tenant_id=$1 AND id=$2 AND archived_at IS NULL) AND app.has_project_permission($1,$3,$2,$4) allowed",[input.tenantId,input.projectId,input.membershipId,permission]);
-    if(!allowed.rows[0]?.allowed)throw new Error("Nemáte oprávnění importovat data do tohoto projektu.");
+    await this.assertAllowed(client,input);
     const existing=await client.query<{id:string;code:string;commercial_status?:string;assignment_unit_code?:string|null}>(input.entityType==="unit"
       ?"SELECT id,code,commercial_status FROM units WHERE tenant_id=$1 AND project_id=$2 AND archived_at IS NULL"
       :`SELECT accessory.id,accessory.code,assigned.unit_code assignment_unit_code FROM accessories accessory
@@ -74,7 +81,7 @@ export class InventoryImportService{
       if((occurrences.get(key)??0)>1){errors.push("Duplicitní označení v souboru");duplicates++;}
       if(input.entityType==="unit"){
         if(!positive(row.areaM2))errors.push("Plocha musí být větší než 0");
-        if(row.price!=null&&!nonNegative(row.price))errors.push("Cena nesmí být záporná");
+        if(row.price!=null&&(!nonNegative(row.price)||Number(row.price.toFixed(2))!==row.price||row.price>9999999999999.99))errors.push("Cena musí být nezáporná a mít nejvýše dvě desetinná místa");
         const status=normalCommercial(row.commercialStatus);if(row.commercialStatus&&!status)errors.push("Neznámý obchodní stav");
         const construction=normalConstruction(row.constructionStatus);if(row.constructionStatus&&!construction)errors.push("Neznámý stavební stav");
         const found=existingByCode.get(key);if(found&&status&&found.commercial_status!==status)errors.push("Obchodní stav existující jednotky nelze měnit importem");
@@ -89,6 +96,12 @@ export class InventoryImportService{
       return{...row,code,commercialStatus:normalCommercial(row.commercialStatus)??undefined,constructionStatus:normalConstruction(row.constructionStatus)??undefined,action,errors};
     });
     return{rows,summary:{source:rows.length,created:rows.filter(row=>row.action==="create").length,updated:rows.filter(row=>row.action==="update").length,skipped:rows.filter(row=>row.action==="skip").length,errors:rows.filter(row=>row.action==="error").length,duplicates,unknownUnits,missingFields:rows.filter(row=>row.errors.some(error=>error.startsWith("Chybí")||error.includes("musí být vyplněná")||error.startsWith("Výměra sklepa"))).length}};
+  }
+
+  private async assertAllowed(client:PoolClient,input:Context&{projectId:string;entityType:InventoryEntityType}){
+    const permission=input.entityType==='unit'?'unit.manage':'accessory.manage';
+    const allowed=await client.query<{allowed:boolean}>("SELECT EXISTS(SELECT 1 FROM projects WHERE tenant_id=$1 AND id=$2 AND archived_at IS NULL) AND app.has_project_permission($1,$3,$2,$4) allowed",[input.tenantId,input.projectId,input.membershipId,permission]);
+    if(!allowed.rows[0]?.allowed)throw new Error('inventory permission required');
   }
 
   private async upsertUnit(client:PoolClient,input:Context&{projectId:string},row:InventoryPreviewRow):Promise<"create"|"update"> {
@@ -109,7 +122,15 @@ export class InventoryImportService{
   }
 
   private async recordUnitSideEffects(client:PoolClient,input:Context&{projectId:string},unitId:string,row:InventoryPreviewRow,construction:string|null,action:string){
-    if(row.price!=null){const current=await client.query<{amount:number|null}>("SELECT app.current_unit_price($1,$2,now())::float8 amount",[input.tenantId,unitId]);if(Number(current.rows[0]?.amount??-1)!==Number(row.price))await client.query("INSERT INTO unit_price_history(tenant_id,project_id,unit_id,price_type,amount,currency,valid_from,reason,recorded_by_membership_id,approved_by_membership_id,approved_at) VALUES($1,$2,$3,'sales',$4,'CZK',clock_timestamp(),'Projektový import',$5,$5,now())",[input.tenantId,input.projectId,unitId,row.price,input.membershipId]);}
+    if(row.price!=null){
+      const current=await client.query<{amount:number|null}>(`SELECT CASE WHEN EXISTS(SELECT 1 FROM unit_price_history WHERE tenant_id=$1 AND unit_id=$2 AND valid_from<=clock_timestamp())
+        THEN app.current_unit_price($1,$2,clock_timestamp())::float8 END amount`,[input.tenantId,unitId]);
+      if(current.rows[0]?.amount==null||Number(current.rows[0].amount)!==Number(row.price)){
+        const reason=action==='unit.created'?'Počáteční cena jednotky':'Projektový import ceny';
+        const proposal=(await client.query<{id:string}>("SELECT app.propose_unit_price($1,$2,'sale_price',$3,'CZK',clock_timestamp(),$4,$5) id",[input.tenantId,unitId,row.price,reason,input.membershipId])).rows[0].id;
+        await client.query("SELECT app.decide_unit_price_proposal($1,$2,'approved',$3,$4)",[input.tenantId,proposal,reason,input.membershipId]);
+      }
+    }
     if(construction)await client.query("INSERT INTO unit_completion_status_events(tenant_id,project_id,unit_id,event_type,status_code,effective_at,reason,recorded_by_membership_id) VALUES($1,$2,$3,'set_override',$4,now(),'Individuální stav z projektového importu',$5)",[input.tenantId,input.projectId,unitId,construction,input.membershipId]);
     await client.query("INSERT INTO audit_log(tenant_id,actor_user_id,action,entity_type,entity_id,after_data,metadata) VALUES($1,$2,$3,'unit',$4,$5,$6)",[input.tenantId,input.userId,action,unitId,JSON.stringify({code:row.code,price:row.price??null}),JSON.stringify({projectId:input.projectId,source:"project_import"})]);
     await client.query("INSERT INTO outbox_events(tenant_id,aggregate_type,aggregate_id,event_type,payload) VALUES($1,'unit',$2,$3,$4)",[input.tenantId,unitId,`${action}.v1`,JSON.stringify({unitId,projectId:input.projectId})]);

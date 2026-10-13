@@ -10,12 +10,22 @@ import { mapApiError } from "../src/http/api-error.js";
 import { bootstrapIds, bootstrapPilotWorkspace, normalizeBootstrapInput } from "../src/iam/pilot-bootstrap.js";
 import { importDejvice } from "../src/imports/dejvice.js";
 
+test('body nemůže přepsat identitu, tenant ani oprávnění autentizovaného uživatele',async()=>{
+  const database={ping:async()=>{},withContext:async()=>{throw new Error('Database must not be called');}} as unknown as Database;
+  const verifier={verify:async()=>({tenantId:'entra',objectId:'user',issuer:'issuer',subject:'subject'})} as unknown as EntraTokenVerifier;
+  const app=buildApp({database,verifier});
+  try{for(const key of ['tenantId','userId','membershipId','actorUserId','actorMembershipId']){
+    const response=await app.inject({method:'POST',url:'/v1/documents/generate',headers:{authorization:'Bearer fixture'},payload:{[key]:'forged'}});
+    assert.equal(response.statusCode,400);assert.match(response.json().error,/nepovolené/);
+  }}finally{await app.close();}
+});
+
 async function pilot(){
   const db=new PGlite(),directory=new URL("../migrations/",import.meta.url);
-  for(const name of (await readdir(directory)).filter(name=>/^\d+.*\.sql$/.test(name)).sort())await db.exec(await readFile(new URL(name,directory),"utf8"));
+  for(const name of (await readdir(directory)).filter(name=>/^\d+.*\.sql$/.test(name)&&!name.startsWith('0057')).sort())await db.exec(await readFile(new URL(name,directory),"utf8"));
   const normalized=normalizeBootstrapInput({entraTenantId:"10000000-0000-4000-8000-000000000097",adminOid:"20000000-0000-4000-8000-000000000097",adminEmail:"security.admin@example.test",adminName:"Security Admin",workspaceName:"Security workspace",workspaceId:"30000000-0000-4000-8000-000000000097"}),ids=bootstrapIds(normalized);
   const client={query:async(sql:string,parameters?:unknown[])=>{if(!parameters&&sql.includes(";")){await db.exec(sql);return{rows:[],rowCount:null};}const result=await db.query(sql,parameters as never[]|undefined);return{rows:result.rows,rowCount:result.affectedRows??null};}} as never;
-  await bootstrapPilotWorkspace(client,{...normalized,...ids});await importDejvice(client,await readFile(new URL("../seeds/0004_pilot_rezidence_dejvice.sql",import.meta.url),"utf8"),{tenantId:ids.tenantId,membershipId:ids.membershipId,dryRun:false});
+  await bootstrapPilotWorkspace(client,{...normalized,...ids});await importDejvice(client,await readFile(new URL("../seeds/0004_pilot_rezidence_dejvice.sql",import.meta.url),"utf8"),{tenantId:ids.tenantId,membershipId:ids.membershipId,dryRun:false});await db.exec(await readFile(new URL("../migrations/0057_price_and_signed_document_integrity.sql",import.meta.url),"utf8"));
   const adapter={withContext:async<T>(context:{tenantId?:string;userId?:string},work:(client:{query:(sql:string,parameters?:unknown[])=>Promise<{rows:never[];rowCount:number|null}>})=>Promise<T>)=>{await db.exec(`SELECT set_config('app.tenant_id','${context.tenantId??""}',false);SELECT set_config('app.user_id','${context.userId??""}',false);`);return work({query:async(sql,parameters)=>{const result=await db.query(sql,parameters as never[]|undefined);return{rows:result.rows as never[],rowCount:result.affectedRows??null};}});}} as unknown as Database;
   return{db,ids,media:new MediaRepository(adapter)};
 }

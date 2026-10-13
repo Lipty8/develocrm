@@ -7,7 +7,9 @@ test("detail smlouvy nabízí řízené označení aktuální verze jako podepsa
   const repository=await readFile(new URL("../app/repositories/commercial-repository.ts",import.meta.url),"utf8");
   const nextAction=await readFile(new URL("../backend/src/shared/next-contract-action.ts",import.meta.url),"utf8");
   const proxy=await readFile(new URL("../app/api/commercial/contracts/[contractId]/sign/route.ts",import.meta.url),"utf8");
-  assert.match(app,/Označit jako podepsané/);
+  assert.match(app,/Evidovat podpis/);
+  assert.match(app,/documentReady===true&&verifiedVersion===evidenceKey/);
+  assert.match(app,/ContractDocumentEvidence/);
   assert.match(app,/Datum podpisu/);
   assert.match(app,/Poznámka \(volitelné\)/);
   assert.match(app,/contract\.versions\?\.\[0\]/);

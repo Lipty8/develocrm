@@ -237,9 +237,9 @@ export class DocumentRepository {
     ]));
   }
 
-  async recordGraphUpload(input:DocumentContext & {operationId:string;driveId:string;itemId:string;webUrl?:string|null;etag?:string|null;externalVersionId?:string|null;fileSize?:number|null}):Promise<{id:string}>{
-    return this.command(input,client=>client.query<{id:string}>("SELECT app.record_document_graph_upload($1,$2,$3,$4,$5,$6,$7,$8,$9) id",[
-      input.tenantId,input.operationId,input.driveId,input.itemId,input.webUrl??null,input.etag??null,input.externalVersionId??null,input.fileSize??null,input.membershipId,
+  async recordGraphUpload(input:DocumentContext & {operationId:string;driveId:string;itemId:string;webUrl?:string|null;etag?:string|null;externalVersionId?:string|null;fileSize?:number|null;storedContentHash:string}):Promise<{id:string}>{
+    return this.command(input,client=>client.query<{id:string}>("SELECT app.record_document_graph_upload($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) id",[
+      input.tenantId,input.operationId,input.driveId,input.itemId,input.webUrl??null,input.etag??null,input.externalVersionId??null,input.fileSize??null,input.membershipId,input.storedContentHash,
     ]));
   }
 

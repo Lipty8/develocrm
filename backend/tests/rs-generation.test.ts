@@ -36,7 +36,7 @@ test("nepřipravená RS se nevygeneruje",async()=>{const current=source({templat
 
 test("RS bind prepared statements nemají neotypované mezery v parametrech",async()=>{
   const calls:Array<{sql:string;values:unknown[]}>=[];let step=0;
-  const client={query:async(sql:string,values:unknown[]=[])=>{calls.push({sql,values});step++;
+  const client={query:async(sql:string,values:unknown[]=[])=>{calls.push({sql,values});if(sql.includes('lock_workflow_unit'))return{rows:[]};step++;
     if(step===1)return{rows:[]};
     if(step===2)return{rows:[{project_id:"20000000-0000-0000-0000-000000000002",reference:"RS-417"}]};
     if(step===3)return{rows:[{id:"30000000-0000-0000-0000-000000000001",version_number:1,source_type:"manual",document_id:null}]};

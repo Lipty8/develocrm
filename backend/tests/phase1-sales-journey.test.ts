@@ -4,11 +4,12 @@ import test from "node:test";
 import {PGlite} from "@electric-sql/pglite";
 import {bootstrapIds, bootstrapPilotWorkspace, normalizeBootstrapInput} from "../src/iam/pilot-bootstrap.js";
 import {importDejvice} from "../src/imports/dejvice.js";
+import {signatureDocument} from "./helpers/signature-document.js";
 
 async function fixture() {
   const db = new PGlite();
   const directory = new URL("../migrations/", import.meta.url);
-  for (const name of (await readdir(directory)).filter(name => /^\d+.*\.sql$/.test(name)).sort()) {
+  for (const name of (await readdir(directory)).filter(name => /^\d+.*\.sql$/.test(name)&&!name.startsWith('0057')).sort()) {
     await db.exec(await readFile(new URL(name, directory), "utf8"));
   }
   const normalized = normalizeBootstrapInput({
@@ -28,6 +29,7 @@ async function fixture() {
   await bootstrapPilotWorkspace(client, {...normalized, ...ids});
   const source = await readFile(new URL("../seeds/0004_pilot_rezidence_dejvice.sql", import.meta.url), "utf8");
   await importDejvice(client, source, {tenantId: ids.tenantId, membershipId: ids.membershipId, dryRun: false});
+  await db.exec(await readFile(new URL('0057_price_and_signed_document_integrity.sql',directory),'utf8'));
   await db.exec(`SET ROLE develocrm_app; SELECT set_config('app.tenant_id','${ids.tenantId}',false); SELECT set_config('app.user_id','${ids.userId}',false);`);
   return {db, ids};
 }
@@ -55,6 +57,7 @@ test("FÁZE 1: volná jednotka projde předrezervací, RS, úhradou, SBK, KS a p
         "SELECT * FROM app.create_contract_with_payment($1,$2,$3,$4,$5,$6,NULL,$7,$8,$9,$10)",
         [ids.tenantId, hold.sales_case_id, type, `${type.toUpperCase()}-JOURNEY`, `Test ${type.toUpperCase()}`, ids.membershipId, `journey-${type}`, ...payment],
       )).rows[0];
+      created.version_id=await signatureDocument(db as never,ids.tenantId,ids.membershipId,created.contract_id);
       for (const status of ["sent", "approved"]) {
         await db.query("SELECT app.transition_contract_status($1,$2,$3,'Testovací workflow',$4)", [ids.tenantId, created.contract_id, status, ids.membershipId]);
       }
@@ -107,6 +110,7 @@ test("FÁZE 1: alternativní smluvní cesty RS → KS, SBK → KS a přímá KS 
         "SELECT * FROM app.create_contract_with_payment($1,$2,$3,$4,$5,$6,NULL,$7,$8,$9,$10)",
         [ids.tenantId,caseId,type,`${type.toUpperCase()}-ALT-${suffix}`,`Alternativní ${type.toUpperCase()}`,ids.membershipId,`alt-${suffix}-${type}`,...payment],
       )).rows[0];
+      created.version_id=await signatureDocument(db as never,ids.tenantId,ids.membershipId,created.contract_id);
       for(const status of ["sent","approved"])await db.query("SELECT app.transition_contract_status($1,$2,$3,'Alternativní cesta',$4)",[ids.tenantId,created.contract_id,status,ids.membershipId]);
       await db.query("SELECT * FROM app.sign_contract_externally($1,$2,$3,now(),$4,'Alternativní cesta')",[ids.tenantId,created.contract_id,created.version_id,ids.membershipId]);
       return created.contract_id;

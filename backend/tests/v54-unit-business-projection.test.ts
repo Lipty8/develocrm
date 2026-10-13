@@ -11,7 +11,10 @@ const replacement="c0000000-0000-4000-8000-000000000002";
 
 async function database(){
   const db=new PGlite();const directory=new URL("../migrations/",import.meta.url);
-  const names=(await readdir(directory)).filter(name=>/^\d+.*\.sql$/.test(name)&&!name.startsWith("0015_")).sort();
+  // Historical projection fixtures intentionally include imported signed
+  // records without files. New signatures with exact evidence are tested in
+  // price-and-document-integrity.test.ts against the complete migration chain.
+  const names=(await readdir(directory)).filter(name=>/^\d+.*\.sql$/.test(name)&&!name.startsWith("0015_")&&name<'0057').sort();
   for(const name of names.filter(name=>name<="0004_block_d_pricing_contracts.sql"))await db.exec(await readFile(new URL(name,directory),"utf8"));
   for(const name of ["0001_preview_block_b.sql","0002_preview_block_c.sql","0003_preview_block_d.sql"])await db.exec(await readFile(new URL(`../seeds/${name}`,import.meta.url),"utf8"));
   for(const name of names.filter(name=>name>"0004_block_d_pricing_contracts.sql"))await db.exec(await readFile(new URL(name,directory),"utf8"));

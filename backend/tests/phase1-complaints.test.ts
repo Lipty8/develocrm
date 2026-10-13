@@ -11,12 +11,13 @@ test("reklamace: založení, změna stavu, historie, idempotence a projektový r
   const db=new PGlite();
   try{
     const directory=new URL("../migrations/",import.meta.url);
-    for(const name of (await readdir(directory)).filter(name=>/^\d+.*\.sql$/.test(name)).sort())await db.exec(await readFile(new URL(name,directory),"utf8"));
+    for(const name of (await readdir(directory)).filter(name=>/^\d+.*\.sql$/.test(name)&&!name.startsWith('0057')).sort())await db.exec(await readFile(new URL(name,directory),"utf8"));
     const normalized=normalizeBootstrapInput({entraTenantId:"10000000-0000-4000-8000-000000000063",adminOid:"20000000-0000-4000-8000-000000000063",adminEmail:"complaints@example.test",adminName:"Complaint Admin",workspaceName:"Complaint fixture",workspaceId:"30000000-0000-4000-8000-000000000063"});
     const ids=bootstrapIds(normalized);
     const client={query:async(sql:string,parameters?:unknown[])=>{if(!parameters&&sql.includes(";")){await db.exec(sql);return{rows:[],rowCount:null};}const result=await db.query(sql,parameters as never[]|undefined);return{rows:result.rows,rowCount:result.affectedRows??null};}} as never;
     await bootstrapPilotWorkspace(client,{...normalized,...ids});
     await importDejvice(client,await readFile(new URL("../seeds/0004_pilot_rezidence_dejvice.sql",import.meta.url),"utf8"),{tenantId:ids.tenantId,membershipId:ids.membershipId,dryRun:false});
+    await db.exec(await readFile(new URL('0057_price_and_signed_document_integrity.sql',directory),'utf8'));
     await db.exec(`SET ROLE develocrm_app; SELECT set_config('app.tenant_id','${ids.tenantId}',false); SELECT set_config('app.user_id','${ids.userId}',false);`);
     const context=(await db.query<{project_id:string;unit_id:string;party_id:string}>("SELECT unit.project_id,unit.id unit_id,link.party_id FROM units unit JOIN party_project_links link ON link.tenant_id=unit.tenant_id AND link.project_id=unit.project_id AND link.valid_to IS NULL WHERE unit.tenant_id=$1 ORDER BY unit.code LIMIT 1",[ids.tenantId])).rows[0];
     const adapter={withContext:async<T>(scope:{tenantId:string;userId:string},work:(client:{query:(sql:string,params?:unknown[])=>Promise<unknown>})=>Promise<T>)=>{await db.exec(`SELECT set_config('app.tenant_id','${scope.tenantId}',false); SELECT set_config('app.user_id','${scope.userId}',false);`);return work({query:async(sql:string,params?:unknown[])=>{const result=await db.query(sql,params as never[]|undefined);return{rows:result.rows,rowCount:result.affectedRows??result.rows.length};}});}} as unknown as Database;

@@ -1,0 +1,11 @@
+import assert from "node:assert/strict";
+import {before,afterEach,test} from "node:test";
+import React from "react";
+import {JSDOM} from "jsdom";
+import {ContractDocumentEvidence} from "../app/components/contract-document-evidence";
+let render:typeof import('@testing-library/react').render,screen:typeof import('@testing-library/react').screen,cleanup:typeof import('@testing-library/react').cleanup;
+before(async()=>{const dom=new JSDOM('<!doctype html><html><body></body></html>',{url:'https://develocrm.test'});Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,Node:dom.window.Node});Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});({render,screen,cleanup}=await import('@testing-library/react'));});
+afterEach(()=>cleanup());
+test('bez dokumentu není dostupné otevření a nabízí se externí upload',()=>{render(<ContractDocumentEvidence contractId="c" version={{id:'v',number:1,status:'working'}} canUpload onChanged={()=>{}}/>);assert.ok(screen.getByText('Před evidencí podpisu připravte finální dokument.'));assert.equal(screen.queryByText('Otevřít přesný dokument ze SharePointu'),null);assert.equal((screen.getByText('Nahrát externí dokument') as HTMLButtonElement).disabled,true);});
+test('ready dokument má čitelný název a přesnou akci otevření',()=>{render(<ContractDocumentEvidence contractId="c" version={{id:'v',number:2,status:'approved_for_signing',documentVersionId:'dv',documentReady:true,documentName:'final.pdf'}} canUpload onChanged={()=>{}}/>);assert.ok(screen.getByText('Dokument připraven'));assert.ok(screen.getByText(/Verze 2 · final.pdf/));assert.ok(screen.getByRole('button',{name:'Otevřít přesný dokument ze SharePointu'}));});
+test('podepsaný dokument zobrazuje evidenci a nenabízí výměnu souboru',()=>{render(<ContractDocumentEvidence contractId="c" version={{id:'v',number:2,status:'signed',documentVersionId:'dv',documentReady:true,documentName:'signed.pdf',signatureRecordedAt:'2026-10-13T08:00:00Z'}} canUpload onChanged={()=>{}}/>);assert.ok(screen.getByText('Podepsaný dokument'));assert.ok(screen.getByText(/Evidováno/));assert.equal(screen.queryByText('Nahrát externí dokument'),null);});

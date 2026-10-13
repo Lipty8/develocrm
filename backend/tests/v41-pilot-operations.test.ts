@@ -6,10 +6,10 @@ import {bootstrapIds,bootstrapPilotWorkspace,normalizeBootstrapInput} from "../s
 import {importDejvice,renderDejviceImport} from "../src/imports/dejvice.js";
 import {applyMigrations,migrationFromSource} from "../src/migrations/runner.js";
 
-async function migrated(){
+async function migrated(legacyImport=false){
   const db=new PGlite();
   const directory=new URL("../migrations/",import.meta.url);
-  for(const name of (await readdir(directory)).filter(name=>/^\d+.*\.sql$/.test(name)).sort())
+  for(const name of (await readdir(directory)).filter(name=>/^\d+.*\.sql$/.test(name)&&(!legacyImport||!name.startsWith('0057'))).sort())
     await db.exec(await readFile(new URL(name,directory),"utf8"));
   return db;
 }
@@ -39,7 +39,9 @@ test("pilotní bootstrap vytvoří skutečného administrátora právě jednou",
 });
 
 test("import Rezidence Dejvice podporuje dry-run, commit a opakování bez duplicit",async()=>{
-  const db=await migrated();const normalized=normalizeBootstrapInput(bootstrapInput);const ids=bootstrapIds(normalized);
+  // Recreate the historical import before the document-evidence invariant,
+  // then verify its idempotent replay after upgrading the schema.
+  const db=await migrated(true);const normalized=normalizeBootstrapInput(bootstrapInput);const ids=bootstrapIds(normalized);
   const client=clientFor(db);
   await bootstrapPilotWorkspace(client,{...normalized,...ids});
   const source=await readFile(new URL("../seeds/0004_pilot_rezidence_dejvice.sql",import.meta.url),"utf8");
@@ -49,6 +51,7 @@ test("import Rezidence Dejvice podporuje dry-run, commit a opakování bez dupli
   assert.equal((await db.query("SELECT id FROM projects WHERE tenant_id=$1 AND code='DEJ'",[ids.tenantId])).rows.length,0);
   const first=await importDejvice(client,source,{tenantId:ids.tenantId,membershipId:ids.membershipId,dryRun:false});
   assert.deepEqual([first.created.projects,first.created.units,first.created.accessories],[1,19,48]);
+  await db.exec(await readFile(new URL('../migrations/0057_price_and_signed_document_integrity.sql',import.meta.url),'utf8'));
   const second=await importDejvice(client,source,{tenantId:ids.tenantId,membershipId:ids.membershipId,dryRun:false});
   assert.ok(Object.values(second.created).every(value=>value===0));
   await db.close();

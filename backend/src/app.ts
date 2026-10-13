@@ -23,6 +23,7 @@ import {DocumentTemplateManagementRepository} from "./documents/template-managem
 import {DocumentTemplateManagementService,TemplateManagementError} from "./documents/template-management-service.js";
 import {RsGenerationRepository} from "./contracts/rs-generation-repository.js";
 import {RsGenerationError,RsGenerationService} from "./contracts/rs-generation-service.js";
+import {ContractDocumentEvidenceService,ContractDocumentError} from "./contracts/document-evidence-service.js";
 import { HandoverRepository } from "./handovers/repository.js";
 import { PaymentRepository } from "./payments/repository.js";
 import { PaymentService } from "./payments/service.js";
@@ -67,6 +68,8 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
   const templateManagement=sharePointUploads&&dependencies.microsoftGraphAdapter
     ?new DocumentTemplateManagementService(new DocumentTemplateManagementRepository(dependencies.database),templateGenerationRepository,documentRepository,sharePointUploads,dependencies.microsoftGraphAdapter):null;
   const rsGeneration=templateGeneration?new RsGenerationService(new RsGenerationRepository(dependencies.database),templateGeneration):null;
+  const contractEvidence=sharePointUploads&&dependencies.microsoftGraphAdapter&&dependencies.sharepointManagedIdentityClientId
+    ?new ContractDocumentEvidenceService(dependencies.database,dependencies.microsoftGraphAdapter,sharePointUploads,dependencies.sharepointManagedIdentityClientId):null;
   const handoverRepository = new HandoverRepository(dependencies.database);
   const paymentRepository = new PaymentRepository(dependencies.database);
   const paymentService = new PaymentService(dependencies.database);
@@ -106,6 +109,10 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
     if(!request.url.startsWith("/v1/"))return;
     try{
       verifiedIdentities.set(request,await dependencies.verifier.verify(request.headers.authorization));
+      if(request.body&&typeof request.body==='object'&&!Array.isArray(request.body)&&['tenantId','userId','membershipId','actorUserId','actorMembershipId'].some(key=>Object.hasOwn(request.body as object,key))){
+        request.log.warn({event:'request.identity_override_rejected',correlationId:request.id},'reserved identity fields rejected');
+        return reply.code(400).send({error:'Požadavek obsahuje nepovolené údaje.',correlationId:request.id});
+      }
     }catch(error){
       request.log.warn({event:"auth.rejected",correlationId:request.id,errorName:error instanceof Error?error.name:"Error"},"authentication rejected");
       return reply.code(401).send(mapApiError(new Error("authentication rejected"),401,request.id));
@@ -262,14 +269,14 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
   app.patch<{Params:{unitId:string};Body:{structureId?:string|null;layout?:string|null;floorLabel?:string|null;floorNumber?:number|null;areaM2:number;usableAreaM2?:number|null;orientation?:string|null;balconyM2?:number|null;terraceM2?:number|null;gardenM2?:number|null}}>("/v1/units/:unitId",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.send(await inventory.updateUnit({...context,unitId:request.params.unitId,...request.body}));}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Jednotku nelze upravit"});}
   });
-  app.post<{Params:{projectId:string};Body:InventoryImportRow}>("/v1/projects/:projectId/units",async(request,reply)=>{
-    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await inventoryImports.createUnit({...context,projectId:request.params.projectId,row:{...request.body,rowNumber:request.body.rowNumber??1}}));}catch(error){request.log.warn({err:error,correlationId:request.id,projectId:request.params.projectId},"unit creation failed");return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Jednotku nelze vytvořit",correlationId:request.id});}
+  app.post<{Params:{projectId:string};Body:InventoryImportRow&{idempotencyKey?:string}}>("/v1/projects/:projectId/units",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});const {idempotencyKey,...row}=request.body;return reply.code(201).send(await inventoryImports.createUnit({...context,projectId:request.params.projectId,idempotencyKey,row:{...row,rowNumber:row.rowNumber??1}}));}catch(error){request.log.warn({err:error,correlationId:request.id,projectId:request.params.projectId},"unit creation failed");return reply.code(permissionError(error)?403:409).send({error:"Jednotku se nepodařilo vytvořit. Zkontrolujte zadané údaje.",correlationId:request.id});}
   });
   app.post<{Params:{projectId:string};Body:{entityType:InventoryEntityType;rows:InventoryImportRow[];strategy?:"update"|"skip"}}>("/v1/projects/:projectId/inventory-imports/preview",async(request,reply)=>{
-    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.send(await inventoryImports.preview({...context,projectId:request.params.projectId,...request.body}));}catch(error){request.log.warn({err:error,correlationId:request.id,projectId:request.params.projectId},"inventory import preview failed");return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Import nelze zkontrolovat",correlationId:request.id});}
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.send(await inventoryImports.preview({...request.body,...context,projectId:request.params.projectId}));}catch(error){request.log.warn({err:error,correlationId:request.id,projectId:request.params.projectId},"inventory import preview failed");return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Import nelze zkontrolovat",correlationId:request.id});}
   });
   app.post<{Params:{projectId:string};Body:{entityType:InventoryEntityType;rows:InventoryImportRow[];strategy:"update"|"skip";idempotencyKey:string;fileName?:string}}>("/v1/projects/:projectId/inventory-imports",async(request,reply)=>{
-    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await inventoryImports.confirm({...context,projectId:request.params.projectId,...request.body}));}catch(error){request.log.warn({err:error,correlationId:request.id,projectId:request.params.projectId},"inventory import failed");return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Import nelze dokončit",correlationId:request.id});}
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await inventoryImports.confirm({...request.body,...context,projectId:request.params.projectId}));}catch(error){request.log.warn({err:error,correlationId:request.id,projectId:request.params.projectId},"inventory import failed");return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Import nelze dokončit",correlationId:request.id});}
   });
   app.post<{Params:{unitId:string};Body:{accessoryId:string;validFrom?:string}}>("/v1/units/:unitId/accessories",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await inventory.assignAccessory({...context,unitId:request.params.unitId,...request.body}));}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Příslušenství nelze přiřadit"});}
@@ -366,12 +373,35 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
     catch(error){request.log.warn({err:error,correlationId:request.id,contractId:request.params.contractId},"contract transition failed");const message=error instanceof Error?error.message:"";const friendly=message.includes("explicit refund decision")?"U každé přijaté platby rozhodněte, zda a kolik se má vrátit.":message.includes("partial refund amount")?"Částečná vratka musí být vyšší než nula a nižší než přijatá částka.":permissionError(error)?"Nemáte oprávnění změnit stav smlouvy.":"Stav smlouvy se nepodařilo změnit.";return reply.code(permissionError(error)?403:409).send({error:friendly,correlationId:request.id});}
   });
   app.post<{Params:{contractPartyId:string};Body:{versionId:string;reason:string}}>("/v1/contract-parties/:contractPartyId/sign",async(request,reply)=>{
-    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return await commercialCommands.sign({...context,contractPartyId:request.params.contractPartyId,...request.body});}
-    catch(error){return reply.code(409).send({error:error instanceof Error?error.message:"Podpis nelze zaznamenat"});}
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});if(!contractEvidence)throw new ContractDocumentError("connection_unavailable");
+      const party=await dependencies.database.withContext(context,async client=>(await client.query<{contract_id:string}>("SELECT contract_id FROM contract_parties WHERE tenant_id=$1 AND id=$2",[context.tenantId,request.params.contractPartyId])).rows[0]);
+      if(!party)throw new ContractDocumentError("SIGNED_DOCUMENT_REQUIRED");
+      await contractEvidence.exactFile({...context,contractId:party.contract_id,versionId:request.body.versionId});
+      return await commercialCommands.sign({...context,contractPartyId:request.params.contractPartyId,versionId:request.body.versionId,reason:request.body.reason});}
+    catch(error){request.log.warn({event:"contract.signature_rejected",correlationId:request.id,code:error instanceof ContractDocumentError?error.code:"signature_rejected"});return reply.code(409).send({error:"Podpis nelze evidovat bez ověřeného dokumentu smlouvy.",correlationId:request.id});}
   });
   app.post<{Params:{contractId:string};Body:{versionId:string;signedAt:string;note?:string}}>("/v1/contracts/:contractId/sign",async(request,reply)=>{
-    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return await commercialCommands.signContract({...context,contractId:request.params.contractId,...request.body});}
-    catch(error){const message=error instanceof Error?error.message:"Podpis nelze zaznamenat";const friendly=message.includes("logical version")||message.includes("contract version")?"Smlouvu nelze podepsat, protože nemá platnou aktuální verzi.":message.includes("must be approved")||message.includes("approved or in signing")?"Smlouvu lze označit jako podepsanou až po jejím schválení.":message.includes("signing party")?"Smlouvu nelze podepsat, protože nemá evidovaného účastníka podpisu.":message.includes("permission")?"K zaznamenání podpisu nemáte oprávnění.":message.includes("future")?"Datum podpisu nesmí být v budoucnosti.":"Podpis smlouvy se nepodařilo zaznamenat.";return reply.code(message.includes("permission")?403:409).send({error:friendly});}
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});if(!contractEvidence)throw new ContractDocumentError("connection_unavailable");
+      await contractEvidence.exactFile({...context,contractId:request.params.contractId,versionId:request.body.versionId});
+      return await commercialCommands.signContract({...context,contractId:request.params.contractId,versionId:request.body.versionId,signedAt:request.body.signedAt,note:request.body.note});}
+    catch(error){const message=error instanceof Error?error.message:"";const friendly=error instanceof ContractDocumentError||message.includes("SIGNED_DOCUMENT")?"Smlouvu nelze podepsat bez ověřeného finálního dokumentu.":message.includes("approved")?"Před evidencí podpisu schvalte aktuální verzi smlouvy.":permissionError(error)?"K zaznamenání podpisu nemáte oprávnění.":"Podpis smlouvy se nepodařilo zaznamenat.";request.log.warn({event:"contract.signature_rejected",correlationId:request.id,code:error instanceof ContractDocumentError?error.code:"signature_rejected"});return reply.code(permissionError(error)?403:409).send({error:friendly,correlationId:request.id});}
+  });
+
+  app.post<{Params:{contractId:string};Body:{fileName:string;mimeType:string;contentBase64:string;idempotencyKey:string}}>("/v1/contracts/:contractId/external-document",{bodyLimit:6*1024*1024},async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není přístupný"});if(!contractEvidence)return reply.code(503).send({error:"Úložiště dokumentů není dostupné."});
+      const {fileName,mimeType,contentBase64,idempotencyKey}=request.body;
+      return reply.code(201).send(await contractEvidence.uploadExternal({...context,contractId:request.params.contractId,fileName,mimeType,idempotencyKey,bytes:decodeBase64(contentBase64)}));
+    }catch(error){request.log.warn({event:"contract.external_upload_failed",correlationId:request.id,code:error instanceof ContractDocumentError?error.code:"upload_failed"});return reply.code(permissionError(error)?403:409).send({error:"Finální dokument se nepodařilo uložit. Zkontrolujte formát a velikost souboru.",correlationId:request.id});}
+  });
+  app.get<{Params:{contractId:string;versionId:string}}>("/v1/contracts/:contractId/versions/:versionId/document",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není přístupný"});if(!contractEvidence)return reply.code(503).send({error:"Úložiště není dostupné."});const exact=await contractEvidence.exactFile({...context,...request.params});
+      return reply.header("content-type","application/octet-stream").header("content-disposition",`attachment; filename*=UTF-8''${encodeURIComponent(exact.evidence.name)}`).send(Buffer.from(exact.bytes));
+    }catch(error){request.log.warn({event:"contract.document_read_failed",correlationId:request.id,code:error instanceof ContractDocumentError?error.code:"read_failed"});return reply.code(409).send({error:"Přesný dokument se nepodařilo ověřit a otevřít.",correlationId:request.id});}
+  });
+  app.get<{Params:{contractId:string;versionId:string}}>("/v1/contracts/:contractId/versions/:versionId/document-readiness",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({ready:false});if(!contractEvidence)return reply.code(503).send({ready:false});
+      const verified=await contractEvidence.exactFile({...context,...request.params});return {ready:true,documentVersionId:verified.evidence.documentVersionId};
+    }catch(error){request.log.warn({event:"contract.document_validation_failed",correlationId:request.id,code:error instanceof ContractDocumentError?error.code:"validation_failed"});return reply.code(409).send({ready:false,error:"Dokument se nepodařilo ověřit.",correlationId:request.id});}
   });
 
   app.post<{ Body:{ partyIds?:string[];format?:"json"|"bcc"|"csv"} }>("/v1/clients/export", async (request,reply) => {
@@ -596,7 +626,8 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
   app.post<{Body:{projectId:string;templateVersionId:string;idempotencyKey:string;unitId?:string;partyId?:string;salesCaseId?:string;contractId?:string;documentId?:string;documentName?:string}}>("/v1/documents/generate",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});
       if(!templateGeneration)return reply.code(503).send({error:"SharePoint integrace není v tomto prostředí nakonfigurovaná"});
-      const generated=await templateGeneration.generate({...context,...request.body});return reply.code(generated.replayed?200:201).send({generation:generated});
+      const {projectId,templateVersionId,idempotencyKey,unitId,partyId,salesCaseId,contractId,documentId,documentName}=request.body;
+      const generated=await templateGeneration.generate({...context,projectId,templateVersionId,idempotencyKey,unitId,partyId,salesCaseId,contractId,documentId,documentName});return reply.code(generated.replayed?200:201).send({generation:generated});
     }catch(error){request.log.warn({event:"document.generation_failed",correlationId:request.id,errorName:error instanceof Error?error.name:"Error",errorCode:error instanceof DocumentGenerationError||error instanceof DocxTemplateError?error.code:undefined},"document generation failed");
       return reply.code(permissionError(error)?403:error instanceof DocumentGenerationError&&error.code==="template_not_found"?404:422).send({error:"Dokument se nepodařilo vytvořit. Zkontrolujte šablonu a povinné údaje."});}
   });

@@ -8,10 +8,19 @@ export type RsSource={contractId:string;projectId:string;projectName:string;proj
   layout:string|null;floorLabel:string|null;areaM2:number;balconyM2:number|null;gardenM2:number|null;unitPrice:number|null;totalPrice:number|null;
   reservationFee:number|null;reservationFeeDueDays:number;reservationPeriodDays:number;settings:null|{name:string;registrationNumber:string;address:string;registryEntry:string;
     representative:string;email:string;dataBox:string;bankAccount:string;bankName:string};salesCaseId:string;reference:string;status:string;buyers:RsBuyer[];accessories:RsAccessory[];
-  templateVersionId:string|null;templateHash:string|null;documentId:string|null;documentVersionId:string|null;webUrl:string|null;contractVersion:number|null};
+  templateVersionId:string|null;templateHash:string|null;documentId:string|null;documentVersionId:string|null;documentMimeType?:string|null;webUrl:string|null;contractVersion:number|null};
 
 export class RsGenerationRepository{
   constructor(private readonly database:Database){}
+
+  async completedGeneration(input:DocumentContext&{contractId:string;idempotencyKey:string}){
+    return this.database.withContext(input,async client=>(await client.query<{operationId:string;documentId:string;documentVersionId:string;templateVersionId:string;snapshot:Record<string,string>}>(`
+      SELECT g.id "operationId",g.output_document_id "documentId",g.output_document_version_id "documentVersionId",g.template_version_id "templateVersionId",g.generation_snapshot snapshot
+      FROM document_generation_operations g JOIN contracts c ON c.tenant_id=g.tenant_id AND c.id=g.contract_id
+      WHERE g.tenant_id=$1 AND g.contract_id=$3 AND g.idempotency_key=$4 AND g.state='completed'
+        AND app.has_project_permission(c.tenant_id,$2,c.project_id,'contract.manage')`,
+      [input.tenantId,input.membershipId,input.contractId,input.idempotencyKey])).rows[0]??null);
+  }
 
   async load(input:DocumentContext&{contractId:string;permission:"contract.read"|"contract.manage"}):Promise<RsSource|null>{
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
@@ -41,7 +50,7 @@ export class RsGenerationRepository{
           COALESCE((SELECT jsonb_agg(item||jsonb_build_object('floorLabel',accessory.floor_label,'description',accessory.description) ORDER BY item->>'type',item->>'code')
             FROM jsonb_array_elements(contract.accessory_price_snapshot) item LEFT JOIN accessories accessory ON accessory.tenant_id=contract.tenant_id AND accessory.id=(item->>'accessoryId')::uuid),'[]'::jsonb) accessories,
           template_version.id template_version_id,template_version.content_hash template_hash,
-          latest.document_id,latest.document_version_id,document.web_url,latest.version_number contract_version
+          latest.document_id,latest.document_version_id,document.mime_type document_mime_type,document.web_url,latest.version_number contract_version
         FROM contracts contract JOIN projects project ON project.tenant_id=contract.tenant_id AND project.id=contract.project_id
         JOIN units unit ON unit.tenant_id=contract.tenant_id AND unit.id=contract.unit_id
         LEFT JOIN project_contract_settings settings ON settings.tenant_id=contract.tenant_id AND settings.project_id=contract.project_id
@@ -60,9 +69,10 @@ export class RsGenerationRepository{
 
   async bind(input:DocumentContext&{contractId:string;operationId:string;documentId:string;documentVersionId:string;templateVersionId:string;snapshot:Record<string,string>}):Promise<{versionId:string;versionNumber:number}>{
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
+        await client.query("SELECT app.lock_workflow_unit($1,(SELECT unit_id FROM contracts WHERE tenant_id=$1 AND id=$2))",[input.tenantId,input.contractId]);
         const existing=(await client.query<{id:string;version_number:number}>(`SELECT id,version_number FROM contract_versions WHERE tenant_id=$1 AND generation_operation_id=$2`,[input.tenantId,input.operationId])).rows[0];
         if(existing)return{versionId:existing.id,versionNumber:existing.version_number};
-        const contract=(await client.query<{project_id:string;reference:string}>(`SELECT project_id,reference FROM contracts WHERE tenant_id=$1 AND id=$3 AND contract_type='rs' AND current_status NOT IN('signed','cancelled','terminated')
+        const contract=(await client.query<{project_id:string;reference:string;current_status:string}>(`SELECT project_id,reference,current_status FROM contracts WHERE tenant_id=$1 AND id=$3 AND contract_type='rs' AND current_status NOT IN('signed','cancelled','terminated')
           AND app.has_project_permission(tenant_id,$2,project_id,'contract.manage') FOR UPDATE`,[input.tenantId,input.membershipId,input.contractId])).rows[0];
         if(!contract)throw new Error("contract.manage permission required");
         const previous=(await client.query<{id:string;version_number:number;source_type:string;document_id:string|null}>(`SELECT id,version_number,source_type,document_id FROM contract_versions WHERE tenant_id=$1 AND contract_id=$2 ORDER BY version_number DESC LIMIT 1 FOR UPDATE`,[input.tenantId,input.contractId])).rows[0];
@@ -80,6 +90,12 @@ export class RsGenerationRepository{
             [input.tenantId,input.membershipId,contract.project_id,input.contractId,versionNumber,previous?.id??null,`${contract.reference}_v${String(versionNumber).padStart(2,'0')}`,input.snapshot,input.documentId,input.documentVersionId,input.templateVersionId,input.operationId])).rows[0];
           versionId=created.id;
         }
+        if(['approved','signing'].includes(contract.current_status)){
+          await client.query("SELECT set_config('app.contract_status_command','on',true)");
+          await client.query("UPDATE contracts SET current_status='draft' WHERE tenant_id=$1 AND id=$2",[input.tenantId,input.contractId]);
+          await client.query(`INSERT INTO contract_status_events(tenant_id,project_id,contract_id,from_status,to_status,command,reason,recorded_by_membership_id,source)
+            VALUES($1,$2,$3,$4,'draft','documentRegenerated','Nová verze dokumentu vyžaduje schválení',$5,'automation')`,[input.tenantId,contract.project_id,input.contractId,contract.current_status,input.membershipId]);
+        }
         await client.query(`INSERT INTO audit_log(tenant_id,actor_user_id,action,entity_type,entity_id,after_data)
           SELECT $1,m.user_id,'contract.rs_generated','contract_version',$3,jsonb_build_object('contractId',$4::uuid,'documentId',$5::uuid,'documentVersionId',$6::uuid,'templateVersionId',$7::uuid,'versionNumber',$8::integer)
           FROM tenant_memberships m WHERE m.tenant_id=$1 AND m.id=$2`,[input.tenantId,input.membershipId,versionId,input.contractId,input.documentId,input.documentVersionId,input.templateVersionId,versionNumber]);
@@ -96,5 +112,5 @@ function mapSource(row:Record<string,unknown>):RsSource{
     unitPrice:row.unit_price_snapshot==null?null:Number(row.unit_price_snapshot),totalPrice:row.total_price_snapshot==null?null:Number(row.total_price_snapshot),reservationFee:row.reservation_fee_amount==null?null:Number(row.reservation_fee_amount),reservationFeeDueDays:Number(row.reservation_fee_due_days),reservationPeriodDays:Number(row.reservation_period_days),
     settings:settings?{name:settings.name,registrationNumber:settings.registrationNumber,address:settings.address,registryEntry:settings.registryEntry,representative:settings.representative,email:settings.email,dataBox:settings.dataBox,bankAccount:settings.bankAccount,bankName:settings.bankName}:null,
     salesCaseId:String(row.sales_case_id),reference:String(row.reference),status:String(row.current_status),buyers:(row.buyers as RsBuyer[])??[],accessories:((row.accessories as Array<Record<string,unknown>>)??[]).map(item=>({code:String(item.code),type:String(item.type),amount:Number(item.amount),floorLabel:item.floorLabel?String(item.floorLabel):null,description:item.description?String(item.description):null})),
-    templateVersionId:row.template_version_id?String(row.template_version_id):null,templateHash:row.template_hash?String(row.template_hash):null,documentId:row.document_id?String(row.document_id):null,documentVersionId:row.document_version_id?String(row.document_version_id):null,webUrl:row.web_url?String(row.web_url):null,contractVersion:row.contract_version==null?null:Number(row.contract_version)};
+    templateVersionId:row.template_version_id?String(row.template_version_id):null,templateHash:row.template_hash?String(row.template_hash):null,documentMimeType:row.document_mime_type?String(row.document_mime_type):null,documentId:row.document_id?String(row.document_id):null,documentVersionId:row.document_version_id?String(row.document_version_id):null,webUrl:row.web_url?String(row.web_url):null,contractVersion:row.contract_version==null?null:Number(row.contract_version)};
 }

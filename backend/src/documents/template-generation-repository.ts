@@ -61,10 +61,18 @@ export class DocumentTemplateGenerationRepository{
     });
   }
 
-  async reserve(input:DocumentContext&{projectId:string;template:TemplateSource;idempotencyKey:string;requestHash:string;unitId?:string;partyId?:string;salesCaseId?:string;contractId?:string;snapshot?:Record<string,string>}):Promise<GenerationOperation>{
+  async reserve(input:DocumentContext&{projectId:string;template:TemplateSource;idempotencyKey:string;requestHash:string;unitId?:string;partyId?:string;salesCaseId?:string;contractId?:string;documentId?:string;snapshot?:Record<string,string>}):Promise<GenerationOperation>{
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
+      if(input.contractId&&input.template.outputTypeCode==='reservation_contract')await client.query("SELECT app.lock_workflow_unit($1,(SELECT unit_id FROM contracts WHERE tenant_id=$1 AND project_id=$2 AND id=$3))",[input.tenantId,input.projectId,input.contractId]);
       const existing=(await client.query<Record<string,unknown>>(`SELECT * FROM document_generation_operations WHERE tenant_id=$1 AND idempotency_key=$2`,[input.tenantId,input.idempotencyKey])).rows[0];
       if(existing){if(existing.request_hash!==input.requestHash)throw new Error("idempotency key payload mismatch");return mapOperation(existing,input.template);}
+      if(input.contractId&&input.template.outputTypeCode==='reservation_contract'){
+        const pending=await client.query(`SELECT 1 FROM document_generation_operations g WHERE g.tenant_id=$1 AND g.contract_id=$2
+          AND (g.state='reserved' OR NOT EXISTS(SELECT 1 FROM contract_versions cv WHERE cv.tenant_id=g.tenant_id AND cv.generation_operation_id=g.id))`,[input.tenantId,input.contractId]);
+        if(pending.rowCount)throw new Error('document generation in progress');
+        const latest=(await client.query<{document_id:string|null;mime_type:string|null}>("SELECT cv.document_id,d.mime_type FROM contract_versions cv LEFT JOIN documents d ON d.tenant_id=cv.tenant_id AND d.id=cv.document_id WHERE cv.tenant_id=$1 AND cv.contract_id=$2 ORDER BY cv.version_number DESC LIMIT 1",[input.tenantId,input.contractId])).rows[0];
+        if(latest?.document_id&&latest.document_id!==input.documentId&&!(latest.mime_type==='application/pdf'&&!input.documentId))throw new Error('generation document context changed');
+      }
       const data=(await client.query<{project_name:string;project_code:string;unit_code:string|null;party_name:string|null;total_price:string|null}>(`
         SELECT p.name project_name,p.code project_code,u.code unit_code,party.display_name party_name,
           CASE WHEN u.id IS NULL THEN NULL ELSE app.current_unit_sales_price($1,u.id,now())::text END total_price

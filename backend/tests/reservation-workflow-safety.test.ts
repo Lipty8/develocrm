@@ -11,6 +11,8 @@ import {getSalesProcessState} from "../src/shared/next-contract-action.js";
 import {mapApiError} from "../src/http/api-error.js";
 import {Database} from "../src/database.js";
 import {expirePreReservations} from "../src/sales/hold-expiry-job.js";
+import {signatureDocument} from "./helpers/signature-document.js";
+import {InventoryImportService} from "../src/inventory/import-service.js";
 
 async function fixture(postgresUrl?:string){
   const memory=postgresUrl?undefined:new PGlite();
@@ -26,17 +28,25 @@ async function fixture(postgresUrl?:string){
     return {rows:result.rows,rowCount:result.affectedRows??null};
   }} as SqlClient;
   const directory=new URL("../migrations/",import.meta.url);
-  for(const name of (await readdir(directory)).filter(name=>/^\d+.*\.sql$/.test(name)).sort())await client.query(await readFile(new URL(name,directory),"utf8"));
+  for(const name of (await readdir(directory)).filter(name=>/^\d+.*\.sql$/.test(name)&&!name.startsWith('0057')).sort())await client.query(await readFile(new URL(name,directory),"utf8"));
   const normalized=normalizeBootstrapInput({entraTenantId:randomUUID(),adminOid:randomUUID(),adminEmail:"safety.admin@example.test",adminName:"Workflow Safety Test",workspaceName:"Isolated safety tests",workspaceId:randomUUID()});
   const ids=bootstrapIds(normalized);
   await bootstrapPilotWorkspace(client,{...normalized,...ids});
   await importDejvice(client,await readFile(new URL("../seeds/0004_pilot_rezidence_dejvice.sql",import.meta.url),"utf8"),{tenantId:ids.tenantId,membershipId:ids.membershipId,dryRun:false});
+  await client.query(await readFile(new URL('0057_price_and_signed_document_integrity.sql',directory),'utf8'));
   async function start(){
     const unit=(await client.query<{id:string}>(`SELECT id FROM units WHERE tenant_id=$1 AND commercial_status='available'
       AND NOT EXISTS(SELECT 1 FROM sales_cases WHERE tenant_id=$1 AND unit_id=units.id AND status='active') ORDER BY code LIMIT 1`,[ids.tenantId])).rows[0];
     assert.ok(unit);
     const hold=(await client.query<{hold_id:string;sales_case_id:string}>(`SELECT * FROM app.create_party_and_unit_hold($1,$2,'pre_reservation',now()+interval '48 hours',$3,$4,'Safety test','individual',NULL,'Safety',$6,NULL,NULL,$5,NULL)`,[ids.tenantId,unit.id,ids.membershipId,randomUUID(),`${randomUUID()}@example.test`,`Buyer ${randomUUID()}`])).rows[0];
     const contract=(await client.query<{contract_id:string;version_id:string}>("SELECT * FROM app.create_contract_with_payment($1,$2,'rs',$3,'Safety RS',$4,NULL,$5,'fixed',250000,now()+interval '7 days')",[ids.tenantId,hold.sales_case_id,`RS-SAFETY-${randomUUID()}`,ids.membershipId,randomUUID()])).rows[0];
+    const evidenceClient=pool?await pool.connect():client;
+    try{
+      await evidenceClient.query('BEGIN');
+      await evidenceClient.query("SELECT set_config('app.tenant_id',$1,true),set_config('app.user_id',$2,true)",[ids.tenantId,ids.userId]);
+      contract.version_id=await signatureDocument(evidenceClient,ids.tenantId,ids.membershipId,contract.contract_id);
+      await evidenceClient.query('COMMIT');
+    }catch(error){await evidenceClient.query('ROLLBACK');throw error;}finally{if(pool)(evidenceClient as PoolClient).release();}
     await client.query("SELECT app.transition_contract_status($1,$2,'sent','Safety',$3)",[ids.tenantId,contract.contract_id,ids.membershipId]);
     await client.query("SELECT app.transition_contract_status($1,$2,'approved','Safety',$3)",[ids.tenantId,contract.contract_id,ids.membershipId]);
     return {unitId:unit.id,holdId:hold.hold_id,caseId:hold.sales_case_id,...contract};
@@ -149,6 +159,21 @@ test("real PostgreSQL concurrency: signature, cancellation, expiry and unit seri
         assert.deepEqual(await f.events(c.holdId),{audit:1,outbox:1});
         await assert.rejects(expirePreReservations(database,{tenantId:randomUUID(),membershipId:f.ids.membershipId}),/membership is not active/);
         assert.equal((await expirePreReservations(database,{tenantId:f.ids.tenantId,membershipId:f.ids.membershipId})).expired,0);
+      }finally{await database.close();}
+    });
+    for(const signatureFirst of [true,false])await t.test(`upload reservation vs signature, signature first=${signatureFirst}`,async()=>{
+      const c=await f.start();const doc=(await f.client.query<{document_id:string;project_id:string}>("SELECT document_id,project_id FROM contract_versions WHERE id=$1",[c.version_id])).rows[0];
+      const reserve=(db:PoolClient)=>db.query("SELECT app.reserve_document_upload($1,$2,$3,$4,'version',$5,NULL,'Replacement','replacement.pdf','application/pdf',16,$6,'v2','ready',NULL,$7,NULL,$8,$9,$10)",
+        [f.ids.tenantId,doc.project_id,randomUUID(),'a'.repeat(64),doc.document_id,`sha256:${'b'.repeat(64)}`,c.unitId,c.contract_id,c.caseId,f.ids.membershipId]);
+      const result=signatureFirst?await race(db=>f.sign(c,db),reserve):await race(reserve,db=>f.sign(c,db));
+      assert.match(result.error?.message??'',signatureFirst?/SIGNED_DOCUMENT_IMMUTABLE/:/DOCUMENT_UPLOAD_IN_PROGRESS/);
+      assert.equal((await f.state(c.unitId)).commercial_status,signatureFirst?'reserved':'pre_reserved');
+    });
+    await t.test('parallel initial-price requests create one unit and one history row',async()=>{
+      const project=(await f.client.query<{id:string}>("SELECT id FROM projects WHERE tenant_id=$1 LIMIT 1",[f.ids.tenantId])).rows[0].id;
+      const database=new Database(f.connectionUrl!);try{const service=new InventoryImportService(database);const input={tenantId:f.ids.tenantId,userId:f.ids.userId,membershipId:f.ids.membershipId,projectId:project,idempotencyKey:randomUUID(),row:{rowNumber:1,code:'PRICE-CONCURRENCY',areaM2:30,price:1234567}};
+        const results=await Promise.all([service.createUnit(input),service.createUnit(input)]);assert.equal(results.filter(r=>r.replayed).length,1);
+        assert.equal((await f.client.query<{count:number}>("SELECT count(*)::int count FROM unit_price_history p JOIN units u ON u.id=p.unit_id WHERE u.tenant_id=$1 AND u.code='PRICE-CONCURRENCY'",[f.ids.tenantId])).rows[0].count,1);
       }finally{await database.close();}
     });
   }finally{await f.close();}

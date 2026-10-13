@@ -11,7 +11,7 @@ test("klientská změna prochází řízeným schválením, uchovává historii 
   const db = new PGlite();
   try {
     const directory = new URL("../migrations/", import.meta.url);
-    for (const name of (await readdir(directory)).filter(name => /^\d+.*\.sql$/.test(name)).sort()) {
+    for (const name of (await readdir(directory)).filter(name => /^\d+.*\.sql$/.test(name)&&!name.startsWith('0057')).sort()) {
       await db.exec(await readFile(new URL(name, directory), "utf8"));
     }
     const normalized = normalizeBootstrapInput({entraTenantId:"10000000-0000-4000-8000-000000000062", adminOid:"20000000-0000-4000-8000-000000000062", adminEmail:"changes@example.test", adminName:"Test Admin", workspaceName:"Client changes fixture", workspaceId:"30000000-0000-4000-8000-000000000062"});
@@ -23,6 +23,7 @@ test("klientská změna prochází řízeným schválením, uchovává historii 
     }} as never;
     await bootstrapPilotWorkspace(client, {...normalized, ...ids});
     await importDejvice(client, await readFile(new URL("../seeds/0004_pilot_rezidence_dejvice.sql", import.meta.url), "utf8"), {tenantId:ids.tenantId, membershipId:ids.membershipId, dryRun:false});
+    await db.exec(await readFile(new URL('0057_price_and_signed_document_integrity.sql',directory),'utf8'));
     await db.exec(`SET ROLE develocrm_app; SELECT set_config('app.tenant_id','${ids.tenantId}',false); SELECT set_config('app.user_id','${ids.userId}',false);`);
     const context = (await db.query<{project_id:string;unit_id:string;party_id:string}>("SELECT unit.project_id,unit.id unit_id,link.party_id FROM units unit JOIN party_project_links link ON link.tenant_id=unit.tenant_id AND link.project_id=unit.project_id AND link.valid_to IS NULL WHERE unit.tenant_id=$1 ORDER BY unit.code LIMIT 1", [ids.tenantId])).rows[0];
     const created = (await db.query<{id:string}>("SELECT app.create_client_change($1,$2,$3,$4,'Výběr povrchu','','individual','','Povrchy',NULL,'CZK',current_date,NULL,$5) id", [ids.tenantId,context.project_id,context.unit_id,context.party_id,ids.membershipId])).rows[0].id;

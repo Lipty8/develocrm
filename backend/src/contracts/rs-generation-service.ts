@@ -15,10 +15,15 @@ export class RsGenerationService{
     return{ready:issues.length===0,issues,contractId:source.contractId,projectId:source.projectId,templateVersionId:source.templateVersionId,currentDocument:source.documentId&&source.documentVersionId&&source.contractVersion?{documentId:source.documentId,documentVersionId:source.documentVersionId,version:source.contractVersion,webUrl:source.webUrl}:null};
   }
   async generate(input:DocumentContext&{contractId:string;idempotencyKey:string}){
+    const completed=await this.repository.completedGeneration?.(input);
+    if(completed){
+      const version=await this.repository.bind({...input,...completed});
+      return {operationId:completed.operationId,documentId:completed.documentId,documentVersionId:completed.documentVersionId,contractVersionId:version.versionId,contractVersion:version.versionNumber,replayed:true};
+    }
     const source=await this.repository.load({...input,permission:"contract.manage"});if(!source)throw new RsGenerationError("contract_not_found");
     const issues=validate(source);if(issues.length)throw new RsGenerationError("not_ready",issues);
     const snapshot=buildSnapshot(source);const generated=await this.generator.generate({...input,projectId:source.projectId,templateVersionId:source.templateVersionId!,idempotencyKey:input.idempotencyKey,
-      unitId:source.unitId,partyId:source.buyers[0].id,salesCaseId:source.salesCaseId,contractId:source.contractId,documentId:source.documentId??undefined,documentName:`Rezervační smlouva ${source.reference}`,snapshot});
+      unitId:source.unitId,partyId:source.buyers[0].id,salesCaseId:source.salesCaseId,contractId:source.contractId,documentId:source.documentMimeType==='application/pdf'?undefined:source.documentId??undefined,documentName:`Rezervační smlouva ${source.reference}`,snapshot});
     if(!generated.documentId||!generated.documentVersionId)throw new RsGenerationError("generation_incomplete");
     const version=await this.repository.bind({...input,contractId:source.contractId,operationId:generated.operationId,documentId:generated.documentId,documentVersionId:generated.documentVersionId,templateVersionId:source.templateVersionId!,snapshot});
     return{...generated,contractVersionId:version.versionId,contractVersion:version.versionNumber};
@@ -48,7 +53,7 @@ function validate(source:RsSource):RsReadinessIssue[]{
   if(source.accessories.some(accessory=>accessory.type==='wallbox'))issues.push(issue("unsupported_wallbox","unit.accessories","Tato verze šablony neumí bezpečně popsat wallbox. Použijte schválenou rozšířenou šablonu."));
   return issues;
 }
-function buildSnapshot(source:RsSource):Record<string,string>{const buyer=source.buyers[0],seller=source.settings!;const underground=(a:RsAccessory)=>a.type==='garage'||a.type==='parking'&&(/\bPP\b/i.test(a.floorLabel??'')||/garáž/i.test(a.description??''));const parking=source.accessories.filter(a=>a.type==='parking'&&!underground(a)),garage=source.accessories.filter(underground),cellars=source.accessories.filter(a=>a.type==='cellar');
+export function buildSnapshot(source:RsSource):Record<string,string>{const buyer=source.buyers[0],seller=source.settings!;const underground=(a:RsAccessory)=>a.type==='garage'||a.type==='parking'&&(/\bPP\b/i.test(a.floorLabel??'')||/garáž/i.test(a.description??''));const parking=source.accessories.filter(a=>a.type==='parking'&&!underground(a)),garage=source.accessories.filter(underground),cellars=source.accessories.filter(a=>a.type==='cellar');
   return{"seller.name":seller.name,"seller.address":seller.address,"seller.registryEntry":seller.registryEntry,"seller.registrationNumber":seller.registrationNumber,"seller.representative":seller.representative,"seller.email":seller.email,"seller.dataBox":seller.dataBox,"seller.bankAccount":seller.bankAccount,
     "buyer.salutation":buyer.salutation==='paní'?'Paní':'Pan',"buyer.name":`${buyer.firstName} ${buyer.lastName}`,"buyer.address":buyer.address!,"buyer.birthDate":formatDate(buyer.birthDate!),"buyer.email":buyer.email!,"buyer.phone":buyer.phone!,"buyer.dataBoxLine":buyer.dataBox?`Datová schránka: ${buyer.dataBox}`:"Datová schránka neuvedena",
     "project.name":source.projectName,"project.completionYear":source.completionYear!,"contract.reservationPeriodDays":String(source.reservationPeriodDays),"contract.date":formatDate(new Date().toISOString()),

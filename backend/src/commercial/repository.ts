@@ -13,8 +13,8 @@ export class CommercialRepository {
 
   async getSnapshot(input:Context&{projectId?:string}):Promise<CommercialSnapshot>{
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async(client)=>{
-      const prices=await client.query<{id:string;unit:string;type:string;amount:number;amount_net:number|null;currency:string;valid_from:string;valid_to:string|null;reason:string;author:string;approver:string|null}>(
-        `SELECT price.id,unit.code unit,price.price_type type,price.amount::float8 amount,price.amount_net::float8 amount_net,price.currency,
+      const prices=await client.query<{id:string;unit_id:string;unit:string;type:string;amount:number;amount_net:number|null;currency:string;valid_from:string;valid_to:string|null;reason:string;author:string;approver:string|null}>(
+        `SELECT price.id,unit.id unit_id,unit.code unit,price.price_type type,price.amount::float8 amount,price.amount_net::float8 amount_net,price.currency,
           price.valid_from,price.valid_to,price.reason,author.display_name author,approver.display_name approver
          FROM unit_price_intervals price JOIN units unit ON unit.tenant_id=price.tenant_id AND unit.id=price.unit_id
          JOIN tenant_memberships author_membership ON author_membership.tenant_id=price.tenant_id AND author_membership.id=price.recorded_by_membership_id
@@ -37,6 +37,10 @@ export class CommercialRepository {
       const partyOrder=hasBuyerAssignments?"(participant.effective_to IS NULL) DESC,participant.effective_from DESC,party.display_name":"party.display_name";
       const assignmentJoin=hasBuyerAssignments&&hasAssignmentPartyColumns?"LEFT JOIN buyer_assignment_events assignment ON assignment.tenant_id=participant.tenant_id AND assignment.id=COALESCE(participant.ended_by_assignment_event_id,participant.assignment_event_id)":"";
       const assignmentEffectiveProjection=hasContractAssignmentColumns?"contract.assignment_effective_at":"NULL::timestamptz";
+      const hasDocumentEvidence=Boolean((await client.query("SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='app' AND p.proname='contract_document_is_ready'")).rowCount);
+      const documentEvidenceProjection=hasDocumentEvidence?`'documentVersionId',version.document_version_id,'documentReady',app.contract_document_is_ready(version.tenant_id,version.contract_id,version.document_id,version.document_version_id),
+        'documentName',(SELECT u.original_file_name FROM document_upload_operations u WHERE u.tenant_id=version.tenant_id AND u.document_version_id=version.document_version_id AND u.state='completed'),
+        'signatureRecordedAt',(SELECT a.occurred_at FROM audit_log a WHERE a.tenant_id=version.tenant_id AND a.entity_id=version.contract_id AND a.action='contract.signed' ORDER BY a.occurred_at DESC LIMIT 1)`:`'documentReady',false`;
       const addendumProjection=hasAddendumColumns?"contract.amendment_number,contract.base_contract_type":"NULL::integer amendment_number,NULL::text base_contract_type";
       const notesProjection=hasContractNotes?`COALESCE(notes.items,'[]'::jsonb) notes`:`'[]'::jsonb notes`;
       const notesJoin=hasContractNotes?`LEFT JOIN LATERAL (SELECT jsonb_agg(jsonb_build_object('id',note.id,'text',note.text,'author',author.display_name,'createdAt',note.created_at,'archivedAt',note.archived_at,'archiveReason',note.archive_reason) ORDER BY note.created_at DESC,note.id DESC) items
@@ -56,7 +60,8 @@ export class CommercialRepository {
            FROM contract_parties participant JOIN parties party ON party.tenant_id=participant.tenant_id AND party.id=participant.party_id
            ${assignmentJoin}
            WHERE participant.tenant_id=contract.tenant_id AND participant.contract_id=contract.id) parties ON true
-         LEFT JOIN LATERAL (SELECT jsonb_agg(jsonb_build_object('id',version.id,'number',version.version_number,'name',version.display_name,'status',version.version_status,'basedOnVersionId',version.based_on_version_id,'source',version.source_type,'createdAt',version.created_at,'signedAt',version.signed_at) ORDER BY version.version_number DESC) items
+         LEFT JOIN LATERAL (SELECT jsonb_agg(jsonb_build_object('id',version.id,'number',version.version_number,'name',version.display_name,'status',version.version_status,'basedOnVersionId',version.based_on_version_id,'source',version.source_type,'createdAt',version.created_at,'signedAt',version.signed_at,
+             ${documentEvidenceProjection}) ORDER BY version.version_number DESC) items
            FROM contract_versions version WHERE version.tenant_id=contract.tenant_id AND version.contract_id=contract.id) versions ON true
          LEFT JOIN LATERAL (SELECT jsonb_agg(jsonb_build_object('id',event.id,'fromStatus',event.from_status,'toStatus',event.to_status,'occurredAt',event.recorded_at,'actor',actor.display_name,'note',event.reason,'source',COALESCE(event.source,'manual')) ORDER BY event.recorded_at DESC,event.id DESC) items
            FROM contract_status_events event
@@ -78,25 +83,33 @@ export class CommercialRepository {
           AND app.has_project_permission(proposal.tenant_id,$2,proposal.project_id,'prices.read')
           AND ($3::uuid IS NULL OR proposal.project_id=$3) ORDER BY proposal.proposed_at DESC`,[input.tenantId,input.membershipId,input.projectId??null]):{rows:[]};
       const priceHistories:Record<string,PriceItem[]>={};
-      for(const row of prices.rows)(priceHistories[row.unit]??=[]).push({id:row.id,unit:row.unit,type:row.type,amount:row.amount,...(row.amount_net===null?{}:{amountNet:row.amount_net}),currency:row.currency,validFrom:row.valid_from,validTo:row.valid_to,reason:row.reason,author:row.author,approver:row.approver});
+      for(const row of prices.rows)(priceHistories[row.unit_id]??=[]).push({id:row.id,unit:row.unit,type:row.type,amount:row.amount,...(row.amount_net===null?{}:{amountNet:row.amount_net}),currency:row.currency,validFrom:row.valid_from,validTo:row.valid_to,reason:row.reason,author:row.author,approver:row.approver});
       const hasAccessoryPriceProjection=Boolean((await client.query("SELECT 1 FROM pg_proc procedure JOIN pg_namespace namespace ON namespace.oid=procedure.pronamespace WHERE namespace.nspname='app' AND procedure.proname='current_unit_accessory_price'")).rowCount);
-      const breakdownRows=await client.query<{unit:string;unit_price:number|null;accessory_price:number;total_price:number|null}>(hasAccessoryPriceProjection
-        ?`SELECT unit.code unit,
+      const breakdownRows=await client.query<{unit_id:string;unit:string;unit_price:number|null;accessory_price:number;total_price:number|null}>(hasAccessoryPriceProjection
+        ?`SELECT unit.id unit_id,unit.code unit,
             CASE WHEN EXISTS(SELECT 1 FROM unit_price_history price WHERE price.tenant_id=unit.tenant_id AND price.unit_id=unit.id AND price.valid_from<=now()) THEN app.current_unit_price(unit.tenant_id,unit.id,now())::float8 ELSE NULL END unit_price,
             app.current_unit_accessory_price(unit.tenant_id,unit.id,now())::float8 accessory_price,
             CASE WHEN EXISTS(SELECT 1 FROM unit_price_history price WHERE price.tenant_id=unit.tenant_id AND price.unit_id=unit.id AND price.valid_from<=now()) THEN app.current_unit_sales_price(unit.tenant_id,unit.id,now())::float8 ELSE NULL END total_price
           FROM units unit JOIN projects project ON project.tenant_id=unit.tenant_id AND project.id=unit.project_id
           WHERE unit.tenant_id=$1 AND unit.archived_at IS NULL AND project.archived_at IS NULL
             AND app.has_project_permission(unit.tenant_id,$2,unit.project_id,'price.read') AND ($3::uuid IS NULL OR unit.project_id=$3)`
-        :`SELECT unit.code unit,
+        :`SELECT unit.id unit_id,unit.code unit,
             CASE WHEN EXISTS(SELECT 1 FROM unit_price_history price WHERE price.tenant_id=unit.tenant_id AND price.unit_id=unit.id AND price.valid_from<=now()) THEN app.current_unit_price(unit.tenant_id,unit.id,now())::float8 ELSE NULL END unit_price,
             0::float8 accessory_price,
             CASE WHEN EXISTS(SELECT 1 FROM unit_price_history price WHERE price.tenant_id=unit.tenant_id AND price.unit_id=unit.id AND price.valid_from<=now()) THEN app.current_unit_price(unit.tenant_id,unit.id,now())::float8 ELSE NULL END total_price
           FROM units unit JOIN projects project ON project.tenant_id=unit.tenant_id AND project.id=unit.project_id
           WHERE unit.tenant_id=$1 AND unit.archived_at IS NULL AND project.archived_at IS NULL
             AND app.has_project_permission(unit.tenant_id,$2,unit.project_id,'price.read') AND ($3::uuid IS NULL OR unit.project_id=$3)`,[input.tenantId,input.membershipId,input.projectId??null]);
-      const priceBreakdowns=Object.fromEntries(breakdownRows.rows.map(row=>[row.unit,{unitPrice:row.unit_price,accessoryPrice:row.accessory_price,totalPrice:row.total_price}]));
-      const currentPrices=Object.fromEntries(breakdownRows.rows.filter(row=>row.total_price!==null).map(row=>[row.unit,row.total_price as number]));
+      const priceBreakdowns=Object.fromEntries(breakdownRows.rows.map(row=>[row.unit_id,{unitPrice:row.unit_price,accessoryPrice:row.accessory_price,totalPrice:row.total_price}]));
+      const currentPrices=Object.fromEntries(breakdownRows.rows.filter(row=>row.total_price!==null).map(row=>[row.unit_id,row.total_price as number]));
+      // UUID is canonical. Legacy code aliases are safe only when unambiguous.
+      const codeCounts=new Map<string,number>();
+      for(const row of breakdownRows.rows)codeCounts.set(row.unit,(codeCounts.get(row.unit)??0)+1);
+      for(const row of breakdownRows.rows)if(codeCounts.get(row.unit)===1){
+        priceBreakdowns[row.unit]=priceBreakdowns[row.unit_id];
+        if(row.total_price!==null)currentPrices[row.unit]=row.total_price;
+        if(priceHistories[row.unit_id])priceHistories[row.unit]=priceHistories[row.unit_id];
+      }
       const mapped=contracts.rows.map(row=>({id:row.id,salesCaseId:row.sales_case_id,unit:row.unit,projectId:row.project_id,project:row.project,client:row.parties.filter(p=>p.isCurrent&&(['buyer','co_buyer','assignee'].includes(p.role))).map(p=>p.name).join(' a '),type:typeLabel(row.type),typeCode:row.type,state:contractStatusLabel(row.status),statusCode:row.status,updated:row.updated_at,updatedAt:row.updated_at,owner:row.owner.split(' ')[0]??row.owner,action:recommendedContractAction({status:row.status,type:row.type}).label,title:row.title,reference:row.reference,parentContractId:row.parent_contract_id,parentReference:row.parent_reference,assignmentEffectiveAt:row.assignment_effective_at,amendmentNumber:row.amendment_number,baseContractType:row.base_contract_type,history:row.history,notes:row.notes,parties:row.parties,versions:row.versions}));
       const contractSummary=contracts.rows.reduce<Record<string,number>>((sum,row)=>(sum[row.status]=(sum[row.status]??0)+1,sum),{});
       return {currentPrices,priceBreakdowns,priceHistories,priceProposals:proposals.rows.map(row=>({id:row.id,unit:row.unit,priceType:row.price_type,currentAmount:row.current_amount,proposedAmount:row.proposed_amount,validFrom:row.valid_from,reason:row.reason,status:row.status,proposer:row.proposer,decider:row.decider})),contracts:mapped,contractSummary};

@@ -1,0 +1,26 @@
+{
+  "containers": [
+    {
+      "name": "caj-develocrm-migrations-pilot",
+      "image": "acrdevelocrmpilot9a4c6e.azurecr.io/develocrm-migrations@sha256:16cad4876b703ed0ec7c1be9ad1d9b612e8db539cde70e4a73b18c2816eb6021",
+      "command": [
+        "node"
+      ],
+      "args": [
+        "--input-type=module",
+        "-e",
+        "import pg from 'pg'; const c=new pg.Client({connectionString:process.env.DATABASE_URL}); await c.connect(); try { await c.query('BEGIN READ ONLY'); const prices=await c.query(\"SELECT p.code project,u.code unit,(SELECT count(*)::int FROM unit_price_history h WHERE h.tenant_id=u.tenant_id AND h.unit_id=u.id) history_count, CASE WHEN EXISTS(SELECT 1 FROM unit_price_history h WHERE h.tenant_id=u.tenant_id AND h.unit_id=u.id AND h.valid_from<=now()) THEN app.current_unit_price(u.tenant_id,u.id,now())::text END current_price FROM units u JOIN projects p ON p.id=u.project_id AND p.tenant_id=u.tenant_id WHERE u.tenant_id=$1 AND u.archived_at IS NULL ORDER BY p.code,u.code\",['60bed28c-0c89-4a38-bac7-71e6cf7b9232']); const signed=await c.query(\"SELECT p.code project,u.code unit,c.contract_type type,cv.version_number version,cv.document_version_id IS NOT NULL has_document FROM contracts c JOIN projects p ON p.tenant_id=c.tenant_id AND p.id=c.project_id JOIN units u ON u.tenant_id=c.tenant_id AND u.id=c.unit_id LEFT JOIN LATERAL(SELECT version_number,document_version_id FROM contract_versions WHERE tenant_id=c.tenant_id AND contract_id=c.id ORDER BY version_number DESC LIMIT 1) cv ON true WHERE c.tenant_id=$1 AND c.current_status='signed' ORDER BY p.code,u.code\",['60bed28c-0c89-4a38-bac7-71e6cf7b9232']); console.log(JSON.stringify({event:'price_document_integrity.read_only_audit',prices:prices.rows,signed:signed.rows})); await c.query('ROLLBACK'); } finally { await c.end(); }"
+      ],
+      "env": [
+        {
+          "name": "DATABASE_URL",
+          "secretRef": "database-admin-url"
+        }
+      ],
+      "resources": {
+        "cpu": 0.5,
+        "memory": "1Gi"
+      }
+    }
+  ]
+}

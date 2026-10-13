@@ -37,6 +37,7 @@ export class DocumentTemplateGenerationService{
     salesCaseId?:string;contractId?:string;documentId?:string;documentName?:string;snapshot?:Record<string,string>}){
     if(!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,159}$/.test(input.idempotencyKey))throw new DocumentGenerationError("invalid_idempotency_key");
     const template=await this.repository.getTemplate(input);if(!template)throw new DocumentGenerationError("template_not_found");
+    if(template.outputTypeCode==='reservation_contract'&&(!input.contractId||!input.snapshot))throw new DocumentGenerationError('use_contract_generation');
     if(!template.externalVersionId)throw new DocumentGenerationError("template_source_version_unavailable");
     const requestHash=hash(JSON.stringify({projectId:input.projectId,templateVersionId:input.templateVersionId,unitId:input.unitId??null,
       partyId:input.partyId??null,salesCaseId:input.salesCaseId??null,contractId:input.contractId??null,documentId:input.documentId??null,documentName:input.documentName??null,snapshot:input.snapshot??null}));
@@ -51,7 +52,7 @@ export class DocumentTemplateGenerationService{
     const stamp=operation.createdAt.replace(/[-:TZ.]/g,"").slice(0,14);const safeCode=template.templateCode.replace(/[^a-z0-9_-]/g,"-");
     const upload=await this.uploads.upload({...input,idempotencyKey:`generation:${operation.id}`,documentId:input.documentId,typeCode:template.outputTypeCode,
       documentName:input.documentName?.trim()||`${template.templateName} ${stamp}`,fileName:`${safeCode}-${stamp}.docx`,mimeType:"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      bytes:rendered.bytes,versionLabel:`${template.versionLabel}-${stamp}`,status:"draft",note:"Automaticky vytvořený technický dokument",
+      bytes:rendered.bytes,versionLabel:`${template.versionLabel}-${stamp}`,status:"ready",note:"Automaticky vytvořený dokument",
       unitId:operation.unitId??undefined,partyId:operation.partyId??undefined,salesCaseId:operation.salesCaseId??undefined,contractId:operation.contractId??undefined});
     await this.repository.complete({...input,operationId:operation.id,documentId:upload.documentId,documentVersionId:upload.documentVersionId,renderedContentHash:renderedHash});
     return{operationId:operation.id,documentId:upload.documentId,documentVersionId:upload.documentVersionId,replayed:upload.replayed};

@@ -45,8 +45,12 @@ export class SharePointDocumentUploadService{
       }
       const uploaded=await this.uploadOrRecover(graphConnection,reservation,target.parentItemId,target.fileName,input.bytes,input.mimeType);
       const externalVersionId=await this.externalVersionId(graphConnection,uploaded);
+      // SharePoint can normalize Office packages. Evidence must hash the exact
+      // persisted native version, not merely the pre-upload transport bytes.
+      const persisted=await graphRead(()=>this.graph.downloadFile(graphConnection,uploaded.itemId,externalVersionId??undefined));
+      const storedContentHash=`sha256:${sha256(persisted)}`;
       await this.repository.recordGraphUpload({...input,operationId:reservation.id,driveId:uploaded.driveId,itemId:uploaded.itemId,
-        webUrl:uploaded.webUrl,etag:uploaded.etag,externalVersionId,fileSize:uploaded.size});
+        webUrl:uploaded.webUrl,etag:uploaded.etag,externalVersionId,fileSize:persisted.byteLength,storedContentHash});
     }
     const finalized=await this.repository.finalizeUpload({...input,operationId:reservation.id});
     const completed=await this.repository.getUploadReservation({...input,operationId:reservation.id});
