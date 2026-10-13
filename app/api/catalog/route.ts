@@ -104,10 +104,11 @@ function adaptBackendCatalog(catalog: BackendCatalog, priceBreakdowns?: BackendP
     };
   });
   const units = catalog.units.map((unit): UnitRecord => {
-    const legacyBreakdown = priceBreakdowns?.[unit.code];
-    const unitPrice = unit.unitPrice ?? legacyBreakdown?.unitPrice ?? null;
+    const legacyBreakdown = priceBreakdowns?.[unit.id];
+    // Explicit null means missing price or denied access, never a legacy fallback.
+    const unitPrice = unit.unitPrice !== undefined ? unit.unitPrice : legacyBreakdown?.unitPrice ?? null;
     const accessoryPrice = unit.accessoryPrice ?? legacyBreakdown?.accessoryPrice ?? 0;
-    const totalPrice = unit.totalPrice ?? legacyBreakdown?.totalPrice ?? null;
+    const totalPrice = unit.totalPrice !== undefined ? unit.totalPrice : legacyBreakdown?.totalPrice ?? null;
     return {
       backendId:unit.id,projectBackendId:unit.projectId,projectCode:catalog.projects.find(project=>project.id===unit.projectId)?.code,structureId:unit.structureId,id: unit.code, project: unit.projectName, building: unit.structureName ?? "Bez zařazení",
       layout: unit.layout ?? "—", area: unit.areaM2, floor: unit.floorLabel ?? "—",

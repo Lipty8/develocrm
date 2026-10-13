@@ -123,7 +123,7 @@ test("client views, unit commercial context and exports use the Block C reposito
 test("prices and contracts use the Block D repository without duplicating workflow data",async()=>{
   const [app,repository,route]=await Promise.all([readFile(appUrl,"utf8"),readFile(commercialRepositoryUrl,"utf8"),readFile(commercialRouteUrl,"utf8")]);
   assert.match(app,/commercialRepository\.getSnapshot/);
-  assert.match(app,/unitPriceHistories\[unit\.id\]/);
+  assert.match(app,/unitPriceHistories\[unit\.backendId\?\?unit\.id\]/);
   assert.match(app,/contracts\.filter\(contract=>contract\.unit===unit\.id\)/);
   assert.match(app,/latest\.number/);
   assert.match(repository,/interface CommercialRepository/);
