@@ -9,7 +9,7 @@ import { RowActionMenu } from "./components/row-action-menu";
 import { SummaryStats, toggledSummaryFilter } from "./components/summary-stats";
 import {ContractDocumentEvidence,type ContractDocumentVersion} from "./components/contract-document-evidence";
 import {ProjectArchiveAction} from './components/project-archive-action';
-import {PROJECT_VISIBILITY_OPTIONS,isArchivedProject,isActiveProject,type ProjectVisibility} from './lib/project-visibility';
+import {PROJECT_VISIBILITY_OPTIONS,isArchivedProject,isActiveProject,matchesProjectVisibility,type ProjectVisibility} from './lib/project-visibility';
 import {apiFetch} from "./lib/api-client";
 import {
   Activity,
@@ -938,12 +938,14 @@ function Dashboard({ navigate, openUnit, taskRows, toggleTask }: { navigate: (pa
   );
 }
 
-function Projects({ openProject }: { openProject: (project: ProjectRecord) => void }) {
+export function Projects({ openProject,loadCatalog=catalogRepository.getCatalog }: { openProject: (project: ProjectRecord) => void;loadCatalog?:typeof catalogRepository.getCatalog }) {
   const [visibility,setVisibility]=useState<ProjectVisibility>('visible');
-  const [rows,setRows]=useState<ProjectRecord[]>(projects);
+  const [portfolio,setPortfolio]=useState<ProjectRecord[]|null>(null);
   const [loadError,setLoadError]=useState('');
-  useEffect(()=>{const controller=new AbortController();catalogRepository.getCatalog(controller.signal,undefined,visibility).then(snapshot=>{setRows(snapshot.projects);setLoadError('');}).catch(()=>{if(!controller.signal.aborted)setLoadError('Projekty se nepodařilo načíst.');});return()=>controller.abort();},[visibility]);
-  const visibleProjects=projects.filter(project=>!isArchivedProject(project));
+  useEffect(()=>{const controller=new AbortController();loadCatalog(controller.signal,undefined,'all').then(snapshot=>{if(!controller.signal.aborted){setPortfolio(snapshot.projects);setLoadError('');}}).catch(()=>{if(!controller.signal.aborted)setLoadError('Projekty se nepodařilo načíst.');});return()=>controller.abort();},[loadCatalog]);
+  if(!portfolio)return <section className="card"><p role={loadError?'alert':'status'}>{loadError||'Načítám projekty…'}</p></section>;
+  const rows=portfolio.filter(project=>matchesProjectVisibility(project,visibility));
+  const visibleProjects=portfolio.filter(project=>!isArchivedProject(project));
   const totals = visibleProjects.reduce((sum, project) => { const aggregation=projectSalesAggregation(project); return ({
     units: sum.units + project.units,
     preReservation: sum.preReservation + aggregation.inNegotiation,
@@ -958,7 +960,7 @@ function Projects({ openProject }: { openProject: (project: ProjectRecord) => vo
         <div><span className="metric-icon green"><CheckCircle2 size={20} /></span><span><small>Prodané</small><strong>{totals.sold}</strong></span></div>
       </div>
       <label className="project-visibility-filter"><span>Zobrazení projektů</span><select aria-label="Zobrazení projektů" value={visibility} onChange={event=>setVisibility(event.target.value as ProjectVisibility)}>{PROJECT_VISIBILITY_OPTIONS.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-      {loadError&&<p role="alert">{loadError}</p>}
+      {!rows.length&&<p role="status">Žádný projekt v tomto zobrazení.</p>}
       <div className="project-cards">
         {rows.map((project) => { const aggregation=projectSalesAggregation(project); return (
           <article className="project-card card" key={project.name} role="button" tabIndex={0} aria-label={`Otevřít projekt ${project.name}`} onClick={() => openProject(project)} onKeyDown={(event) => { if(event.key==="Enter"||event.key===" "){event.preventDefault();openProject(project);} }}>

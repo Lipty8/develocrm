@@ -4,14 +4,15 @@ import React,{useState} from "react";
 import {JSDOM} from "jsdom";
 import {RowActionMenu} from "../app/components/row-action-menu";
 import {ProjectArchiveAction} from '../app/components/project-archive-action';
-import type {ProjectRecord} from '../app/crm-data';
+import {projects as sampleProjects,type ProjectRecord} from '../app/crm-data';
+import type {CatalogSnapshot} from '../app/repositories/catalog-repository';
 import {TableColumnMenu,TableColumnPreferenceProvider,useTableColumns,type TableColumnDefinition} from "../app/components/table-column-config";
 import {TableColumnFilter} from "../app/components/table-column-filter";
 import {SummaryStats,toggledSummaryFilter} from "../app/components/summary-stats";
 import {projectSalesAggregation,projectUnitSalesBucket,type ProjectSalesBucket} from "../app/lib/project-sales-performance";
 import {contractSummaryCategory,contractSummaryCounts,type ContractSummaryCategory} from "../app/lib/contract-summary";
 import {PackageOpen,UserRound,Users} from "lucide-react";
-import {ClientChangeStatusModal,ComplaintDetailModal,ContractAddendumModal,ContractNoteModal,FormModal,PaymentDetailModal,PaymentRefundForm,paymentRefundAvailability} from "../app/CRMApp";
+import {Projects,ClientChangeStatusModal,ComplaintDetailModal,ContractAddendumModal,ContractNoteModal,FormModal,PaymentDetailModal,PaymentRefundForm,paymentRefundAvailability} from "../app/CRMApp";
 
 let cleanup:()=>void;
 let render:typeof import("@testing-library/react").render;
@@ -20,6 +21,32 @@ let fireEvent:typeof import("@testing-library/react").fireEvent;
 let waitFor:typeof import("@testing-library/react").waitFor;
 let act:typeof import("@testing-library/react").act;
 let userEvent:typeof import("@testing-library/user-event").default;
+
+test('portfolio nepřebírá stará projektová data a KPI zůstává stejné při změně filtru',async()=>{
+ let resolveCatalog!:(snapshot:CatalogSnapshot)=>void;let requests=0;
+ const response=new Promise<CatalogSnapshot>(resolve=>{resolveCatalog=resolve;});
+ const loadCatalog=()=>{requests++;return response;};
+ const base={...sampleProjects[0],backendId:undefined,coverImageUrl:null,buildings:[],available:0,preReserved:0,reserved:0,sold:0,handedOver:0};
+ const records=[{...base,name:'Portfolio active',lifecycleStatus:'active',units:2,available:2},{...base,name:'Portfolio completed',lifecycleStatus:'completed',units:3,available:3},{...base,name:'Portfolio archived',lifecycleStatus:'completed',archivedAt:'2026-10-14T10:00:00Z',units:99,available:99}] as ProjectRecord[];
+ render(<Projects openProject={()=>{}} loadCatalog={loadCatalog}/>);
+ assert.ok(screen.getByRole('status').textContent?.includes('Načítám projekty'));
+ assert.equal(screen.queryByText('Aktivní projekty'),null);
+ await act(async()=>resolveCatalog({projects:records,units:[],accessories:[],memberships:[],structures:[],source:'backend-api'}));
+ const metric=(label:string)=>screen.getByText(label).parentElement?.querySelector('strong')?.textContent;
+ assert.equal(metric('Aktivní projekty'),'1');assert.equal(metric('Jednotky celkem'),'5');
+ assert.ok(screen.getByRole('heading',{name:'Portfolio completed'}));assert.equal(screen.queryByRole('heading',{name:'Portfolio archived'}),null);
+ const user=userEvent.setup();await user.selectOptions(screen.getByRole('combobox',{name:'Zobrazení projektů'}),'completed');
+ assert.equal(screen.queryByRole('heading',{name:'Portfolio active'}),null);assert.ok(screen.getByRole('heading',{name:'Portfolio completed'}));
+ await user.selectOptions(screen.getByRole('combobox',{name:'Zobrazení projektů'}),'archived');
+ assert.ok(screen.getByRole('heading',{name:'Portfolio archived'}));assert.equal(metric('Jednotky celkem'),'5');
+ await user.selectOptions(screen.getByRole('combobox',{name:'Zobrazení projektů'}),'visible');
+ assert.equal(screen.queryByRole('heading',{name:'Portfolio archived'}),null);assert.equal(requests,1);
+});
+
+test('chyba načtení portfolia nevydává nuly nebo stará data za aktuální KPI',async()=>{
+ render(<Projects openProject={()=>{}} loadCatalog={async()=>{throw new Error('transport unavailable');}}/>);
+ await screen.findByRole('alert');assert.equal(screen.queryByText('Aktivní projekty'),null);
+});
 
 test('archivace projektu vyžaduje potvrzení, ukáže závazky a obnovuje bez změny obchodního stavu',async()=>{
  const calls:Array<{url:string;body?:string}>=[];let changed=0;
