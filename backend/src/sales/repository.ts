@@ -1,4 +1,5 @@
 import type { Database, SqlClient } from "../database.js";
+import {archiveReadSql} from '../inventory/project-visibility.js';
 import { deriveClientRelationshipStatus, type ClientRelationshipStatus } from "../shared/client-relationship.js";
 
 export type ClientDirectoryItem = {
@@ -82,8 +83,9 @@ export class SalesRepository {
     return rows.rows.map(row=>{const reasons:string[]=[];if(email&&normalizeEmail(row.email)===email)reasons.push("Stejný e-mail");if(phone&&normalizePhone(row.phone)===phone)reasons.push("Stejný telefon");if(registration&&normalizeRegistration(row.registration_number)===registration)reasons.push("Stejné IČO");if(name&&normalizeText(row.display_name)===name)reasons.push("Stejné jméno nebo název");const strong=reasons.some(reason=>reason!=="Stejné jméno nebo název");return{id:row.id,name:row.display_name,kind:row.party_type==="individual"?"FO":"PO",strength:strong?"strong":"possible",reasons,email:row.email??"",phone:row.phone??"",projects:row.projects,units:row.units};});
   }
 
-  async getDirectory(input: Context&{includeArchived?:boolean}): Promise<{ clients: ClientDirectoryItem[]; unitContexts: Record<string, UnitCommercialContext> }> {
+  async getDirectory(input: Context&{includeArchived?:boolean;projectId?:string}): Promise<{ clients: ClientDirectoryItem[]; unitContexts: Record<string, UnitCommercialContext> }> {
     return this.database.withContext({ tenantId: input.tenantId, userId: input.userId }, async (client) => {
+      const archiveRead=await archiveReadSql(client,Boolean(input.projectId));
       const hasPartyScope=Boolean((await client.query("SELECT 1 FROM pg_proc procedure JOIN pg_namespace namespace ON namespace.oid=procedure.pronamespace WHERE namespace.nspname='app' AND procedure.proname='can_access_party'")).rowCount);
       const archivedAccess="($3::boolean AND party.lifecycle_status='archived' AND EXISTS(SELECT 1 FROM party_project_links archive_link WHERE archive_link.tenant_id=party.tenant_id AND archive_link.party_id=party.id AND app.has_project_permission(party.tenant_id,$2,archive_link.project_id,'clients.archive')))";
       const partyAccess=hasPartyScope?`(app.can_access_party(party.tenant_id,$2,party.id,false) OR ${archivedAccess})`:"true";
@@ -116,7 +118,7 @@ export class SalesRepository {
                    AND sales_case.project_id=project.id AND sales_case.status='active' AND sales_case.current_stage<>'interest'
                )) active_buyer_relationship
              FROM party_project_links link JOIN projects project ON project.tenant_id=link.tenant_id AND project.id=link.project_id
-             WHERE link.tenant_id=party.tenant_id AND link.party_id=party.id AND link.valid_to IS NULL AND project.archived_at IS NULL
+             WHERE link.tenant_id=party.tenant_id AND link.party_id=party.id AND link.valid_to IS NULL AND (project.archived_at IS NULL OR (${archiveRead}))
                AND app.has_project_permission(link.tenant_id,$2,link.project_id,'clients.read')
              GROUP BY project.id,project.name
            ) linked
@@ -125,7 +127,7 @@ export class SalesRepository {
            SELECT jsonb_agg(DISTINCT unit.code ORDER BY unit.code) items
            FROM unit_interests interest JOIN units unit ON unit.tenant_id=interest.tenant_id AND unit.id=interest.unit_id
            WHERE interest.tenant_id=party.tenant_id AND interest.party_id=party.id AND unit.archived_at IS NULL
-             AND EXISTS(SELECT 1 FROM projects active_project WHERE active_project.tenant_id=interest.tenant_id AND active_project.id=interest.project_id AND active_project.archived_at IS NULL)
+             AND EXISTS(SELECT 1 FROM projects active_project WHERE active_project.tenant_id=interest.tenant_id AND active_project.id=interest.project_id AND (active_project.archived_at IS NULL OR (${archiveRead.replaceAll("project.id","active_project.id")})))
              AND app.has_project_permission(interest.tenant_id,$2,interest.project_id,'clients.read')
          ) unit_rows ON true
          LEFT JOIN LATERAL (
@@ -136,7 +138,7 @@ export class SalesRepository {
            FROM unit_interests interest JOIN units unit ON unit.tenant_id=interest.tenant_id AND unit.id=interest.unit_id
            JOIN projects project ON project.tenant_id=interest.tenant_id AND project.id=interest.project_id
            LEFT JOIN LATERAL (SELECT outcome FROM interest_events event WHERE event.tenant_id=interest.tenant_id AND event.unit_interest_id=interest.id ORDER BY occurred_at DESC LIMIT 1) latest ON true
-           WHERE interest.tenant_id=party.tenant_id AND interest.party_id=party.id AND project.archived_at IS NULL AND unit.archived_at IS NULL
+           WHERE interest.tenant_id=party.tenant_id AND interest.party_id=party.id AND (project.archived_at IS NULL OR (${archiveRead})) AND unit.archived_at IS NULL
              AND app.has_project_permission(interest.tenant_id,$2,interest.project_id,'clients.read')
          ) history ON true
          WHERE party.tenant_id=$1 AND party.lifecycle_status<>'merged'
@@ -177,7 +179,7 @@ export class SalesRepository {
            ${contractColumns}
          FROM party_units relation
          JOIN units unit ON unit.tenant_id=$1 AND unit.id=relation.unit_id AND unit.archived_at IS NULL
-         JOIN projects project ON project.tenant_id=$1 AND project.id=relation.project_id AND project.archived_at IS NULL
+         JOIN projects project ON project.tenant_id=$1 AND project.id=relation.project_id AND (project.archived_at IS NULL OR (${archiveRead}))
          ${contractJoin}
          WHERE app.has_project_permission($1,$2,project.id,'clients.read')
          ORDER BY relation.party_id,project.name,unit.code`,[input.tenantId,input.membershipId]);
@@ -241,7 +243,7 @@ export class SalesRepository {
          LEFT JOIN LATERAL (SELECT jsonb_build_object('id',id,'type',hold_type,'expiresAt',expires_at,'isExpirable',hold_type='pre_reservation') item FROM unit_holds
            WHERE tenant_id=unit.tenant_id AND unit_id=unit.id AND status='active' AND (hold_type='reservation' OR expires_at>now()) ORDER BY expires_at DESC LIMIT 1) hold ON true
          WHERE unit.tenant_id=$1 AND unit.archived_at IS NULL
-           AND EXISTS(SELECT 1 FROM projects active_project WHERE active_project.tenant_id=unit.tenant_id AND active_project.id=unit.project_id AND active_project.archived_at IS NULL)
+           AND EXISTS(SELECT 1 FROM projects active_project WHERE active_project.tenant_id=unit.tenant_id AND active_project.id=unit.project_id AND (active_project.archived_at IS NULL OR (${archiveRead.replaceAll("project.id","active_project.id")})))
            AND app.has_project_permission(unit.tenant_id,$2,unit.project_id,'sales_case.read')`,
         hasPartyScope?[input.tenantId,input.membershipId,Boolean(input.includeArchived)]:[input.tenantId,input.membershipId],
       );

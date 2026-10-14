@@ -10,7 +10,7 @@ export type ArchiveImpact={units:number;interests:number;salesCases:number;contr
 export type RemovalOutcome={mode:"delete"|"archive";impact:ArchiveImpact};
 export type NewPartyInput={projectId:string;kind:"individual"|"organization";salutation?:string;firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;email?:string;phone?:string;duplicateOverride?:boolean};
 export interface ClientRepository {
-  getDirectory(signal?:AbortSignal):Promise<ClientSnapshot>;
+  getDirectory(signal?:AbortSignal,projectId?:string):Promise<ClientSnapshot>;
   getPage(input:ClientPageInput,signal?:AbortSignal):Promise<{clients:ClientRecord[];total:number;page:number;pageSize:number}>;
   exportContacts(partyIds:string[],format:"bcc"|"csv"):Promise<{value:string;count:number}>;
   updateParty(input:{id:string;displayName:string}):Promise<void>;
@@ -25,8 +25,8 @@ export interface ClientRepository {
   addActivity(input:{partyId:string;activityType:"note"|"call"|"email"|"meeting"|"other";note:string}):Promise<{id:string}>;
 }
 export class ApiClientRepository implements ClientRepository {
-  async getDirectory(signal?:AbortSignal):Promise<ClientSnapshot> {
-    const response=await apiFetch("/api/clients",{signal,cache:"no-store"});
+  async getDirectory(signal?:AbortSignal,projectId?:string):Promise<ClientSnapshot> {
+    const response=await apiFetch(`/api/clients${projectId?`?projectId=${encodeURIComponent(projectId)}`:""}`,{signal,cache:"no-store"});
     if(!response.ok)throw new Error("Klienty se nepodařilo načíst");
     const snapshot=await response.json() as ClientSnapshot;if(typeof window!=="undefined"&&clientUsesBrowserAdapter()){const edits=JSON.parse(localStorage.getItem("develocrm.client.edits")||"{}");snapshot.clients=snapshot.clients.map(c=>({...c,...(edits[c.id]||{})}));const created=JSON.parse(localStorage.getItem("develocrm.new.clients")||"[]");snapshot.clients.push(...created.filter((row:{id:string})=>!snapshot.clients.some(item=>item.id===row.id)));applyPreviewSalesCommands(snapshot);}return snapshot;
   }

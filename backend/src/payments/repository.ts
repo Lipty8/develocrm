@@ -1,4 +1,5 @@
 import type {Database} from "../database.js";
+import {archiveReadSql} from '../inventory/project-visibility.js';
 
 type Context={tenantId:string;userId:string;membershipId:string};
 export type PaymentListInput=Context&{projectId?:string;unitId?:string;partyId?:string;contractId?:string;salesCaseId?:string;status?:string;query?:string;sort?:string;direction?:"asc"|"desc"};
@@ -7,6 +8,7 @@ export class PaymentRepository{
   constructor(private readonly database:Database){}
   list(input:PaymentListInput){
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
+      const archiveRead=await archiveReadSql(client,Boolean(input.projectId||input.unitId||input.contractId));
       const hasRefunds=(await client.query("SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='payment_refunds'")).rows.length>0;
       const hasRefundDecisions=(await client.query("SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='payment_refund_decisions'")).rows.length>0;
       const hasDueDateChanges=(await client.query("SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='payment_due_date_changes'")).rows.length>0;
@@ -43,7 +45,7 @@ export class PaymentRepository{
        ${hasDueDateChanges?"LEFT JOIN LATERAL(SELECT json_agg(json_build_object('id',change.id,'previousDueAt',change.previous_due_at,'newDueAt',change.new_due_at,'reason',change.reason,'changedAt',change.changed_at,'changedBy',actor_user.display_name) ORDER BY change.changed_at DESC,change.id DESC) items FROM payment_due_date_changes change JOIN tenant_memberships actor_membership ON actor_membership.tenant_id=change.tenant_id AND actor_membership.id=change.changed_by_membership_id JOIN users actor_user ON actor_user.id=actor_membership.user_id WHERE change.tenant_id=obligation.tenant_id AND change.obligation_id=obligation.id) due_changes ON true":""}
        LEFT JOIN LATERAL(SELECT json_agg(json_build_object('id',event.id,'type',event.event_type,'at',event.recorded_at,'payload',event.payload) ORDER BY event.recorded_at DESC) items
          FROM payment_events event WHERE event.tenant_id=obligation.tenant_id AND event.obligation_id=obligation.id) events ON true
-       WHERE obligation.tenant_id=$1 AND project.archived_at IS NULL AND unit.archived_at IS NULL
+       WHERE obligation.tenant_id=$1 AND (project.archived_at IS NULL OR (${archiveRead})) AND unit.archived_at IS NULL
         AND app.has_project_permission(obligation.tenant_id,$2,obligation.project_id,'payments.read')
         AND ($3::uuid IS NULL OR obligation.project_id=$3) AND ($4::uuid IS NULL OR obligation.unit_id=$4)
         AND ($5::uuid IS NULL OR obligation.party_id=$5) AND ($6::uuid IS NULL OR obligation.contract_id=$6)

@@ -1,7 +1,8 @@
 import type { Database } from "../database.js";
+import {archiveReadSql} from './project-visibility.js';
 
 export type CatalogProject = {
-  id: string; code: string; name: string; location: string | null; lifecycleStatus: string;
+  id: string; code: string; name: string; location: string | null; lifecycleStatus: string; archivedAt:string|null;
   manager: string | null; managerMembershipId:string|null; plannedHandoverFrom: string | null; plannedHandoverTo: string | null;
   constructionStatus: string | null;
   counts: Record<string, number>;
@@ -20,6 +21,26 @@ export type CatalogUnit = {
 
 export class InventoryRepository {
   constructor(private readonly database: Database) {}
+
+  async archiveImpact(input:{tenantId:string;userId:string;membershipId:string;projectId:string}){
+    return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
+      const allowed=await client.query<{allowed:boolean}>(`SELECT app.can_manage_project_archive($1,$2,$3) allowed`,[input.tenantId,input.membershipId,input.projectId]);
+      if(!allowed.rows[0]?.allowed)throw new Error('project archive permission required');
+      const result=await client.query<{activeCases:number;activeContracts:number;unpaidObligations:number}>(`SELECT
+        (SELECT count(*)::int FROM sales_cases WHERE tenant_id=$1 AND project_id=$2 AND status='active') "activeCases",
+        (SELECT count(*)::int FROM contracts WHERE tenant_id=$1 AND project_id=$2 AND current_status NOT IN ('cancelled','terminated')) "activeContracts",
+        (SELECT count(*)::int FROM payment_obligations o WHERE tenant_id=$1 AND project_id=$2 AND app.payment_obligation_status(o.tenant_id,o.id,now()) NOT IN ('paid','cancelled')) "unpaidObligations"
+        FROM projects WHERE tenant_id=$1 AND id=$2`,[input.tenantId,input.projectId]);
+      if(!result.rows[0])throw new Error('project not found');
+      return result.rows[0];
+    });
+  }
+
+  async setArchived(input:{tenantId:string;userId:string;membershipId:string;projectId:string;archived:boolean;restoreLifecycle?:string}){
+    if(typeof input.archived!=='boolean')throw new Error('invalid archive state');
+    return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{changed:boolean}>(
+      'SELECT app.set_project_archived($1,$2,$3,$4,$5) changed',[input.tenantId,input.projectId,input.membershipId,input.archived,input.restoreLifecycle??null])).rows[0]);
+  }
 
   async createProject(input: {
     tenantId:string; userId:string; membershipId:string; name:string; code:string;
@@ -40,8 +61,22 @@ export class InventoryRepository {
     });
   }
 
-  async getCatalog(input: { tenantId: string; userId: string; membershipId: string; projectId?:string }) {
+  async getCatalog(input: { tenantId: string; userId: string; membershipId: string; projectId?:string; visibility?:string;unitId?:string;contractId?:string;partyId?:string }) {
     return this.database.withContext({ tenantId: input.tenantId, userId: input.userId }, async (client) => {
+      if(input.unitId||input.contractId){
+        const relation=input.unitId?'units':'contracts';const permission=input.unitId?'unit.read':'contract.read';
+        const owner=await client.query<{project_id:string}>(`SELECT project_id FROM ${relation} WHERE tenant_id=$1 AND id=$3 AND app.has_project_permission($1,$2,project_id,$4)`,[input.tenantId,input.membershipId,input.unitId??input.contractId,permission]);
+        // Fail closed rather than returning unrelated global data for an unknown entity.
+        input={...input,projectId:owner.rows[0]?.project_id??'00000000-0000-0000-0000-000000000000'};
+      }
+      if(input.partyId){
+        const owner=await client.query<{project_id:string}>(`SELECT link.project_id FROM party_project_links link JOIN projects project ON project.tenant_id=link.tenant_id AND project.id=link.project_id
+          WHERE link.tenant_id=$1 AND link.party_id=$3 AND app.has_project_permission($1,$2,link.project_id,'clients.read') AND app.has_project_permission($1,$2,link.project_id,'project.read')
+          ORDER BY (project.archived_at IS NOT NULL),link.project_id LIMIT 1`,[input.tenantId,input.membershipId,input.partyId]);
+        input={...input,projectId:owner.rows[0]?.project_id??'00000000-0000-0000-0000-000000000000'};
+      }
+      const archiveRead=await archiveReadSql(client,true);
+      const scopedArchiveRead=input.projectId?archiveRead:'false';
       const businessProjection = await client.query<{available:boolean}>(
         `SELECT to_regprocedure('app.unit_business_projection(uuid,uuid)') IS NOT NULL AS available`,
       );
@@ -52,11 +87,11 @@ export class InventoryRepository {
         ? "CROSS JOIN LATERAL app.unit_business_projection(unit.tenant_id,unit.id) projection"
         : "";
       const projects = await client.query<{
-        id: string; code: string; name: string; location: string | null; lifecycle_status: string;
+        id: string; code: string; name: string; location: string | null; lifecycle_status: string; archived_at:string|null;
         manager: string | null; manager_membership_id:string|null; planned_handover_from: string | null; planned_handover_to: string | null;
         construction_status: string | null; counts: Record<string, number>;
       }>(
-        `SELECT project.id, project.code, project.name, project.location, project.lifecycle_status,
+        `SELECT project.id, project.code, project.name, project.location, project.lifecycle_status,project.archived_at::text,
                 manager_user.display_name AS manager,project.manager_membership_id,
                 project.planned_handover_from::text, project.planned_handover_to::text,
                 construction.status_code AS construction_status,
@@ -78,11 +113,16 @@ export class InventoryRepository {
                  WHERE unit.tenant_id = project.tenant_id AND unit.project_id = project.id AND unit.archived_at IS NULL
                  GROUP BY ${businessBucket}) grouped
          ) status_counts ON true
-         WHERE project.tenant_id = $1 AND project.archived_at IS NULL
+         WHERE project.tenant_id = $1
+           AND (project.archived_at IS NULL OR ${archiveRead})
+           AND CASE $4::text WHEN 'archived' THEN project.archived_at IS NOT NULL
+             WHEN 'all' THEN true WHEN 'active' THEN project.archived_at IS NULL AND project.lifecycle_status='active'
+             WHEN 'completed' THEN project.archived_at IS NULL AND project.lifecycle_status='completed'
+             ELSE project.archived_at IS NULL OR ($3::uuid IS NOT NULL AND ${archiveRead}) END
            AND ($3::uuid IS NULL OR project.id=$3)
            AND app.has_project_permission(project.tenant_id, $2, project.id, 'project.read')
          ORDER BY project.name`,
-        [input.tenantId, input.membershipId,input.projectId??null],
+        [input.tenantId, input.membershipId,input.projectId??null,input.visibility??'visible'],
       );
       const pricingProjection = await client.query<{available:boolean}>(
         `SELECT to_regclass('unit_price_history') IS NOT NULL
@@ -138,7 +178,7 @@ export class InventoryRepository {
            WHERE assignment.tenant_id=unit.tenant_id AND assignment.unit_id=unit.id
              AND assignment.valid_from <= now() AND (assignment.valid_to IS NULL OR assignment.valid_to > now())
          ) accessory_rows ON true
-         WHERE unit.tenant_id=$1 AND unit.archived_at IS NULL AND project.archived_at IS NULL
+         WHERE unit.tenant_id=$1 AND unit.archived_at IS NULL AND (project.archived_at IS NULL OR (${scopedArchiveRead}))
            AND ($3::uuid IS NULL OR unit.project_id=$3)
            AND app.has_project_permission(unit.tenant_id, $2, unit.project_id, 'unit.read')
          ORDER BY project.name, unit.code`,
@@ -191,14 +231,14 @@ export class InventoryRepository {
            LEFT JOIN users actor_user ON actor_user.id=actor.user_id
            WHERE assignment.tenant_id=accessory.tenant_id AND assignment.accessory_id=accessory.id
          ) history ON true
-         WHERE accessory.tenant_id=$1 AND project.archived_at IS NULL AND app.has_project_permission(accessory.tenant_id,$2,accessory.project_id,'accessory.read')
+         WHERE accessory.tenant_id=$1 AND (project.archived_at IS NULL OR (${scopedArchiveRead})) AND app.has_project_permission(accessory.tenant_id,$2,accessory.project_id,'accessory.read')
            AND ($3::uuid IS NULL OR accessory.project_id=$3) ORDER BY project.name,type.category,accessory.code`,[input.tenantId,input.membershipId,input.projectId??null]);
       const memberships=await client.query<{id:string;name:string}>(`SELECT membership.id,user_row.display_name name FROM tenant_memberships membership JOIN users user_row ON user_row.id=membership.user_id WHERE membership.tenant_id=$1 AND membership.status='active' ORDER BY user_row.display_name`,[input.tenantId]);
-      const structures=await client.query<{id:string;project_id:string;project_name:string;name:string;kind:string}>(`SELECT structure.id,structure.project_id,project.name project_name,structure.name,structure.kind FROM project_structures structure JOIN projects project ON project.tenant_id=structure.tenant_id AND project.id=structure.project_id WHERE structure.tenant_id=$1 AND structure.archived_at IS NULL AND project.archived_at IS NULL AND app.has_project_permission(structure.tenant_id,$2,structure.project_id,'project.read') AND ($3::uuid IS NULL OR structure.project_id=$3) ORDER BY project.name,structure.sort_order,structure.name`,[input.tenantId,input.membershipId,input.projectId??null]);
+      const structures=await client.query<{id:string;project_id:string;project_name:string;name:string;kind:string}>(`SELECT structure.id,structure.project_id,project.name project_name,structure.name,structure.kind FROM project_structures structure JOIN projects project ON project.tenant_id=structure.tenant_id AND project.id=structure.project_id WHERE structure.tenant_id=$1 AND structure.archived_at IS NULL AND (project.archived_at IS NULL OR (${scopedArchiveRead})) AND app.has_project_permission(structure.tenant_id,$2,structure.project_id,'project.read') AND ($3::uuid IS NULL OR structure.project_id=$3) ORDER BY project.name,structure.sort_order,structure.name`,[input.tenantId,input.membershipId,input.projectId??null]);
       return {
         projects: projects.rows.map((row): CatalogProject => ({
           id: row.id, code: row.code, name: row.name, location: row.location,
-          lifecycleStatus: row.lifecycle_status, manager: row.manager,managerMembershipId:row.manager_membership_id,
+          lifecycleStatus: row.lifecycle_status,archivedAt:row.archived_at, manager: row.manager,managerMembershipId:row.manager_membership_id,
           plannedHandoverFrom: row.planned_handover_from, plannedHandoverTo: row.planned_handover_to,
           constructionStatus: row.construction_status, counts: row.counts,
         })),

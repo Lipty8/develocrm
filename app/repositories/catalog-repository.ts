@@ -15,7 +15,7 @@ export type InventoryImportRow={rowNumber:number;idempotencyKey?:string;code?:st
 export type InventoryImportPreview={rows:Array<InventoryImportRow&{action:"create"|"update"|"skip"|"error";errors:string[]}>;summary:{source:number;created:number;updated:number;skipped:number;errors:number;duplicates:number;unknownUnits:number;missingFields:number}};
 
 export interface CatalogRepository {
-  getCatalog(signal?: AbortSignal,projectId?:string): Promise<CatalogSnapshot>;
+  getCatalog(signal?: AbortSignal,projectId?:string,visibility?:string,entity?:{unitId?:string;contractId?:string;partyId?:string}): Promise<CatalogSnapshot>;
   createProject(input:ProjectCreate):Promise<{id:string}>;
   createUnit(projectId:string,input:InventoryImportRow):Promise<void>;
   previewInventoryImport(projectId:string,input:{entityType:InventoryEntityType;rows:InventoryImportRow[];strategy:"update"|"skip"}):Promise<InventoryImportPreview>;
@@ -31,8 +31,8 @@ export interface CatalogRepository {
 }
 
 export class ApiCatalogRepository implements CatalogRepository {
-  async getCatalog(signal?: AbortSignal,projectId?:string): Promise<CatalogSnapshot> {
-    const response = await apiFetch(`/api/catalog${projectId?`?projectId=${encodeURIComponent(projectId)}`:""}`, { signal, cache: "no-store" });
+  async getCatalog(signal?: AbortSignal,projectId?:string,visibility?:string,entity?:{unitId?:string;contractId?:string;partyId?:string}): Promise<CatalogSnapshot> {
+    const response = await apiFetch(`/api/catalog?${new URLSearchParams({...(projectId?{projectId}:{}),...(visibility?{visibility}:{}),...(entity?.unitId?{unitId:entity.unitId}:{}),...(entity?.contractId?{contractId:entity.contractId}:{}),...(entity?.partyId?{partyId:entity.partyId}:{})})}`, { signal, cache: "no-store" });
     if (!response.ok){const payload=await response.json().catch(()=>({})) as {error?:string;correlationId?:string};throw new Error(`${payload.error||"Katalog projektů se nepodařilo načíst"}${payload.correlationId?` · ID chyby ${payload.correlationId}`:""}`);}
     const snapshot=await response.json() as CatalogSnapshot;
     if(typeof window!=="undefined"&&clientUsesBrowserAdapter()) applyPreviewEdits(snapshot);

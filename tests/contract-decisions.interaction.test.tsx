@@ -3,6 +3,8 @@ import {afterEach,before,test} from "node:test";
 import React,{useState} from "react";
 import {JSDOM} from "jsdom";
 import {RowActionMenu} from "../app/components/row-action-menu";
+import {ProjectArchiveAction} from '../app/components/project-archive-action';
+import type {ProjectRecord} from '../app/crm-data';
 import {TableColumnMenu,TableColumnPreferenceProvider,useTableColumns,type TableColumnDefinition} from "../app/components/table-column-config";
 import {TableColumnFilter} from "../app/components/table-column-filter";
 import {SummaryStats,toggledSummaryFilter} from "../app/components/summary-stats";
@@ -18,6 +20,21 @@ let fireEvent:typeof import("@testing-library/react").fireEvent;
 let waitFor:typeof import("@testing-library/react").waitFor;
 let act:typeof import("@testing-library/react").act;
 let userEvent:typeof import("@testing-library/user-event").default;
+
+test('archivace projektu vyžaduje potvrzení, ukáže závazky a obnovuje bez změny obchodního stavu',async()=>{
+ const calls:Array<{url:string;body?:string}>=[];let changed=0;
+ const request=async(input:RequestInfo|URL,init?:RequestInit)=>{calls.push({url:String(input),body:init?.body as string|undefined});return Response.json(init?.method==='PATCH'?{changed:true}:{activeCases:2,activeContracts:1,unpaidObligations:1});};
+ const project={backendId:'00000000-0000-4000-8000-000000000001',name:'Archive UI test',lifecycleStatus:'completed'} as ProjectRecord;
+ const view=render(<ProjectArchiveAction project={project} request={request} onChanged={()=>changed++}/>);
+ const user=userEvent.setup();await user.click(screen.getByRole('button',{name:'Akce projektu'}));await user.click(screen.getByRole('menuitem',{name:'Archivovat projekt'}));
+ await screen.findByText(/Projekt má probíhající obchodní procesy/);assert.equal(calls.filter(call=>call.body).length,0);
+ await user.click(screen.getByRole('button',{name:'Archivovat projekt'}));await waitFor(()=>assert.equal(changed,1));
+ assert.deepEqual(JSON.parse(calls.find(call=>call.body)!.body!),{archived:true});
+ view.rerender(<ProjectArchiveAction project={{...project,archivedAt:'2026-10-14T10:00:00Z'}} request={request} onChanged={()=>changed++}/>);
+ await user.click(screen.getByRole('button',{name:'Akce projektu'}));await user.click(screen.getByRole('menuitem',{name:'Obnovit z archivu'}));
+ await screen.findByText(/Projekt se znovu zobrazí/);await user.click(screen.getByRole('button',{name:'Obnovit z archivu'}));await waitFor(()=>assert.equal(changed,2));
+ assert.deepEqual(JSON.parse(calls.filter(call=>call.body).at(-1)!.body!),{archived:false});
+});
 
 before(async()=>{
   const dom=new JSDOM("<!doctype html><html><body></body></html>",{url:"https://develocrm.test"});

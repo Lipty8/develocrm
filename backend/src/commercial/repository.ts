@@ -1,4 +1,5 @@
 import type { Database } from "../database.js";
+import {archiveReadSql} from '../inventory/project-visibility.js';
 import { contractStatusLabel, recommendedContractAction } from "../shared/contract-workflow.js";
 import {signedEvidenceState} from '../diagnostics/consistency-checker.js';
 
@@ -14,6 +15,7 @@ export class CommercialRepository {
 
   async getSnapshot(input:Context&{projectId?:string}):Promise<CommercialSnapshot>{
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async(client)=>{
+      const archiveRead=await archiveReadSql(client,Boolean(input.projectId));
       const prices=await client.query<{id:string;unit_id:string;unit:string;type:string;amount:number;amount_net:number|null;currency:string;valid_from:string;valid_to:string|null;reason:string;author:string;approver:string|null}>(
         `SELECT price.id,unit.id unit_id,unit.code unit,price.price_type type,price.amount::float8 amount,price.amount_net::float8 amount_net,price.currency,
           price.valid_from,price.valid_to,price.reason,author.display_name author,approver.display_name approver
@@ -23,7 +25,7 @@ export class CommercialRepository {
          LEFT JOIN tenant_memberships approver_membership ON approver_membership.tenant_id=price.tenant_id AND approver_membership.id=price.approved_by_membership_id
          LEFT JOIN users approver ON approver.id=approver_membership.user_id
          WHERE price.tenant_id=$1 AND unit.archived_at IS NULL
-           AND EXISTS(SELECT 1 FROM projects active_project WHERE active_project.tenant_id=price.tenant_id AND active_project.id=price.project_id AND active_project.archived_at IS NULL)
+           AND EXISTS(SELECT 1 FROM projects active_project WHERE active_project.tenant_id=price.tenant_id AND active_project.id=price.project_id AND (active_project.archived_at IS NULL OR (${archiveRead.replaceAll("project.id","active_project.id")})))
            AND app.has_project_permission(price.tenant_id,$2,price.project_id,'price.read')
            AND ($3::uuid IS NULL OR price.project_id=$3)
          ORDER BY unit.code,price.valid_from DESC,price.recorded_at DESC`,[input.tenantId,input.membershipId,input.projectId??null]);
@@ -70,7 +72,7 @@ export class CommercialRepository {
            JOIN users actor ON actor.id=event_membership.user_id
            WHERE event.tenant_id=contract.tenant_id AND event.contract_id=contract.id) history ON true
          ${notesJoin}
-         WHERE contract.tenant_id=$1 AND project.archived_at IS NULL AND unit.archived_at IS NULL
+         WHERE contract.tenant_id=$1 AND (project.archived_at IS NULL OR (${archiveRead})) AND unit.archived_at IS NULL
            AND app.has_project_permission(contract.tenant_id,$2,contract.project_id,'contract.read')
            AND ($3::uuid IS NULL OR contract.project_id=$3)
          ORDER BY contract.updated_at DESC`,[input.tenantId,input.membershipId,input.projectId??null]);
@@ -80,7 +82,7 @@ export class CommercialRepository {
         JOIN tenant_memberships proposer_membership ON proposer_membership.tenant_id=proposal.tenant_id AND proposer_membership.id=proposal.proposed_by_membership_id JOIN users proposer ON proposer.id=proposer_membership.user_id
         LEFT JOIN tenant_memberships decider_membership ON decider_membership.tenant_id=proposal.tenant_id AND decider_membership.id=proposal.decided_by_membership_id LEFT JOIN users decider ON decider.id=decider_membership.user_id
         WHERE proposal.tenant_id=$1 AND unit.archived_at IS NULL
-          AND EXISTS(SELECT 1 FROM projects active_project WHERE active_project.tenant_id=proposal.tenant_id AND active_project.id=proposal.project_id AND active_project.archived_at IS NULL)
+          AND EXISTS(SELECT 1 FROM projects active_project WHERE active_project.tenant_id=proposal.tenant_id AND active_project.id=proposal.project_id AND (active_project.archived_at IS NULL OR (${archiveRead.replaceAll("project.id","active_project.id")})))
           AND app.has_project_permission(proposal.tenant_id,$2,proposal.project_id,'prices.read')
           AND ($3::uuid IS NULL OR proposal.project_id=$3) ORDER BY proposal.proposed_at DESC`,[input.tenantId,input.membershipId,input.projectId??null]):{rows:[]};
       const priceHistories:Record<string,PriceItem[]>={};
@@ -92,14 +94,14 @@ export class CommercialRepository {
             app.current_unit_accessory_price(unit.tenant_id,unit.id,now())::float8 accessory_price,
             CASE WHEN EXISTS(SELECT 1 FROM unit_price_history price WHERE price.tenant_id=unit.tenant_id AND price.unit_id=unit.id AND price.valid_from<=now()) THEN app.current_unit_sales_price(unit.tenant_id,unit.id,now())::float8 ELSE NULL END total_price
           FROM units unit JOIN projects project ON project.tenant_id=unit.tenant_id AND project.id=unit.project_id
-          WHERE unit.tenant_id=$1 AND unit.archived_at IS NULL AND project.archived_at IS NULL
+          WHERE unit.tenant_id=$1 AND unit.archived_at IS NULL AND (project.archived_at IS NULL OR (${archiveRead}))
             AND app.has_project_permission(unit.tenant_id,$2,unit.project_id,'price.read') AND ($3::uuid IS NULL OR unit.project_id=$3)`
         :`SELECT unit.id unit_id,unit.code unit,
             CASE WHEN EXISTS(SELECT 1 FROM unit_price_history price WHERE price.tenant_id=unit.tenant_id AND price.unit_id=unit.id AND price.valid_from<=now()) THEN app.current_unit_price(unit.tenant_id,unit.id,now())::float8 ELSE NULL END unit_price,
             0::float8 accessory_price,
             CASE WHEN EXISTS(SELECT 1 FROM unit_price_history price WHERE price.tenant_id=unit.tenant_id AND price.unit_id=unit.id AND price.valid_from<=now()) THEN app.current_unit_price(unit.tenant_id,unit.id,now())::float8 ELSE NULL END total_price
           FROM units unit JOIN projects project ON project.tenant_id=unit.tenant_id AND project.id=unit.project_id
-          WHERE unit.tenant_id=$1 AND unit.archived_at IS NULL AND project.archived_at IS NULL
+          WHERE unit.tenant_id=$1 AND unit.archived_at IS NULL AND (project.archived_at IS NULL OR (${archiveRead}))
             AND app.has_project_permission(unit.tenant_id,$2,unit.project_id,'price.read') AND ($3::uuid IS NULL OR unit.project_id=$3)`,[input.tenantId,input.membershipId,input.projectId??null]);
       const priceBreakdowns=Object.fromEntries(breakdownRows.rows.map(row=>[row.unit_id,{unitPrice:row.unit_price,accessoryPrice:row.accessory_price,totalPrice:row.total_price}]));
       const currentPrices=Object.fromEntries(breakdownRows.rows.filter(row=>row.total_price!==null).map(row=>[row.unit_id,row.total_price as number]));

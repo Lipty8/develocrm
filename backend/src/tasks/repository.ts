@@ -1,4 +1,5 @@
 import type {Database} from "../database.js";
+import {archiveReadSql} from '../inventory/project-visibility.js';
 
 type TaskRow={id:string;title:string;description:string|null;project_id:string|null;unit_id:string|null;party_id:string|null;contract_id:string|null;priority:string;due_at:string|null;status:string;assigned_to_membership_id:string;assignee_name:string;project_name:string|null;unit_code:string|null;party_name:string|null;contract_type:string|null;created_at:string;updated_at:string};
 
@@ -20,8 +21,9 @@ const taskSelect=`SELECT task.id,task.title,task.description,task.project_id,tas
  LEFT JOIN contracts contract ON contract.tenant_id=task.tenant_id AND contract.id=task.contract_id`;
 
 export class TaskRepository{constructor(private readonly database:Database){}
- async list(input:{tenantId:string;userId:string;membershipId:string;scope:"mine"|"all"|"completed"}){return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
-   const result=await client.query<TaskRow>(`${taskSelect} WHERE task.tenant_id=$1 AND ($2='all' OR ($2='mine' AND task.assigned_to_membership_id=$3 AND task.status='open') OR ($2='completed' AND task.status='completed')) AND task.status<>'cancelled' AND (task.project_id IS NULL OR app.has_project_permission(task.tenant_id,$3,task.project_id,'tasks.read')) ORDER BY task.status,task.due_at NULLS LAST,task.created_at DESC`,[input.tenantId,input.scope,input.membershipId]);
+ async list(input:{tenantId:string;userId:string;membershipId:string;scope:"mine"|"all"|"completed";projectId?:string}){return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
+   const archiveRead=await archiveReadSql(client,Boolean(input.projectId));
+   const result=await client.query<TaskRow>(`${taskSelect} WHERE task.tenant_id=$1 AND (task.project_id IS NULL OR project.archived_at IS NULL OR (${archiveRead.replaceAll("$2","$3")})) AND ($4::uuid IS NULL OR task.project_id=$4) AND ($2='all' OR ($2='mine' AND task.assigned_to_membership_id=$3 AND task.status='open') OR ($2='completed' AND task.status='completed')) AND task.status<>'cancelled' AND (task.project_id IS NULL OR app.has_project_permission(task.tenant_id,$3,task.project_id,'tasks.read')) ORDER BY task.status,task.due_at NULLS LAST,task.created_at DESC`,[input.tenantId,input.scope,input.membershipId,input.projectId??null]);
    return result.rows.map(taskDto);
  });}
  async create(input:{tenantId:string;userId:string;membershipId:string;projectId?:string;unitId?:string;partyId?:string;contractId?:string;title:string;description?:string;priority:string;dueAt?:string;assigneeMembershipId:string}){return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{

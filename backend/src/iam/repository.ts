@@ -120,7 +120,7 @@ export class IamRepository {
         `SELECT project.id project_id,project.name project_name,
            COALESCE((SELECT array_agg(permission.code ORDER BY permission.code) FROM permissions permission WHERE app.has_project_permission(project.tenant_id,$2,project.id,permission.code)),ARRAY[]::text[]) permissions
          FROM projects project
-         WHERE project.tenant_id=$1 AND project.archived_at IS NULL AND (
+         WHERE project.tenant_id=$1 AND (project.archived_at IS NULL OR app.current_user_has_permission('system.manage')) AND (
            EXISTS(SELECT 1 FROM project_custom_access access WHERE access.tenant_id=project.tenant_id AND access.project_id=project.id AND access.membership_id=$2)
          ) ORDER BY project.name`,[tenantId,row.membership_id],
       );
@@ -161,7 +161,7 @@ export class IamRepository {
          FROM roles role LEFT JOIN role_permissions role_permission ON role_permission.tenant_id=role.tenant_id AND role_permission.role_id=role.id
          LEFT JOIN permissions permission ON permission.id=role_permission.permission_id
          WHERE role.tenant_id=$1 AND role.status='active' GROUP BY role.id ORDER BY role.name`,[input.tenantId]);
-      const projects=await client.query<{id:string;name:string}>("SELECT id,name FROM projects WHERE tenant_id=$1 AND lifecycle_status<>'archived' ORDER BY name",[input.tenantId]);
+      const projects=await client.query<{id:string;name:string}>("SELECT id,name FROM projects WHERE tenant_id=$1 AND archived_at IS NULL ORDER BY name",[input.tenantId]);
       const permissions=await client.query<{code:string;description:string}>("SELECT code,description FROM permissions ORDER BY code");
       const workspaceAssignments=await client.query<{membership_id:string;role_id:string}>(
         "SELECT membership_id,role_id FROM role_assignments WHERE tenant_id=$1 ORDER BY membership_id,role_id",[input.tenantId]);
@@ -281,7 +281,7 @@ export class IamRepository {
     }
     const projectIds=projectAccess.map(access=>access.projectId);
     if(projectIds.length){
-      const validProjects=await client.query("SELECT id FROM projects WHERE tenant_id=$1 AND id=ANY($2::uuid[]) AND lifecycle_status<>'archived'",[input.tenantId,projectIds]);
+      const validProjects=await client.query("SELECT id FROM projects WHERE tenant_id=$1 AND id=ANY($2::uuid[]) AND archived_at IS NULL",[input.tenantId,projectIds]);
       if(validProjects.rowCount!==projectIds.length)throw new Error("Některý zvolený projekt nepatří do aktuálního workspace");
     }
     const existingOverrides=await client.query<{project_id:string;permission:string}>(`SELECT access.project_id::text,permission

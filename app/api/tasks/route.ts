@@ -116,8 +116,8 @@ async function forwardApiTasks(request:Request,method:"GET"|"POST"|"PATCH"){
   const authorization=backendAuthorization(request.headers.get("authorization"));
   if(!base||!tenant||!authorization)return apiUnavailable("Úkoly nejsou dostupné bez společného backendu");
   if(method==="GET"){
-    const scope=new URL(request.url).searchParams.get("scope")??"mine";
-    const response=await fetch(`${base}/v1/tasks?scope=${encodeURIComponent(scope)}`,{headers:{authorization,"x-tenant-id":tenant},cache:"no-store"});
+    const query=new URL(request.url).searchParams;
+    const response=await fetch(`${base}/v1/tasks?${query}`,{headers:{authorization,"x-tenant-id":tenant},cache:"no-store"});
     return new Response(await response.text(),{status:response.status,headers:{"content-type":"application/json","x-correlation-id":response.headers.get("x-correlation-id")??""}});
   }
   const body=await request.json() as Record<string,unknown>;

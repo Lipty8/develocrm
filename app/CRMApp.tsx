@@ -8,6 +8,8 @@ import { ListColumnFilter, TableColumnFilter } from "./components/table-column-f
 import { RowActionMenu } from "./components/row-action-menu";
 import { SummaryStats, toggledSummaryFilter } from "./components/summary-stats";
 import {ContractDocumentEvidence,type ContractDocumentVersion} from "./components/contract-document-evidence";
+import {ProjectArchiveAction} from './components/project-archive-action';
+import {PROJECT_VISIBILITY_OPTIONS,isArchivedProject,isActiveProject,type ProjectVisibility} from './lib/project-visibility';
 import {apiFetch} from "./lib/api-client";
 import {
   Activity,
@@ -389,6 +391,11 @@ export default function CRMApp() {
   };
   const routeSearch=searchParams.toString();
   const routeState=useMemo(()=>parseCrmRoute(pathname,routeSearch),[pathname,routeSearch]);
+  const [resolvedEntityProjectId,setResolvedEntityProjectId]=useState<string|undefined>();
+  const catalogUnitId=routeState.kind==='unit'?routeState.unitId:undefined;
+  const catalogContractId=routeState.kind==='contract'?routeState.contractId:undefined;
+  const catalogPartyId=routeState.kind==='client'?routeState.clientId:undefined;
+  const catalogProjectId=routeState.kind==='project'?routeState.projectId:(catalogUnitId||catalogContractId||catalogPartyId)?resolvedEntityProjectId:undefined;
 
   useEffect(()=>{
     if(routeState.kind==="not-found"){router.replace("/dashboard");return;}
@@ -474,7 +481,7 @@ export default function CRMApp() {
 
   useEffect(() => {
     const controller = new AbortController();
-    clientRepository.getDirectory(controller.signal).then((snapshot) => {
+    clientRepository.getDirectory(controller.signal,catalogProjectId).then((snapshot) => {
       clients.splice(0,clients.length,...snapshot.clients);
       for (const key of Object.keys(unitCommercialContexts)) delete unitCommercialContexts[key];
       Object.assign(unitCommercialContexts,snapshot.unitContexts);
@@ -486,11 +493,11 @@ export default function CRMApp() {
       setClientDataReady(true);
     }).catch(error=>{if(!controller.signal.aborted){setClientDataReady(false);setStartupError(error instanceof Error?error.message:"Klientská data nejsou dostupná");}});
     return ()=>controller.abort();
-  },[catalogVersion,clientReloadKey]);
+  },[catalogVersion,clientReloadKey,catalogProjectId]);
 
   useEffect(()=>{
     const controller=new AbortController();
-    commercialRepository.getSnapshot(controller.signal).then(snapshot=>{
+    commercialRepository.getSnapshot(controller.signal,catalogProjectId).then(snapshot=>{
       contracts.splice(0,contracts.length,...snapshot.contracts);
       for(const key of Object.keys(unitPriceHistories))delete unitPriceHistories[key];
       Object.assign(unitPriceHistories,snapshot.priceHistories);
@@ -500,11 +507,12 @@ export default function CRMApp() {
       setCommercialDataReady(true);
     }).catch(error=>{if(!controller.signal.aborted){setCommercialDataReady(false);setStartupError(error instanceof Error?error.message:"Obchodní data nejsou dostupná");}});
     return()=>controller.abort();
-  },[catalogVersion,commercialReloadKey]);
+  },[catalogVersion,commercialReloadKey,catalogProjectId]);
 
   useEffect(() => {
     const controller = new AbortController();
-    catalogRepository.getCatalog(controller.signal).then((catalog) => {
+    catalogRepository.getCatalog(controller.signal,routeState.kind==='project'?routeState.projectId:undefined,undefined,{unitId:catalogUnitId,contractId:catalogContractId,partyId:catalogPartyId}).then((catalog) => {
+      setResolvedEntityProjectId(catalog.projects[0]?.backendId);
       projects.splice(0, projects.length, ...catalog.projects);
       units.splice(0, units.length, ...catalog.units);
       setCatalogAccessories(catalog.accessories||[]);setCatalogMemberships(catalog.memberships||[]);setCatalogStructures(catalog.structures||[]);
@@ -515,9 +523,9 @@ export default function CRMApp() {
       setCatalogReady(true);
     }).catch(error=>{if(!controller.signal.aborted)setStartupError(error instanceof Error?error.message:"Data aplikace nejsou dostupná");});
     return () => controller.abort();
-  }, [catalogReloadKey,connectionRetryKey]);
+  }, [catalogReloadKey,connectionRetryKey,routeState.kind,routeState.projectId,catalogUnitId,catalogContractId,catalogPartyId]);
 
-  useEffect(()=>{const controller=new AbortController();taskRepository.list(taskScope,identitySession.user.displayName,controller.signal).then(saved=>{setTaskRows(saved);if(taskScope==="mine")setTaskOpenCount(saved.filter(item=>!item.done).length);else void taskRepository.list("mine",identitySession.user.displayName,controller.signal).then(mine=>setTaskOpenCount(mine.filter(item=>!item.done).length));}).catch(()=>{if(clientUsesBrowserAdapter()){const fallback=taskScope==="completed"?initialTasks.filter(item=>item.done):taskScope==="all"?initialTasks:initialTasks.filter(item=>!item.done&&item.owner==="Iva");setTaskRows(fallback);setTaskOpenCount(initialTasks.filter(item=>!item.done&&item.owner==="Iva").length);}else{setTaskRows([]);setTaskOpenCount(0);}}).finally(()=>setTaskLoading(false));return()=>controller.abort();},[taskScope,taskReloadKey,identitySession.user.displayName]);
+  useEffect(()=>{const controller=new AbortController();taskRepository.list(taskScope,identitySession.user.displayName,controller.signal,catalogProjectId).then(saved=>{setTaskRows(saved);if(taskScope==="mine")setTaskOpenCount(saved.filter(item=>!item.done).length);else void taskRepository.list("mine",identitySession.user.displayName,controller.signal).then(mine=>setTaskOpenCount(mine.filter(item=>!item.done).length));}).catch(()=>{if(clientUsesBrowserAdapter()){const fallback=taskScope==="completed"?initialTasks.filter(item=>item.done):taskScope==="all"?initialTasks:initialTasks.filter(item=>!item.done&&item.owner==="Iva");setTaskRows(fallback);setTaskOpenCount(initialTasks.filter(item=>!item.done&&item.owner==="Iva").length);}else{setTaskRows([]);setTaskOpenCount(0);}}).finally(()=>setTaskLoading(false));return()=>controller.abort();},[taskScope,taskReloadKey,identitySession.user.displayName,catalogProjectId]);
   useEffect(()=>{const controller=new AbortController();paymentRepository.list({},controller.signal).then(result=>setNotificationPayments(result.payments)).catch(()=>setNotificationPayments([]));return()=>controller.abort();},[commercialReloadKey]);
   useEffect(()=>{const controller=new AbortController();taskRepository.list("mine",identitySession.user.displayName,controller.signal).then(setNotificationTasks).catch(()=>setNotificationTasks([]));return()=>controller.abort();},[taskReloadKey,identitySession.user.displayName]);
   useEffect(()=>{const controller=new AbortController();handoverRepository.list({},controller.signal).then(setNotificationHandovers).catch(()=>setNotificationHandovers([]));return()=>controller.abort();},[handoverReloadKey]);
@@ -782,7 +790,8 @@ export default function CRMApp() {
               onCreateAccessory={async value=>{const projectId=backendEntityId(selectedProject.backendId);if(!projectId)throw new Error("Projekt nemá platný databázový identifikátor");await createProjectAccessory(projectId,value);}}
               onUpdateAccessory={updateProjectAccessory}
               onRemoveAccessory={removeProjectAccessory}
-              onEditProject={(can("projects.update")||can("project.manage"))?() => setProjectEdit(selectedProject):undefined}
+              canArchiveProject={identitySession.workspace.permissions.includes("system.manage")}
+              onEditProject={!isArchivedProject(selectedProject)&&(can("projects.update")||can("project.manage"))?() => setProjectEdit(selectedProject):undefined}
               onEditCover={(can("media.manage")||can("project.manage"))&&backendEntityId(selectedProject.backendId)?()=>setMediaEdit({entityType:"project",entityId:selectedProject.backendId!,kind:"cover",title:`Titulní obrázek · ${selectedProject.name}`}):undefined}
               onNewClient={can("clients.create")?()=>setNewClientOpen(true):undefined}
               onNewHandover={can("handovers.manage")?()=>setNewHandoverContext({project:selectedProject}):undefined}
@@ -930,7 +939,12 @@ function Dashboard({ navigate, openUnit, taskRows, toggleTask }: { navigate: (pa
 }
 
 function Projects({ openProject }: { openProject: (project: ProjectRecord) => void }) {
-  const totals = projects.reduce((sum, project) => { const aggregation=projectSalesAggregation(project); return ({
+  const [visibility,setVisibility]=useState<ProjectVisibility>('visible');
+  const [rows,setRows]=useState<ProjectRecord[]>(projects);
+  const [loadError,setLoadError]=useState('');
+  useEffect(()=>{const controller=new AbortController();catalogRepository.getCatalog(controller.signal,undefined,visibility).then(snapshot=>{setRows(snapshot.projects);setLoadError('');}).catch(()=>{if(!controller.signal.aborted)setLoadError('Projekty se nepodařilo načíst.');});return()=>controller.abort();},[visibility]);
+  const visibleProjects=projects.filter(project=>!isArchivedProject(project));
+  const totals = visibleProjects.reduce((sum, project) => { const aggregation=projectSalesAggregation(project); return ({
     units: sum.units + project.units,
     preReservation: sum.preReservation + aggregation.inNegotiation,
     sold: sum.sold + aggregation.sold,
@@ -938,17 +952,19 @@ function Projects({ openProject }: { openProject: (project: ProjectRecord) => vo
   return (
     <div className="projects-page">
       <div className="portfolio-summary card">
-        <div><span className="metric-icon green"><Building2 size={20} /></span><span><small>Aktivní projekty</small><strong>{projects.length}</strong></span></div>
+        <div><span className="metric-icon green"><Building2 size={20} /></span><span><small>Aktivní projekty</small><strong>{visibleProjects.filter(isActiveProject).length}</strong></span></div>
         <div><span className="metric-icon blue"><Home size={20} /></span><span><small>Jednotky celkem</small><strong>{totals.units}</strong></span></div>
         <div><span className="metric-icon sand"><Clock3 size={20} /></span><span><small>V jednání</small><strong>{totals.preReservation}</strong></span></div>
         <div><span className="metric-icon green"><CheckCircle2 size={20} /></span><span><small>Prodané</small><strong>{totals.sold}</strong></span></div>
       </div>
+      <label className="project-visibility-filter"><span>Zobrazení projektů</span><select aria-label="Zobrazení projektů" value={visibility} onChange={event=>setVisibility(event.target.value as ProjectVisibility)}>{PROJECT_VISIBILITY_OPTIONS.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+      {loadError&&<p role="alert">{loadError}</p>}
       <div className="project-cards">
-        {projects.map((project) => { const aggregation=projectSalesAggregation(project); return (
+        {rows.map((project) => { const aggregation=projectSalesAggregation(project); return (
           <article className="project-card card" key={project.name} role="button" tabIndex={0} aria-label={`Otevřít projekt ${project.name}`} onClick={() => openProject(project)} onKeyDown={(event) => { if(event.key==="Enter"||event.key===" "){event.preventDefault();openProject(project);} }}>
             <ProjectCover project={project}/>
             <div className="project-card-body">
-              <div className="project-card-heading"><span><h3>{project.name}</h3><p><MapPin size={14} /> {project.location}</p></span><Badge tone="blue">{project.stage}</Badge></div>
+              <div className="project-card-heading"><span><h3>{project.name}</h3><p><MapPin size={14} /> {project.location}</p></span><Badge tone="blue">{isArchivedProject(project)?'Archivovaný':project.lifecycleStatus==='completed'?'Dokončený':project.stage}</Badge></div>
               <ConstructionProgress project={project}/>
               <div className="project-unit-stats">
                 <span><i className="available" /><strong>{aggregation.available}</strong><small>volných</small></span>
@@ -1003,7 +1019,7 @@ type UnitListProps = {
   resetFilters:()=>void;
 };
 
-function ProjectDetail({ project, tab, onTab, onBack, notify, openClient,openContract, onEditProject,onEditCover,onNewClient,onNewHandover,onCatalogChanged,taskRows,accessories,canManageAccessories,canManageUnits,canRecordPayment,onAssignAccessory,onReleaseAccessory,onCreateAccessory,onUpdateAccessory,onRemoveAccessory, ...unitListProps }: UnitListProps & { tab: ProjectTab; onTab: (tab: ProjectTab) => void; onBack: () => void; notify: (message: string) => void; openClient: (name: string) => void;openContract:(contract:(typeof contracts)[number])=>void; onEditProject?: () => void;onEditCover?:()=>void;onNewClient?:()=>void;onNewHandover?:()=>void;onCatalogChanged:()=>void;taskRows:TaskRecord[];accessories:CatalogAccessoryRecord[];canManageAccessories:boolean;canManageUnits:boolean;canRecordPayment:boolean;onAssignAccessory:(unit:UnitRecord,accessory:CatalogAccessoryRecord)=>Promise<void>;onReleaseAccessory:(accessory:AccessoryAssignmentRecord)=>Promise<void>;onCreateAccessory:(value:{category:"parking"|"cellar"|"wallbox";code:string;areaM2?:number|null;amount:number;amountNet?:number|null;relatedAccessoryId?:string|null})=>Promise<void>;onUpdateAccessory:(value:{accessoryId:string;code:string;areaM2?:number|null;amount:number;amountNet?:number|null;reason?:string})=>Promise<void>;onRemoveAccessory:(accessory:CatalogAccessoryRecord,reason:string)=>Promise<{mode:"delete"|"archive"}> }) {
+function ProjectDetail({ project, tab, onTab, onBack, notify, openClient,openContract, onEditProject,onEditCover,onNewClient,onNewHandover,onCatalogChanged,taskRows,accessories,canManageAccessories,canManageUnits,canRecordPayment,canArchiveProject,onAssignAccessory,onReleaseAccessory,onCreateAccessory,onUpdateAccessory,onRemoveAccessory, ...unitListProps }: UnitListProps & { tab: ProjectTab; onTab: (tab: ProjectTab) => void; onBack: () => void; notify: (message: string) => void; openClient: (name: string) => void;openContract:(contract:(typeof contracts)[number])=>void; onEditProject?: () => void;onEditCover?:()=>void;onNewClient?:()=>void;onNewHandover?:()=>void;onCatalogChanged:()=>void;taskRows:TaskRecord[];accessories:CatalogAccessoryRecord[];canManageAccessories:boolean;canManageUnits:boolean;canRecordPayment:boolean;canArchiveProject?:boolean;onAssignAccessory:(unit:UnitRecord,accessory:CatalogAccessoryRecord)=>Promise<void>;onReleaseAccessory:(accessory:AccessoryAssignmentRecord)=>Promise<void>;onCreateAccessory:(value:{category:"parking"|"cellar"|"wallbox";code:string;areaM2?:number|null;amount:number;amountNet?:number|null;relatedAccessoryId?:string|null})=>Promise<void>;onUpdateAccessory:(value:{accessoryId:string;code:string;areaM2?:number|null;amount:number;amountNet?:number|null;reason?:string})=>Promise<void>;onRemoveAccessory:(accessory:CatalogAccessoryRecord,reason:string)=>Promise<{mode:"delete"|"archive"}> }) {
   const [projectPayments,setProjectPayments]=useState<PaymentRecord[]>([]);const [projectHandovers,setProjectHandovers]=useState<HandoverRecord[]>([]);const [scopedCatalog,setScopedCatalog]=useState<ProjectCatalogSnapshot|null>(null);
   useEffect(()=>{const controller=new AbortController();const projectId=backendEntityId(project.backendId);if(!projectId){Promise.resolve().then(()=>{setProjectPayments([]);setProjectHandovers([]);setScopedCatalog(null);});return()=>controller.abort();}paymentRepository.list({projectId},controller.signal).then(result=>setProjectPayments(result.payments)).catch(()=>setProjectPayments([]));handoverRepository.list({projectId},controller.signal).then(setProjectHandovers).catch(()=>setProjectHandovers([]));catalogRepository.getCatalog(controller.signal,projectId).then(setScopedCatalog).catch(()=>setScopedCatalog(null));return()=>controller.abort();},[project.backendId]);
   const projectClients = clients.filter((client) => clientBelongsToProject(client,project));
@@ -1040,8 +1056,9 @@ function ProjectDetail({ project, tab, onTab, onBack, notify, openClient,openCon
       <div className="unit-breadcrumb"><button onClick={onBack}><ArrowLeft size={16} /> Všechny projekty</button><ChevronRight size={14} /><strong>{project.name}</strong></div>
       <div className="project-detail-hero card">
         <div><span className="eyebrow">AKTUÁLNÍ PROJEKT</span><h1>{project.name} <Badge tone="neutral">{project.stage}</Badge></h1><p><MapPin size={14} /> {project.location} · {project.buildings.join(" · ")}</p></div>
-        <div className="project-detail-actions">{onEditProject&&<button className="secondary-button" onClick={onEditProject}><MoreHorizontal size={16} /> Upravit projekt</button>}{onEditCover&&<button className="secondary-button" onClick={onEditCover}><ImagePlus size={16}/> Titulní obrázek</button>}</div>
+        <div className="project-detail-actions">{canArchiveProject&&<ProjectArchiveAction project={project} onChanged={onCatalogChanged}/>}{onEditProject&&<button className="secondary-button" onClick={onEditProject}><MoreHorizontal size={16} /> Upravit projekt</button>}{onEditCover&&<button className="secondary-button" onClick={onEditCover}><ImagePlus size={16}/> Titulní obrázek</button>}</div>
       </div>
+      {isArchivedProject(project)&&<div className="form-info" role="status"><FolderOpen size={18}/><span>Archivovaný projekt · Data a dokumenty zůstávají zachovány. Probíhající procesy a závazky pokračují beze změny.</span></div>}
       <section className="card project-context-card" aria-label="Souhrn projektu">
         <div className="project-context-summary">
           <div><span className="project-summary-icon phase"><HardHat size={19} /></span><span><small>AKTUÁLNÍ FÁZE</small><strong>{project.stage}</strong></span></div>
@@ -2089,7 +2106,7 @@ function DocumentVersionModal({document,close,save}:{document:DocumentRecord;clo
 function EditProjectModal({project,memberships,canChangeManager,canChangeStatus,close,save}:{project:ProjectRecord;memberships:MembershipOption[];canChangeManager:boolean;canChangeStatus:boolean;close:()=>void;save:(value:{name:string;location:string;lifecycleStatus:string;managerMembershipId:string|null;plannedCompletion:string|null;stageCode:string;stageReason:string})=>Promise<void>}){
   const initialCompletion=projectCompletionMonthValue(project.plannedCompletionFrom??project.plannedCompletionTo);const [initialYear="",initialMonth=""]=initialCompletion.split("-");
   const [name,setName]=useState(project.name);const [location,setLocation]=useState(project.location);const [lifecycleStatus,setLifecycleStatus]=useState(project.lifecycleStatus??"active");const [manager,setManager]=useState(project.managerMembershipId??"");const [completionMonth,setCompletionMonth]=useState(initialMonth);const [completionYear,setCompletionYear]=useState(initialYear);const [stage,setStage]=useState(project.stageCode??projectConstructionCode(project.stage)??"preparation");const [reason,setReason]=useState("");
-  return <FormModal title="Upravit projekt" close={close} onSave={async()=>{if(Boolean(completionMonth)!==Boolean(completionYear))throw new Error("Vyberte měsíc i rok plánovaného dokončení");await save({name,location,lifecycleStatus,managerMembershipId:manager||null,plannedCompletion:projectCompletionStorageDate(completionMonth&&completionYear?`${completionYear}-${completionMonth}`:""),stageCode:stage,stageReason:reason});}}><div className="form-row"><label><span>Název projektu</span><input value={name} onChange={e=>setName(e.target.value)} /></label><label><span>Lokalita</span><input value={location} onChange={e=>setLocation(e.target.value)} /></label></div><div className="form-row"><label><span>Životní cyklus projektu</span><select value={lifecycleStatus} onChange={e=>setLifecycleStatus(e.target.value)}><option value="preparation">Příprava</option><option value="active">Aktivní</option><option value="completed">Dokončený</option><option value="archived">Archivovaný</option></select></label><label><span>Vedoucí projektu</span><select value={manager} disabled={!canChangeManager} onChange={e=>setManager(e.target.value)}><option value="">Bez vedoucího</option>{memberships.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div><MonthYearPicker month={completionMonth} year={completionYear} onMonth={setCompletionMonth} onYear={setCompletionYear}/><label><span>Aktuální fáze projektu</span><select value={stage} disabled={!canChangeStatus} onChange={e=>setStage(e.target.value)}>{PROJECT_CONSTRUCTION_PHASES.map(item=><option key={item.code} value={item.code}>{item.label}</option>)}</select></label>{stage!==(project.stageCode??projectConstructionCode(project.stage))&&<label><span>Důvod změny fáze</span><textarea value={reason} onChange={e=>setReason(e.target.value)} rows={2} placeholder="Krátké vysvětlení pro historii projektu" /></label>}</FormModal>;
+  return <FormModal title="Upravit projekt" close={close} onSave={async()=>{if(Boolean(completionMonth)!==Boolean(completionYear))throw new Error("Vyberte měsíc i rok plánovaného dokončení");await save({name,location,lifecycleStatus,managerMembershipId:manager||null,plannedCompletion:projectCompletionStorageDate(completionMonth&&completionYear?`${completionYear}-${completionMonth}`:""),stageCode:stage,stageReason:reason});}}><div className="form-row"><label><span>Název projektu</span><input value={name} onChange={e=>setName(e.target.value)} /></label><label><span>Lokalita</span><input value={location} onChange={e=>setLocation(e.target.value)} /></label></div><div className="form-row"><label><span>Životní cyklus projektu</span><select value={lifecycleStatus} onChange={e=>setLifecycleStatus(e.target.value)}><option value="preparation">Příprava</option><option value="active">Aktivní</option><option value="completed">Dokončený</option></select></label><label><span>Vedoucí projektu</span><select value={manager} disabled={!canChangeManager} onChange={e=>setManager(e.target.value)}><option value="">Bez vedoucího</option>{memberships.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div><MonthYearPicker month={completionMonth} year={completionYear} onMonth={setCompletionMonth} onYear={setCompletionYear}/><label><span>Aktuální fáze projektu</span><select value={stage} disabled={!canChangeStatus} onChange={e=>setStage(e.target.value)}>{PROJECT_CONSTRUCTION_PHASES.map(item=><option key={item.code} value={item.code}>{item.label}</option>)}</select></label>{stage!==(project.stageCode??projectConstructionCode(project.stage))&&<label><span>Důvod změny fáze</span><textarea value={reason} onChange={e=>setReason(e.target.value)} rows={2} placeholder="Krátké vysvětlení pro historii projektu" /></label>}</FormModal>;
 }
 
 const czechMonths=["leden","únor","březen","duben","květen","červen","červenec","srpen","září","říjen","listopad","prosinec"];

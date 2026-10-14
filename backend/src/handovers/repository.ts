@@ -1,10 +1,12 @@
 import type {Database} from "../database.js";
+import {archiveReadSql} from '../inventory/project-visibility.js';
 type Context={tenantId:string;userId:string;membershipId:string};
 export type HandoverItem={id:string;projectId:string;project:string;unitId:string;unit:string;scheduledAt:string;client:string;owner:string;salesCaseId:string|null;status:string;readiness:number;attention:string|null;place:string|null;note:string|null;completedAt:string|null;participants:Array<{partyId:string;name:string;role:string}>;history:Array<{id:string;type:string;occurredAt:string;previousScheduledAt:string|null;scheduledAt:string|null;actor:string|null}>};
 export class HandoverRepository{
   constructor(private readonly database:Database){}
   list(input:Context&{projectId?:string;unitId?:string;status?:string;ownerId?:string;query?:string;sort?:string;direction?:"asc"|"desc"}){
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
+      const archiveRead=await archiveReadSql(client,Boolean(input.projectId||input.unitId));
       const direction=input.direction==="desc"?"DESC":"ASC";
       const sort=({project:"project.name",unit:"unit.code",status:"handover.status",owner:"owner.display_name"} as Record<string,string>)[input.sort??""]??"handover.scheduled_at";
       const result=await client.query<HandoverItem>(`SELECT handover.id,handover.project_id "projectId",project.name project,handover.unit_id "unitId",unit.code unit,
@@ -29,7 +31,7 @@ export class HandoverRepository{
          LEFT JOIN tenant_memberships actor_membership ON actor_membership.tenant_id=event.tenant_id AND actor_membership.id=event.recorded_by_membership_id
          LEFT JOIN users actor ON actor.id=actor_membership.user_id
          WHERE event.tenant_id=handover.tenant_id AND event.handover_id=handover.id) history ON true
-       WHERE handover.tenant_id=$1 AND project.archived_at IS NULL AND unit.archived_at IS NULL
+       WHERE handover.tenant_id=$1 AND (project.archived_at IS NULL OR (${archiveRead})) AND unit.archived_at IS NULL
          AND app.has_project_permission(handover.tenant_id,$2,handover.project_id,'handovers.read')
          AND ($3::uuid IS NULL OR handover.project_id=$3) AND ($4::uuid IS NULL OR handover.unit_id=$4) AND ($5::text IS NULL OR handover.status=$5)
          AND ($6::uuid IS NULL OR handover.responsible_membership_id=$6)

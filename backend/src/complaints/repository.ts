@@ -1,4 +1,5 @@
 import type {Database} from "../database.js";
+import {archiveReadSql} from '../inventory/project-visibility.js';
 
 type Context={tenantId:string;userId:string;membershipId:string};
 type ComplaintRow={id:string;project_id:string;project_name:string;unit_id:string;unit_code:string;party_id:string;party_name:string;assignee_membership_id:string|null;assignee_name:string|null;title:string;description:string;status:string;due_at:string|null;created_at:string;updated_at:string;history:Array<{id:string;fromStatus:string|null;toStatus:string;note:string|null;actor:string;occurredAt:string}>};
@@ -20,7 +21,8 @@ function dto(row:ComplaintRow){return{id:row.id,projectId:row.project_id,project
 export class ComplaintRepository {
   constructor(private readonly database:Database){}
   list(input:Context&{projectId?:string;unitId?:string}){return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
-    const result=await client.query<ComplaintRow>(`${select} WHERE complaint.tenant_id=$1 AND ($2::uuid IS NULL OR complaint.project_id=$2) AND ($3::uuid IS NULL OR complaint.unit_id=$3) AND app.has_project_permission(complaint.tenant_id,$4,complaint.project_id,'complaints.read') ORDER BY complaint.created_at DESC,complaint.id DESC`,[input.tenantId,input.projectId??null,input.unitId??null,input.membershipId]);
+    const archiveRead=await archiveReadSql(client,Boolean(input.projectId||input.unitId));
+    const result=await client.query<ComplaintRow>(`${select} WHERE complaint.tenant_id=$1 AND (project.archived_at IS NULL OR (${archiveRead.replaceAll("$2","$4")})) AND ($2::uuid IS NULL OR complaint.project_id=$2) AND ($3::uuid IS NULL OR complaint.unit_id=$3) AND app.has_project_permission(complaint.tenant_id,$4,complaint.project_id,'complaints.read') ORDER BY complaint.created_at DESC,complaint.id DESC`,[input.tenantId,input.projectId??null,input.unitId??null,input.membershipId]);
     return result.rows.map(dto);
   });}
   create(input:Context&{projectId:string;unitId:string;partyId:string;title:string;description:string;assigneeMembershipId?:string|null;dueAt?:string|null;idempotencyKey:string}){return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{

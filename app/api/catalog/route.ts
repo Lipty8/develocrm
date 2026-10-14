@@ -10,7 +10,7 @@ import { projectSalesPerformancePercent } from "../../lib/project-sales-performa
 type BackendCatalog = {
   projects: Array<{
     id: string; code: string; name: string; location: string | null; manager: string | null;
-    lifecycleStatus:string; managerMembershipId:string|null; plannedHandoverFrom: string | null; plannedHandoverTo: string | null; constructionStatus: string | null;
+    lifecycleStatus:string; archivedAt:string|null; managerMembershipId:string|null; plannedHandoverFrom: string | null; plannedHandoverTo: string | null; constructionStatus: string | null;
     counts: Record<string, number>;
   }>;
   units: Array<{
@@ -100,7 +100,7 @@ function adaptBackendCatalog(catalog: BackendCatalog, priceBreakdowns?: BackendP
       available, preReserved, reserved, sold, handedOver, attention: 0,
       color: (["sage", "sand", "slate"] as const)[index % 3], stage: projectConstructionLabel(project.constructionStatus),stageCode:project.constructionStatus,
       revenue: "—", buildings: [...(projectStructures.get(project.name) ?? [])],
-      lifecycleStatus:project.lifecycleStatus,manager: project.manager ?? "—",managerMembershipId:project.managerMembershipId, plannedHandover: projectCompletionLabel(project.plannedHandoverFrom??project.plannedHandoverTo),plannedCompletionFrom:project.plannedHandoverFrom,plannedCompletionTo:project.plannedHandoverTo,
+      lifecycleStatus:project.lifecycleStatus,archivedAt:project.archivedAt,manager: project.manager ?? "—",managerMembershipId:project.managerMembershipId, plannedHandover: projectCompletionLabel(project.plannedHandoverFrom??project.plannedHandoverTo),plannedCompletionFrom:project.plannedHandoverFrom,plannedCompletionTo:project.plannedHandoverTo,
     };
   });
   const units = catalog.units.map((unit): UnitRecord => {

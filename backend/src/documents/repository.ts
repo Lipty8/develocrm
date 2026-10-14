@@ -1,4 +1,5 @@
 import type { Database, SqlClient } from "../database.js";
+import {archiveReadSql} from '../inventory/project-visibility.js';
 
 export type DocumentListItem = {
   id: string;
@@ -94,8 +95,9 @@ export class DocumentRepository {
 
   async listProject(input: DocumentContext & { projectId: string; category?: string; unitId?: string; partyId?: string }): Promise<DocumentListItem[]> {
     return this.database.withContext({ tenantId: input.tenantId, userId: input.userId }, async (client) => {
+      const archiveRead=await archiveReadSql(client,true);
       const result = await client.query<DocumentRow>(`${documentSelect}
-        WHERE document.tenant_id=$1 AND document.project_id=$3 AND document.archived_at IS NULL AND project.archived_at IS NULL
+        WHERE document.tenant_id=$1 AND document.project_id=$3 AND document.archived_at IS NULL AND (project.archived_at IS NULL OR ${archiveRead})
           AND app.has_project_permission(document.tenant_id,$2,document.project_id,'documents.view')
           AND (document.sensitivity='normal' OR app.has_project_permission(document.tenant_id,$2,document.project_id,'documents.view_sensitive'))
           AND ($4::text IS NULL OR document.category=$4)
@@ -108,8 +110,9 @@ export class DocumentRepository {
 
   async listUnit(input: DocumentContext & { unitId: string; category?: string }): Promise<DocumentListItem[]> {
     return this.database.withContext({ tenantId: input.tenantId, userId: input.userId }, async (client) => {
+      const archiveRead=await archiveReadSql(client,true);
       const result = await client.query<DocumentRow>(`${documentSelect}
-        WHERE document.tenant_id=$1 AND document.archived_at IS NULL AND project.archived_at IS NULL
+        WHERE document.tenant_id=$1 AND document.archived_at IS NULL AND (project.archived_at IS NULL OR ${archiveRead})
           AND app.has_project_permission(document.tenant_id,$2,document.project_id,'documents.view')
           AND (document.sensitivity='normal' OR app.has_project_permission(document.tenant_id,$2,document.project_id,'documents.view_sensitive'))
           AND ($4::text IS NULL OR document.category=$4)
@@ -133,8 +136,9 @@ export class DocumentRepository {
 
   async getById(input: DocumentContext & { documentId: string }): Promise<DocumentDetail | null> {
     return this.database.withContext({ tenantId: input.tenantId, userId: input.userId }, async (client) => {
+      const archiveRead=await archiveReadSql(client,true);
       const result = await client.query<DocumentRow>(`${documentSelect}
-        WHERE document.tenant_id=$1 AND document.id=$3 AND document.archived_at IS NULL AND project.archived_at IS NULL
+        WHERE document.tenant_id=$1 AND document.id=$3 AND document.archived_at IS NULL AND (project.archived_at IS NULL OR ${archiveRead})
           AND app.has_project_permission(document.tenant_id,$2,document.project_id,'documents.view')
           AND (document.sensitivity='normal' OR app.has_project_permission(document.tenant_id,$2,document.project_id,'documents.view_sensitive'))`, [input.tenantId,input.membershipId,input.documentId]);
       const row = result.rows[0];
@@ -297,8 +301,9 @@ export class DocumentRepository {
 
   async listAll(input:DocumentContext & {query?:string;typeCode?:string;status?:string;projectId?:string;partyId?:string;unitId?:string;contractId?:string;clientChangeId?:string;complaintId?:string;handoverId?:string}):Promise<DocumentListItem[]>{
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
+      const archiveRead=await archiveReadSql(client,Boolean(input.projectId||input.unitId||input.contractId||input.clientChangeId||input.complaintId||input.handoverId));
       const result=await client.query<DocumentRow>(`${documentSelect}
-        WHERE document.tenant_id=$1 AND document.archived_at IS NULL AND project.archived_at IS NULL
+        WHERE document.tenant_id=$1 AND document.archived_at IS NULL AND (project.archived_at IS NULL OR (($6::uuid IS NOT NULL OR $8::uuid IS NOT NULL OR $9::uuid IS NOT NULL OR $10::uuid IS NOT NULL OR $11::uuid IS NOT NULL OR $12::uuid IS NOT NULL) AND ${archiveRead}))
           AND app.has_project_permission(document.tenant_id,$2,document.project_id,'documents.view')
           AND (document.sensitivity='normal' OR app.has_project_permission(document.tenant_id,$2,document.project_id,'documents.view_sensitive'))
           AND ($3::text IS NULL OR document.name ILIKE '%'||$3||'%' OR project.name ILIKE '%'||$3||'%')
