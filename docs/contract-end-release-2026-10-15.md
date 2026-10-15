@@ -36,6 +36,8 @@ historical data updates**. Effective termination in the existing model is immedi
 Contract detail displays either “Obchod ukončen – jednotka uvolněna.” or
 “Smlouva ukončena – jednotku zatím nelze uvolnit.” with actionable reasons.
 The mutation refreshes commercial/catalog/client projections and histories.
+The unit card also presents the persisted blocker for its exact active case;
+historical/other-unit outcomes are excluded, without recalculating release rules.
 
 ## Unit 417 (read-only observation, 15 October 2026)
 

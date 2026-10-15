@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {getUnitContext,currentCaseContracts,contractBelongsToUnit} from '../app/lib/business-context';
+import {getUnitContext,currentCaseContracts,contractBelongsToUnit,currentCaseReleaseBlocker} from '../app/lib/business-context';
 import {projectUnitSalesWorkflow} from '../app/lib/unit-sales-workflow';
 import {paymentNeedsAttention,taskNeedsAttention} from '../app/lib/dashboard-attention';
 import type {UnitRecord,UnitCommercialContext,ContractRecord,TaskRecord} from '../app/crm-data';
@@ -9,6 +9,15 @@ import type {PaymentRecord} from '../app/repositories/payment-repository';
 const unit={id:'417',backendId:'unit-a',projectBackendId:'project-a',project:'A',status:'Volný',handover:''} as UnitRecord;
 const context={salesCaseId:'case-a',buyers:[],interests:[],stage:'interest',hold:null} as UnitCommercialContext;
 const contract=(id:string,unitId:string,salesCaseId:string,statusCode='signed')=>({id,unitId,salesCaseId,unit:'417',project:'A',typeCode:'rs',statusCode} as ContractRecord);
+
+test('blokace uvolnění jednotky používá jen uložený výsledek jejího aktuálního obchodu',()=>{
+ const blocked:ContractRecord={...contract('ended','unit-a','case-a','terminated'),updatedAt:'2026-10-15T10:00:00Z',endOutcome:{state:'blocked',reasons:[{code:'OTHER_CONTRACT',message:'Nejprve vyřešte další smlouvu.'}],unitId:'unit-a',salesCaseId:'case-a'}};
+ assert.equal(currentCaseReleaseBlocker(unit,'case-a',[blocked]),blocked.endOutcome);
+ assert.equal(currentCaseReleaseBlocker(unit,null,[blocked]),null);
+ assert.equal(currentCaseReleaseBlocker(unit,'new-case',[blocked]),null);
+ assert.equal(currentCaseReleaseBlocker(unit,'case-a',[{...blocked,unitId:'unit-b'}]),null);
+ assert.equal(currentCaseReleaseBlocker(unit,'case-a',[{...blocked,endOutcome:{...blocked.endOutcome!,state:'released'}}]),null);
+});
 
 test('stejná čísla v různých projektech se nikdy nespojí',()=>{
   assert.equal(getUnitContext(unit,{'417':context}),undefined);

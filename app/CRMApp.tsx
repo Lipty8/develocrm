@@ -14,7 +14,7 @@ import {ProjectArchiveAction} from './components/project-archive-action';
 import {PROJECT_VISIBILITY_OPTIONS,isArchivedProject,isActiveProject,matchesProjectVisibility,type ProjectVisibility} from './lib/project-visibility';
 import {apiFetch} from "./lib/api-client";
 import {RelatedUnitLink} from './components/entity-links';
-import {getUnitContext,unitContextKey,contractBelongsToUnit} from './lib/business-context';
+import {getUnitContext,unitContextKey,contractBelongsToUnit,currentCaseReleaseBlocker} from './lib/business-context';
 import {AsyncNotice,useAsyncRead} from './components/async-content';
 import {paymentNeedsAttention,taskNeedsAttention} from './lib/dashboard-attention';
 import {ClientContractLinks} from './components/client-contract-links';
@@ -1806,6 +1806,7 @@ function UnitDetail({ unit, tab, onTab, onBack,openProjects,openProject, notify,
   const unitHandovers=handoverRead.data??[];
   const nextActionRead=useAsyncRead(`next:${unitReadKey}:${timelineVersion}`,useCallback((signal:AbortSignal)=>unit.backendId?commercialRepository.getNextContractAction(unit.backendId,signal):Promise.resolve(null),[unit.backendId]));
   const nextContractAction=nextActionRead.data??null;
+  const releaseBlocker=currentCaseReleaseBlocker(unit,nextContractAction?.salesCaseId,contracts);
   const salesProcess=nextContractAction?.salesProcess??projectUnitSalesWorkflow({unit,context:getUnitContext(unit,unitCommercialContexts),contracts});
   const currentHandover=unitHandovers.find(record=>record.status==="planned")??unitHandovers.find(record=>record.status==="handed_over");
   const currentHandoverLabel=handoverRead.loading?'Načítám…':handoverRead.error?'Nelze načíst':currentHandover?handoverStatusLabel(currentHandover.status):"Neplánováno";
@@ -1826,11 +1827,12 @@ function UnitDetail({ unit, tab, onTab, onBack,openProjects,openProject, notify,
         <span><small>OBCHODNÍ STAV</small><strong><Badge>{salesProcess.commercialStatusLabel}</Badge></strong></span>
         <span><small>STAV VÝSTAVBY</small><strong><HardHat size={16} /> {unit.construction}</strong></span>
         <span><small>PŘEDÁNÍ</small><strong><KeyRound size={16} /> {currentHandoverLabel}</strong></span>
-        <span className="attention-status"><small>VYŽADUJE POZORNOST</small><strong><AlertTriangle size={16} /> {salesProcess.reviewRequired?"Obchod vyžaduje posouzení":unit.attention || "Bez otevřených bodů"}</strong></span>
+        <span className="attention-status"><small>VYŽADUJE POZORNOST</small><strong><AlertTriangle size={16} /> {(salesProcess.reviewRequired||releaseBlocker)?"Obchod vyžaduje posouzení":unit.attention || "Bez otevřených bodů"}</strong></span>
       </div>
       <nav className="unit-tabs unit-detail-tabs" aria-label="Navigace jednotky">{tabs.map((item) => { const TabIcon = item.icon; return <button key={item.id} className={tab === item.id ? "active" : ""} aria-current={tab === item.id ? "page" : undefined} onClick={() => onTab(item.id)}><TabIcon className="unit-tab-icon" size={17} />{item.label}{item.count && <span aria-label={`${item.count} položek`}>{item.count}</span>}</button>; })}</nav>
 
-      <AsyncNotice loading={nextActionRead.loading} error={nextActionRead.error} retry={nextActionRead.retry}/>{salesProcess.reviewReason&&<div className="form-info" role="status"><AlertTriangle size={18}/><span>{salesProcess.reviewReason} Uložený obchodní stav zůstává beze změny.</span></div>}
+      <ContractEndResult outcome={releaseBlocker}/>
+      <AsyncNotice loading={nextActionRead.loading} error={nextActionRead.error} retry={nextActionRead.retry}/>{!releaseBlocker&&salesProcess.reviewReason&&<div className="form-info" role="status"><AlertTriangle size={18}/><span>{salesProcess.reviewReason} Uložený obchodní stav zůstává beze změny.</span></div>}
       {tab === "overview" && <UnitOverview unit={unit} notify={notify} openClient={openClient} openTab={onTab} onEditPrice={onEditPrice} priceProposals={priceProposals} onDecidePrice={onDecidePrice} onManageAccessories={onManageAccessories} onEditFloorplan={onEditFloorplan} onSalesAction={onSalesAction} canCreateHold={canCreateHold} canConfirmHold={canConfirmHold} canCancelHold={canCancelHold} timeline={timeline} workflow={salesProcess} />}
       {tab === "contracts" && <UnitContracts unit={unit} openContract={openContract} nextContractAction={nextContractAction} onNewContract={onNewContract} onAddendum={onAddendum} onWorkflow={onContractWorkflow} onChangeBuyer={onChangeBuyer} />}
       {tab === "payments" && <UnitPayments unit={unit} canRecord={Boolean(canRecordPayment)} onChanged={onPaymentChanged} />}

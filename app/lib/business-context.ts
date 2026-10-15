@@ -16,3 +16,10 @@ export function currentCaseContracts(unit:Pick<UnitRecord,'id'|'backendId'|'proj
   if(!context?.salesCaseId)return [];
   return contracts.filter(contract=>contractBelongsToUnit(contract,unit)&&contract.salesCaseId===context.salesCaseId);
 }
+
+/** Present the persisted command result; never infer release policy in the UI. */
+export function currentCaseReleaseBlocker(unit:Pick<UnitRecord,'id'|'backendId'|'projectBackendId'|'project'>,salesCaseId:string|null|undefined,rows:ContractRecord[]){
+  if(!salesCaseId)return null;
+  return rows.filter(row=>contractBelongsToUnit(row,unit)&&row.salesCaseId===salesCaseId&&row.endOutcome?.state==='blocked')
+    .sort((a,b)=>(b.updatedAt??b.updated??'').localeCompare(a.updatedAt??a.updated??''))[0]?.endOutcome??null;
+}
