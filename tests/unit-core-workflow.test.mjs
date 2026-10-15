@@ -8,6 +8,8 @@ const paymentMigration=await readFile(new URL("../backend/migrations/0035_manual
 
 test("detail jednotky používá dynamickou smluvní akci a nemá duplicitní doporučený blok",()=>{
   assert.match(crm,/getNextContractAction\(unit\.backendId/);
+  assert.match(crm,/if\(unit.backendId&&\(nextActionRead.loading\|\|nextActionRead.error\)\)return <AsyncNotice/);
+  assert.match(crm,/openClient\(buyers\[0\]\.partyId\)/);
   assert.doesNotMatch(crm,/Vygenerovat SBK/);
   assert.doesNotMatch(crm,/DOPORUČENÝ DALŠÍ KROK/);
 });
