@@ -649,8 +649,8 @@ export default function CRMApp() {
     return outcome;
   };
 
-  const toggleTask = (id: string|number) => {
-    const row=taskRows.find(task=>task.id===id);if(!row)return;const done=!row.done;
+  const toggleTask = (id: string|number,sourceTask?:TaskRecord) => {
+    const row=taskRows.find(task=>task.id===id)??(sourceTask?.id===id?sourceTask:undefined);if(!row)return;const done=!row.done;
     setTaskRows((rows) => taskScope==="all"?rows.map((task) => (task.id === id ? { ...task, done } : task)):rows.filter(task=>task.id!==id));
     if(row.owner==="Iva"||row.owner===identitySession.user.displayName)setTaskOpenCount(count=>Math.max(0,count+(done?-1:1)));
     void taskRepository.complete(id,done).then(()=>{setTaskReloadKey(key=>key+1);notify(done?"Úkol byl dokončen":"Úkol byl znovu otevřen");}).catch(error=>{setTaskReloadKey(key=>key+1);if(row.owner==="Iva"||row.owner===identitySession.user.displayName)setTaskOpenCount(count=>Math.max(0,count+(done?1:-1)));notify(error instanceof Error?error.message:"Úkol nelze aktualizovat");});
@@ -858,7 +858,7 @@ export default function CRMApp() {
   );
 }
 
-function Dashboard({ navigate, taskRows:changedTasks, toggleTask,owner }: { navigate: (page: Page) => void; openUnit: (unit: UnitRecord) => void; taskRows: TaskRecord[]; toggleTask: (id: string|number) => void;owner:string }) {
+function Dashboard({ navigate, taskRows:changedTasks, toggleTask,owner }: { navigate: (page: Page) => void; openUnit: (unit: UnitRecord) => void; taskRows: TaskRecord[]; toggleTask: (id: string|number,sourceTask?:TaskRecord) => void;owner:string }) {
   const dashboardRouter=useRouter();
   const now=useClock();
   const paymentsRead=useAsyncRead('dashboard-payments',useCallback((signal:AbortSignal)=>paymentRepository.list({},signal),[]));
@@ -875,7 +875,7 @@ function Dashboard({ navigate, taskRows:changedTasks, toggleTask,owner }: { navi
       <section className="attention-card card span-8">
         <div className="attention-heading">
           <div><span className="attention-icon"><Sparkles size={19} /></span><div><h2>Vyžaduje pozornost</h2><p>{tasksRead.loading||paymentsRead.loading?"…":attentionTasks.length+paymentAlerts.length} věcí, které je dobré vyřešit</p></div></div>
-          <button className="text-button" onClick={() => navigate("tasks")}>Zobrazit vše <ArrowRight size={15} /></button>
+          <button className="text-button" onClick={() => navigate("tasks")}>Otevřít úkoly <ArrowRight size={15} /></button>
         </div>
         <div className="attention-list">
           <AsyncNotice loading={paymentsRead.loading||tasksRead.loading} error={paymentsRead.error||tasksRead.error} retry={()=>{paymentsRead.retry();tasksRead.retry();}}/>{attentionTasks.slice(0,3).map(task=><button key={task.id} onClick={()=>navigate("tasks")}>
@@ -920,7 +920,7 @@ function Dashboard({ navigate, taskRows:changedTasks, toggleTask,owner }: { navi
         <div className="mini-task-list"><AsyncNotice loading={tasksRead.loading} error={tasksRead.error} empty={!taskRows.length} retry={tasksRead.retry}/>
           {taskRows.filter(task=>!task.done).slice(0, 4).map((task) => (
             <div key={task.id} className={task.done ? "done" : ""}>
-              <button onClick={() => toggleTask(task.id)} className="task-check" aria-label={`Dokončit úkol ${task.title}`}>{task.done && <Check size={14} />}</button>
+              <button onClick={() => toggleTask(task.id,task)} className="task-check" aria-label={`Dokončit úkol ${task.title}`}>{task.done && <Check size={14} />}</button>
               <span><strong>{task.title}</strong><small>{task.object}</small></span>
               <Badge tone={task.due === "Dnes" ? "danger" : "neutral"}>{task.due}</Badge>
             </div>

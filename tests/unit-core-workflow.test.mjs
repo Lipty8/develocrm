@@ -10,6 +10,8 @@ test("detail jednotky používá dynamickou smluvní akci a nemá duplicitní do
   assert.match(crm,/getNextContractAction\(unit\.backendId/);
   assert.match(crm,/if\(unit.backendId&&\(nextActionRead.loading\|\|nextActionRead.error\)\)return <AsyncNotice/);
   assert.match(crm,/openClient\(buyers\[0\]\.partyId\)/);
+  assert.match(crm,/toggleTask\(task.id,task\)/);
+  assert.match(crm,/sourceTask\?\.id===id\?sourceTask:undefined/);
   assert.doesNotMatch(crm,/Vygenerovat SBK/);
   assert.doesNotMatch(crm,/DOPORUČENÝ DALŠÍ KROK/);
 });
