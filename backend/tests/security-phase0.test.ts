@@ -68,7 +68,7 @@ test("všechny doménové API oblasti odmítnou požadavek bez Entra tokenu",asy
   const database={ping:async()=>{},withContext:async()=>{throw new Error("database must not be reached without authentication");}} as unknown as Database;
   const verifier={verify:async()=>{throw new Error("Chybí Bearer token");}} as unknown as EntraTokenVerifier;
   const app=buildApp({database,verifier});
-  const requests=[
+  const requests: Array<{method:"GET"|"POST"|"PUT"|"PATCH";url:string;payload?:Record<string,never>}>=[
     {method:"GET",url:"/v1/projects"},
     {method:"GET",url:"/v1/projects/10000000-0000-4000-8000-000000000001/units"},
     {method:"GET",url:"/v1/parties"},

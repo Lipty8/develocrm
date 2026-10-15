@@ -22,7 +22,7 @@ const localJwks=createLocalJWKSet({keys:[jwk]});
 
 async function token(overrides:Record<string,unknown>={},audience=clientId){
   const now=Math.floor(Date.now()/1000);
-  const claims={tid:tenantId,oid:"30000000-0000-4000-8000-000000000001",scp:"access_as_user",preferred_username:"admin@example.test",name:"Pilot Admin",...overrides};
+  const claims:Record<string,unknown>={tid:tenantId,oid:"30000000-0000-4000-8000-000000000001",scp:"access_as_user",preferred_username:"admin@example.test",name:"Pilot Admin",...overrides};
   return new SignJWT(claims).setProtectedHeader({alg:"RS256",kid:"v41-test"})
     .setIssuer(issuer).setAudience(audience).setIssuedAt(now).setExpirationTime((claims.exp as number|undefined)??now+3600).sign(privateKey);
 }

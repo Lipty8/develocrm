@@ -1,5 +1,5 @@
 import {createHash} from "node:crypto";
-import type {PoolClient} from "pg";
+import type {SqlClient} from "../database.js";
 
 const uuidPattern=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const sourceHash="4230af6fb82b8de020240f96cadf0e3f1956f93c11b1ecde983d180e3902d2e9";
@@ -33,7 +33,7 @@ export function renderDejviceImport(source:string,input:{tenantId:string;members
   return sql;
 }
 
-export async function importDejvice(client:PoolClient,source:string,input:{tenantId:string;membershipId:string;dryRun:boolean}):Promise<DejviceImportReport>{
+export async function importDejvice(client:SqlClient,source:string,input:{tenantId:string;membershipId:string;dryRun:boolean}):Promise<DejviceImportReport>{
   if(!uuidPattern.test(input.tenantId)||!uuidPattern.test(input.membershipId))throw new Error("Neplatné importní identifikátory");
     await client.query("BEGIN");
   try{
@@ -83,7 +83,7 @@ export async function importDejvice(client:PoolClient,source:string,input:{tenan
   }catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error;}
 }
 
-async function importCounts(client:PoolClient,tenantId:string):Promise<DejviceImportCounts>{
+async function importCounts(client:SqlClient,tenantId:string):Promise<DejviceImportCounts>{
   const result=await client.query<Record<keyof DejviceImportCounts,number>>(`WITH project AS(
       SELECT id FROM projects WHERE tenant_id=$1 AND code='DEJ' AND archived_at IS NULL
     ) SELECT

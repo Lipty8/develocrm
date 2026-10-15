@@ -23,7 +23,23 @@ import {useWorkspaceSearch} from '../app/components/workspace-search';
 import {catalogRepository} from '../app/repositories/catalog-repository';
 import {clientRepository} from '../app/repositories/client-repository';
 import {commercialRepository} from '../app/repositories/commercial-repository';
+import {ContractEndResult} from '../app/components/contract-end-result';
+import type {PaymentRecord} from '../app/repositories/payment-repository';
 import {clients as sampleClients,units as sampleUnits,contracts as sampleContracts} from '../app/crm-data';
+
+test('ukončení smlouvy ukazuje uvolnění nebo konkrétní překážku bez finančního slibu',()=>{
+ const view=render(<ContractEndResult outcome={{state:'released',reasons:[],salesCaseId:'case',unitId:'unit'}}/>);
+ assert.ok(screen.getByText('Obchod ukončen – jednotka uvolněna.'));
+ view.rerender(<ContractEndResult outcome={{state:'blocked',reasons:[{code:'OWNERSHIP_UNVERIFIED',message:'Nejprve ověřte vlastnictví.'}],salesCaseId:'case',unitId:'unit'}}/>);
+ assert.ok(screen.getByText('Smlouva ukončena – jednotku zatím nelze uvolnit.'));
+ assert.ok(screen.getByText('Nejprve ověřte vlastnictví.'));view.unmount();
+});
+
+test('neuhrazená pohledávka zůstává dostupná i po ukončení smlouvy',()=>{
+ const payment:PaymentRecord={id:'debt',projectId:'project',project:'TECH',unitId:'unit',unit:'TECH60',client:'Technical buyer',salesCaseId:'case',contractId:'contract',contractStatus:'terminated',type:'reservation_fee',label:'Rezervační poplatek',amount:250000,paid:50000,currency:'CZK',dueAt:'2026-10-15',status:'partially_paid',transactions:[],events:[]};
+ const view=render(<PaymentDetailModal payment={payment} close={()=>{}} openUnit={()=>{}} canRecord canReverse={false} saved={()=>{}}/>);
+ assert.ok(screen.getByRole('button',{name:'Uhradit platbu'}));view.unmount();
+});
 
 test('vazby jednotek používají UUID nebo jednoznačný projekt, nikdy první cizí jednotku',()=>{
  const rows=[{...sampleUnits[0],id:'417',backendId:'11111111-1111-4111-8111-111111111111',projectBackendId:'p1',project:'A'},{...sampleUnits[0],id:'417',backendId:'22222222-2222-4222-8222-222222222222',projectBackendId:'p2',project:'B'}];
@@ -73,7 +89,7 @@ test('globální hledání načítá neomezený autorizovaný snapshot bez přep
  try{
   catalogRepository.getCatalog=async(_signal,projectId)=>{assert.equal(projectId,undefined);calls++;return{projects:[{...sampleProjects[0],name:'Hrdlička',backendId:'other-project'}],units:[],accessories:[],memberships:[],structures:[],source:'backend-api'};};
   clientRepository.getDirectory=async(_signal,projectId)=>{assert.equal(projectId,undefined);return{clients:[],unitContexts:{},source:'backend-api'};};
-  commercialRepository.getSnapshot=async(_signal,projectId)=>{assert.equal(projectId,undefined);return{contracts:[],currentPrices:{},priceBreakdowns:{},priceHistories:{},priceProposals:[],contractSummary:{}};};
+  commercialRepository.getSnapshot=async(_signal,projectId)=>{assert.equal(projectId,undefined);return{contracts:[],currentPrices:{},priceBreakdowns:{},priceHistories:{},priceProposals:[],contractSummary:{},source:"backend-api"};};
   const beforeNames=sampleProjects.map(project=>project.name);
   const view=render(<Harness/>);await waitFor(()=>assert.ok(screen.getByRole('link',{name:'Hrdlička'})));
   assert.equal(calls,1);assert.deepEqual(sampleProjects.map(project=>project.name),beforeNames);view.unmount();
@@ -364,7 +380,7 @@ test("vratka předvyplní nižší z částky transakce a celkového zůstatku",
 });
 
 test("CTA vratky používá serverovou projekci oprávnění a zbývající částky",()=>{
-  const base={paid:150000,refunded:50000,refundDecision:"full",refundable:100000,refundAllowed:true} as never;
+  const base={paid:150000,refunded:50000,refundDecision:"full",refundable:100000,refundAllowed:true} as const;
   assert.deepEqual(paymentRefundAvailability(base),{refunded:50000,refundable:100000,decisionKnown:true,available:true});
   assert.equal(paymentRefundAvailability({...base,refundAllowed:false} as never).available,false);
   assert.equal(paymentRefundAvailability({...base,refundable:0} as never).available,false);

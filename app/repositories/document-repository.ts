@@ -19,7 +19,7 @@ export type DocumentRecord = {
   businessLinks?:Array<{kind:'unit'|'party'|'contract';id:string;label:string}>;
 };
 export type DocumentListResponse={documents:DocumentRecord[];connection:DocumentConnectionState;source:"backend-api"|"preview-adapter"};
-export type DocumentFilters={query?:string;category?:string;typeCode?:string;status?:string;projectId?:string;unitId?:string;partyId?:string;contractId?:string;clientChangeId?:string;complaintId?:string;handoverId?:string};
+export type DocumentFilters={documentId?:string;query?:string;category?:string;typeCode?:string;status?:string;projectId?:string;unitId?:string;partyId?:string;contractId?:string;clientChangeId?:string;complaintId?:string;handoverId?:string};
 export type NewDocumentInput={projectId:string;projectName:string;name:string;typeCode:string;typeName:string;status:DocumentStatus;note?:string;unit?:string;party?:string;contract?:string;salesCase?:string;author?:string};
 export type DocumentWorkflowLink={type:"client_change"|"complaint"|"handover";targetId:string};
 

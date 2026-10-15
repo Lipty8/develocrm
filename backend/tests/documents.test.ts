@@ -4,7 +4,7 @@ import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
 import type { Database } from "../src/database.js";
 import { DocumentRepository } from "../src/documents/repository.js";
-import { GraphUnavailableError, PreviewGraphAdapter } from "../src/documents/graph-adapter.js";
+import { GraphUnavailableError, PreviewGraphAdapter, type MicrosoftGraphAdapter } from "../src/documents/graph-adapter.js";
 import { SharePointFolderStrategy } from "../src/documents/folder-strategy.js";
 import { planDocumentDelta } from "../src/documents/sync-service.js";
 
@@ -210,7 +210,7 @@ test("SharePoint connection odmítá plaintext secret a bez konfigurace hlásí 
 });
 
 test("preview Graph adapter je skutečný no-op a nevyrábí falešná ID", async () => {
-  const graph = new PreviewGraphAdapter();
+  const graph:MicrosoftGraphAdapter = new PreviewGraphAdapter();
   assert.deepEqual(await graph.listFiles({ driveId: "", siteId: "" }), []);
   assert.equal(await graph.getFileMetadata({ driveId: "", siteId: "" }, "missing"), null);
   await assert.rejects(graph.uploadFile({ driveId: "", siteId: "" }, "root", "x.pdf", new Uint8Array(), "application/pdf"), GraphUnavailableError);

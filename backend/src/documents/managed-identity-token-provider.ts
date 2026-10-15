@@ -12,7 +12,7 @@ export class ManagedIdentityGraphTokenProvider implements GraphTokenProvider {
 
   constructor(
     private readonly clientId: string,
-    private readonly environment: NodeJS.ProcessEnv = process.env,
+    private readonly environment: Readonly<Partial<NodeJS.ProcessEnv>> = process.env,
     private readonly request: typeof fetch = fetch,
     private readonly now: () => number = Date.now,
   ) {

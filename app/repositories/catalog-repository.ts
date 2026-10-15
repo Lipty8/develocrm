@@ -100,7 +100,7 @@ export class ApiCatalogRepository implements CatalogRepository {
       localStorage.setItem("develocrm.accessory.edits",JSON.stringify(edits));
     }
   }
-  async removeOrArchiveAccessory(accessory:CatalogAccessoryRecord,reason:string){
+  async removeOrArchiveAccessory(accessory:CatalogAccessoryRecord,reason:string):Promise<{mode:"delete"|"archive"}>{
     const response=await apiFetch(`/api/catalog/accessories/${encodeURIComponent(accessory.id)}`,{method:"DELETE",headers:{"content-type":"application/json"},body:JSON.stringify({reason})});
     if(response.ok)return((await response.json()) as {outcome:{mode:"delete"|"archive"}}).outcome;
     if(response.status===503&&responseAllowsBrowserFallback(response)&&typeof window!=="undefined"){

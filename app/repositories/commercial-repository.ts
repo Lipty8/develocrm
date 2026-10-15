@@ -26,7 +26,7 @@ export interface CommercialRepository {
   getSnapshot(signal?: AbortSignal,projectId?:string): Promise<CommercialSnapshot>;
   recordPrice(input: { unitId: string; unitKey?: string; priceType: string; amount: number; validFrom: string; reason: string; approverMembershipId?: string; actorName?: string }): Promise<void>;
   decidePrice(input:{proposalId:string;decision:"approved"|"rejected";reason:string;actorName?:string}):Promise<void>;
-  transitionContract(input: { contractId: string; to: string; reason: string; refundDecisions?:Array<{obligationId:string;decision:"none"|"partial"|"full";amount?:number}>;idempotencyKey?:string;actorName?: string }): Promise<void>;
+  transitionContract(input: { contractId: string; to: string; reason: string; refundDecisions?:Array<{obligationId:string;decision:"none"|"partial"|"full";amount?:number}>;idempotencyKey?:string;actorName?: string }): Promise<{endOutcome:import("../../backend/src/shared/contract-end-outcome").ContractEndOutcome|null}|void>;
   createContract(input:{salesCaseId:string;type:"rs"|"sbk"|"ks"|"amendment";reference:string;title:string;parentContractId?:string;idempotencyKey:string;paymentCalculationType?:"percentage"|"fixed";paymentInputValue?:number;paymentDueAt?:string}):Promise<ContractCreateResult>;
   createAddendum(input:{baseContractId:string;title?:string;idempotencyKey:string}):Promise<{id:string;versionId:string;amendmentNumber:number;reference:string}>;
   addContractNote(input:{contractId:string;text:string}):Promise<{id:string}>;
@@ -106,7 +106,7 @@ class ApiCommercialRepository implements CommercialRepository {
 
   async transitionContract(input: { contractId: string; to: string; reason: string; refundDecisions?:Array<{obligationId:string;decision:"none"|"partial"|"full";amount?:number}>;idempotencyKey?:string;actorName?: string }) {
     const response = await apiFetch(`/api/commercial/contracts/${input.contractId}/status`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) });
-    if (response.ok) return;
+    if (response.ok) return await response.json() as {endOutcome:import('../../backend/src/shared/contract-end-outcome').ContractEndOutcome|null};
     if (response.status === 503 && responseAllowsBrowserFallback(response) && typeof window !== "undefined") {
       const current = await this.getSnapshot().then(snapshot => snapshot.contracts.find(contract => contract.id === input.contractId));
       if (!current) throw new Error("Smlouva nebyla v preview nalezena");

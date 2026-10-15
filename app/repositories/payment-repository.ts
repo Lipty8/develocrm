@@ -16,7 +16,7 @@ const initialPayments:PaymentRecord[]=[];
 function deriveStatus(amount:number,paid:number,dueAt:string,cancelled=false):PaymentStatus{
   if(cancelled)return"cancelled";if(paid>amount)return"overpaid";if(paid===amount)return"paid";if(paid>0)return"partially_paid";if(new Date(dueAt)<new Date())return"overdue";return"pending";
 }
-function readPreview(){if(typeof window==="undefined")return structuredClone(initialPayments);try{return JSON.parse(localStorage.getItem(STORAGE_KEY)??"null")??structuredClone(initialPayments);}catch{return structuredClone(initialPayments);}}
+function readPreview():PaymentRecord[]{if(typeof window==="undefined")return structuredClone(initialPayments);try{return JSON.parse(localStorage.getItem(STORAGE_KEY)??"null")??structuredClone(initialPayments);}catch{return structuredClone(initialPayments);}}
 function writePreview(rows:PaymentRecord[]){localStorage.setItem(STORAGE_KEY,JSON.stringify(rows));}
 function filterRows(rows:PaymentRecord[],filters:PaymentFilters){
   const query=filters.query?.toLocaleLowerCase("cs-CZ");

@@ -116,6 +116,7 @@ test('price creation and signed document integrity against all migrations',async
         await assert.rejects(f.database.withContext(f.context,client=>client.query("SELECT app.bind_external_contract_document($1,$2,$3,$4,$5)",[f.context.tenantId,c.contract_id,uploaded.documentId,uploaded.documentVersionId,f.context.membershipId])),/SIGNED_DOCUMENT_REQUIRED/);
       }
       const c=await f.start();
+      // @ts-expect-error Intentional invalid status: verify the database rejects untrusted input.
       await assert.rejects(f.uploads.upload({...f.context,projectId:f.projectId,unitId:c.unitId,salesCaseId:c.salesCaseId,contractId:c.contract_id,typeCode:'reservation_contract',idempotencyKey:randomUUID(),documentName:'Technical failed',fileName:'failed.pdf',mimeType:'application/pdf',bytes:f.fileBytes,versionLabel:'v1',status:'failed'}),/document_status_check/);
     });
     await t.test('real SQL checker after RS generation, signature, and reservation remains read-only',async()=>{

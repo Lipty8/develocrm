@@ -61,6 +61,93 @@ async function fixture(postgresUrl?:string){
   return {client,pool,connectionUrl:url?.toString(),ids,start,past,expire,cancel,sign,state,events,close};
 }
 
+for(const usePostgres of [false,true])test(`contract-end release invariants (${usePostgres?'PostgreSQL':'PGlite'})`,{skip:usePostgres&&!process.env.WORKFLOW_TEST_DATABASE_URL},async t=>{
+  const f=await fixture(usePostgres?process.env.WORKFLOW_TEST_DATABASE_URL:undefined);
+  const terminate=(id:string,db:SqlClient=f.client)=>db.query("SELECT app.transition_contract_status_with_refund_decisions($1,$2,'terminated','Technical termination','[]'::jsonb,$3,$4)",[f.ids.tenantId,id,`end:${id}`,f.ids.membershipId]);
+  const outcome=async(id:string)=>(await f.client.query<{outcome:{state:string;reasons:Array<{code:string}>}}>("SELECT after_data outcome FROM audit_log WHERE tenant_id=$1 AND entity_id=$2 AND action='contract.end_reconciled'",[f.ids.tenantId,id])).rows[0].outcome;
+  async function signed(type:'sbk'|'ks',c:Awaited<ReturnType<typeof f.start>>){
+    const id=(await f.client.query<{id:string}>("SELECT app.create_contract($1,$2,$3,$4,'Technical successor',$5) id",[f.ids.tenantId,c.caseId,type,`${type}-${randomUUID()}`,f.ids.membershipId])).rows[0].id;
+    const db=f.pool?await f.pool.connect():f.client;
+    let version:string;
+    try{await db.query('BEGIN');await db.query("SELECT set_config('app.tenant_id',$1,true),set_config('app.user_id',$2,true)",[f.ids.tenantId,f.ids.userId]);version=await signatureDocument(db,f.ids.tenantId,f.ids.membershipId,id);await db.query('COMMIT');}finally{if(f.pool)(db as PoolClient).release();}
+    await f.client.query("SELECT app.transition_contract_status($1,$2,'sent','Technical',$3)",[f.ids.tenantId,id,f.ids.membershipId]);
+    await f.client.query("SELECT app.transition_contract_status($1,$2,'approved','Technical',$3)",[f.ids.tenantId,id,f.ids.membershipId]);
+    await f.sign({contract_id:id,version_id:version!});return id;
+  }
+  try{
+    await t.test('single signed RS releases unit, closes case and preserves unpaid obligations; retries do not duplicate',async()=>{
+      const c=await f.start();await f.sign(c);
+      const before=(await f.client.query("SELECT id,amount,cancelled_at FROM payment_obligations WHERE sales_case_id=$1",[c.caseId])).rows;
+      await terminate(c.contract_id);await terminate(c.contract_id);
+      assert.equal((await outcome(c.contract_id)).state,'released');
+      assert.equal((await f.client.query("SELECT commercial_status FROM units WHERE id=$1",[c.unitId])).rows[0].commercial_status,'available');
+      assert.equal((await f.client.query("SELECT status FROM sales_cases WHERE id=$1",[c.caseId])).rows[0].status,'cancelled');
+      assert.deepEqual((await f.client.query("SELECT id,amount,cancelled_at FROM payment_obligations WHERE sales_case_id=$1",[c.caseId])).rows,before);
+      assert.equal((await f.client.query("SELECT count(*)::int n FROM outbox_events WHERE aggregate_id=$1 AND event_type='contract.end_reconciled.v1'",[c.contract_id])).rows[0].n,1);
+    });
+    await t.test('other effective contract blocks RS release, final SBK termination releases',async()=>{
+      const c=await f.start();await f.sign(c);const sbk=await signed('sbk',c);
+      await terminate(c.contract_id);assert.ok((await outcome(c.contract_id)).reasons.some(r=>r.code==='OTHER_CONTRACT'));
+      assert.equal((await f.state(c.unitId)).commercial_status,'contracted');
+      await terminate(sbk);assert.equal((await outcome(sbk)).state,'released');
+      assert.equal((await f.client.query("SELECT commercial_status FROM units WHERE id=$1",[c.unitId])).rows[0].commercial_status,'available');
+    });
+    await t.test('KS cancellation never proves ownership clearance',async()=>{
+      const c=await f.start();await f.sign(c);const ks=await signed('ks',c);
+      await terminate(c.contract_id);await terminate(ks);
+      assert.ok((await outcome(ks)).reasons.some(r=>r.code==='OWNERSHIP_UNVERIFIED'));
+      assert.equal((await f.state(c.unitId)).commercial_status,'sold');
+    });
+    await t.test('independent reservation is not cancelled by contract termination',async()=>{
+      const c=await f.start();await f.sign(c);
+      await f.client.query("UPDATE unit_holds SET idempotency_key=$1 WHERE tenant_id=$2 AND unit_id=$3 AND status='active'",[`independent:${randomUUID()}`,f.ids.tenantId,c.unitId]);
+      await terminate(c.contract_id);
+      assert.ok((await outcome(c.contract_id)).reasons.some(r=>r.code==='OTHER_HOLD'));
+      assert.equal((await f.state(c.unitId)).commercial_status,'reserved');
+      assert.equal((await f.client.query("SELECT count(*)::int n FROM unit_holds WHERE unit_id=$1 AND status='active'",[c.unitId])).rows[0].n,1);
+    });
+    await t.test('existing receipt, allocation, unpaid balance and refund records remain intact',async()=>{
+      const c=await f.start();await f.sign(c);
+      const id=(await f.client.query<{id:string}>("SELECT id FROM payment_obligations WHERE contract_id=$1",[c.contract_id])).rows[0].id;
+      await f.client.query("SELECT app.record_payment($1,$2,50000,now(),NULL,NULL,NULL,'Technical receipt',$3,$4)",[f.ids.tenantId,id,randomUUID(),f.ids.membershipId]);
+      const before=(await f.client.query("SELECT row_to_json(p) value FROM payment_obligations p WHERE id=$1",[id])).rows;
+      await f.client.query("SELECT app.transition_contract_status_with_refund_decisions($1,$2,'terminated','Technical termination',$3::jsonb,$4,$5)",[f.ids.tenantId,c.contract_id,JSON.stringify([{obligationId:id,decision:'none'}]),randomUUID(),f.ids.membershipId]);
+      assert.equal((await outcome(c.contract_id)).state,'released');
+      assert.deepEqual((await f.client.query("SELECT row_to_json(p) value FROM payment_obligations p WHERE id=$1",[id])).rows,before);
+      assert.equal(Number((await f.client.query("SELECT app.payment_obligation_paid($1,$2) n",[f.ids.tenantId,id])).rows[0].n),50000);
+      assert.equal((await f.client.query("SELECT count(*)::int n FROM payment_refunds WHERE tenant_id=$1",[f.ids.tenantId])).rows[0].n,0);
+      await f.client.query("SELECT app.record_payment($1,$2,10000,now(),NULL,NULL,NULL,'Technical debt settlement',$3,$4)",[f.ids.tenantId,id,randomUUID(),f.ids.membershipId]);
+      assert.equal((await f.client.query("SELECT commercial_status FROM units WHERE id=$1",[c.unitId])).rows[0].commercial_status,'available','later debt settlement must not re-open the sale');
+    });
+    await t.test('cross tenant and unauthorized membership cannot end a contract',async()=>{
+      const c=await f.start();await f.sign(c);
+      await assert.rejects(f.client.query("SELECT app.transition_contract_status_with_refund_decisions($1,$2,'terminated','Technical','[]',$3,$4)",[randomUUID(),c.contract_id,randomUUID(),f.ids.membershipId]));
+      await assert.rejects(f.client.query("SELECT app.transition_contract_status_with_refund_decisions($1,$2,'terminated','Technical','[]',$3,$4)",[f.ids.tenantId,c.contract_id,randomUUID(),randomUUID()]));
+      assert.equal((await f.state(c.unitId)).commercial_status,'reserved');
+    });
+    if(f.pool)await t.test('real concurrent termination and two reservations serialize at unit lock',async()=>{
+      const c=await f.start();await f.sign(c);
+      const a=await f.pool!.connect(),b=await f.pool!.connect(),d=await f.pool!.connect();
+      try{
+        for(const db of [a,b,d]){await db.query('BEGIN');await db.query("SET LOCAL ROLE develocrm_app;SET LOCAL statement_timeout='5s'");await db.query("SELECT set_config('app.tenant_id',$1,true),set_config('app.user_id',$2,true)",[f.ids.tenantId,f.ids.userId]);}
+        await terminate(c.contract_id,a);
+        const buyer=(await f.client.query<{party_id:string}>("SELECT party_id FROM sales_case_parties WHERE sales_case_id=$1 LIMIT 1",[c.caseId])).rows[0].party_id;
+        const reserve=(db:PoolClient)=>db.query("SELECT * FROM app.create_unit_hold($1,$2,'pre_reservation',ARRAY[$3::uuid],now()+interval '2 days',$4,NULL,$5,'Technical new sale')",[f.ids.tenantId,c.unitId,buyer,f.ids.membershipId,randomUUID()]);
+        const pids=await Promise.all([b,d].map(async db=>(await db.query<{id:number}>('SELECT pg_backend_pid() id')).rows[0].id));
+        const pending=[b,d].map(db=>reserve(db).then(async()=>{await db.query('COMMIT');return true;},async error=>{await db.query('ROLLBACK');assert.notEqual(error.code,'40P01');return false;}));
+        let waiting=0;for(let i=0;i<100&&waiting<2;i++){
+          waiting=(await f.pool!.query<{n:number}>("SELECT count(*)::int n FROM pg_stat_activity WHERE pid=ANY($1) AND wait_event_type='Lock'",[pids])).rows[0].n;
+          if(waiting<2)await new Promise(resolve=>setTimeout(resolve,10));
+        }
+        assert.equal(waiting,2,'both reservation backends must actually wait on the termination unit lock');
+        await a.query('COMMIT');const results=await Promise.all(pending);
+        assert.equal(results.filter(Boolean).length,1);
+        assert.equal((await f.client.query("SELECT count(*)::int n FROM unit_holds WHERE unit_id=$1 AND status='active'",[c.unitId])).rows[0].n,1);
+      }finally{for(const db of [a,b,d]){await db.query('ROLLBACK');db.release();}}
+    });
+  }finally{await f.close();}
+});
+
 test("reservation invariants across all current migrations",async t=>{
   const f=await fixture();
   try{

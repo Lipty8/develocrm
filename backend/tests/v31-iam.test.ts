@@ -50,6 +50,7 @@ test("administrátor přidá Entra uživatele a upraví jeho projektový rozsah 
   assert.equal((await db.query("SELECT id FROM users WHERE entra_subject=$1",[oid])).rows.length,1,"první login nevytvoří duplicitu");
   const session=await repository.getSession(resolved,identity,tenant);
   assert.ok(session);
+  assert.ok(session.workspace.projectScopes);
   assert.deepEqual(session.workspace.projectScopes.map(scope=>scope.projectId),[project]);
   await repository.updateMember({tenantId:tenant,userId:user,membershipId:membership,targetMembershipId:invited.membershipId,name:"Jana Nováková",email:"jana@example.test",jobTitle:"Vedoucí financí",workPhone:"+420 222 333 445",status:"active",workspaceRoleIds:[],projectAccess:projectAccess()});
   snapshot=await repository.adminSnapshot({tenantId:tenant,userId:user});

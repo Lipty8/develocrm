@@ -51,6 +51,9 @@ export class ActivityRepository{
  });}
 }
 function mapTimeline(row:{id:string;occurred_at:string;action:string;before_data:Record<string,unknown>|null;after_data:Record<string,unknown>|null;actor:string|null}):TimelineItem{const labels:Record<string,[string,string]>={
+ "contract.end_reconciled":[row.after_data?.state==='released'?"Obchod ukončen – jednotka uvolněna":"Smlouva ukončena – uvolnění jednotky je blokované","contract"],
+ "sales_case.ended_by_contract":["Obchodní případ byl ukončen","contract"],
+ "hold.ended_by_contract":["Rezervace ukončena spolu se smlouvou","contract"],
  "unit.updated":["Upraveny údaje jednotky","history"],"unit.floorplan_changed":["Změněn půdorys jednotky","document"],"unit.commercial_status_changed":["Změněn obchodní stav","contract"],
  "unit.interest_recorded":["Zaznamenán zájem o jednotku","history"],"hold.created":["Vytvořeno jednání nebo rezervace","contract"],"hold.converted":["Jednání převedeno na rezervaci","contract"],"hold.cancelled":["Rezervace byla zrušena","contract"],
  "hold.created_by_rs_signature":["Podpisem RS vznikla rezervace","contract"],"hold.converted_by_rs_signature":["Podpisem RS byla potvrzena rezervace","contract"],"rs.signature_reservation_activated":["Obchodní proces přešel do rezervace","contract"],

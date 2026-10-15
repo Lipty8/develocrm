@@ -74,7 +74,6 @@ export class EntraAuthController {
         authority: this.config.authority as string,
         redirectUri: this.config.redirectUri as string,
         postLogoutRedirectUri: this.config.postLogoutRedirectUri as string,
-        navigateToLoginRequestUrl: true,
       },
       cache: { cacheLocation: "sessionStorage" },
       system: { allowPlatformBroker: false },
