@@ -15,7 +15,9 @@ historical data updates**. Effective termination in the existing model is immedi
 - Ended RS/SBK/KS may close an active case only when all other contracts are ended,
   there is no other active case, independent hold, blocked unit or live handover.
 - Only the same case's system reservation (`signed-rs-reservation:<RS UUID>`) is
-  retired automatically. Unrecognized/manual reservations fail closed.
+  retired automatically. Migration 0061 additionally requires the matching
+  append-only RS-signature audit for that exact hold and contract; a key alone
+  is not provenance. Unrecognized/manual/import-shaped reservations fail closed.
 - Any signed KS history, sold/handed-over unit, or handover blocks automatic resale.
   There is no trustworthy ownership-clearance record in the current model. No
   synthetic ownership flag or legal clearance workflow has been added.
@@ -64,3 +66,19 @@ expiry and document-evidence concurrency invariants remain covered.
 Deployment evidence and authenticated technical-only E2E results are recorded
 separately after release. Existing TECH SMOKE 0056/0057 and real business rows must
 not be changed by this release.
+
+## Authenticated pilot checks
+
+On 15 October, new TECH0060 fixtures exercised the actual browser mutation:
+
+- TECH60-RELEASE-RS: cancelling the only signed RS closed the case, cancelled its
+  system reservation and made the unit available. Browser reload retained the
+  result and history; the unpaid CZK 250,000 obligation remained uncancelled.
+- TECH60-BLOCKED-RS: cancelling the RS while a separate SBK draft exists retained
+  the reserved unit and displayed the specific other-contract blocker. Reload
+  also retained the unit-card warning and current buyer.
+- No real historical case was reconciled. Unit 417 was read only; its live
+  assessment was eligible but it remains unchanged pending separate authorization.
+
+The final provenance regression suite passes 33 tests with zero skips, including
+real PostgreSQL concurrency and the legacy signature-shaped-key rejection.

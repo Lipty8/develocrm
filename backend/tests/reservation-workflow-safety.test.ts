@@ -106,6 +106,17 @@ for(const usePostgres of [false,true])test(`contract-end release invariants (${u
       assert.equal((await f.state(c.unitId)).commercial_status,'reserved');
       assert.equal((await f.client.query("SELECT count(*)::int n FROM unit_holds WHERE unit_id=$1 AND status='active'",[c.unitId])).rows[0].n,1);
     });
+    await t.test('legacy reservation with a signature-shaped key but no signature audit is protected',async()=>{
+      const c=await f.start();await f.sign(c);
+      // Offline legacy/import fixture, with all production constraints enabled.
+      // The replacement hold has no server signature audit proving its origin.
+      const h=(await f.client.query<{id:string}>("SELECT id FROM unit_holds WHERE unit_id=$1 AND status='active'",[c.unitId])).rows[0];
+      await f.client.query("UPDATE unit_holds SET status='converted',ended_at=now(),idempotency_key=$1 WHERE id=$2",[randomUUID(),h.id]);
+      await f.client.query("INSERT INTO unit_holds(tenant_id,project_id,unit_id,sales_case_id,hold_type,expires_at,idempotency_key,created_by_membership_id) SELECT tenant_id,project_id,unit_id,sales_case_id,'reservation',now()+interval '7 days',$2,$3 FROM contracts WHERE id=$1",[c.contract_id,`signed-rs-reservation:${c.contract_id}`,f.ids.membershipId]);
+      await terminate(c.contract_id);
+      assert.ok((await outcome(c.contract_id)).reasons.some(r=>r.code==='OTHER_HOLD'));
+      assert.equal((await f.state(c.unitId)).commercial_status,'reserved');
+    });
     await t.test('existing receipt, allocation, unpaid balance and refund records remain intact',async()=>{
       const c=await f.start();await f.sign(c);
       const id=(await f.client.query<{id:string}>("SELECT id FROM payment_obligations WHERE contract_id=$1",[c.contract_id])).rows[0].id;
