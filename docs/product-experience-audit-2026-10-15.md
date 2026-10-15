@@ -25,6 +25,7 @@ Jednotka zůstává rozdělená na Přehled, Smlouvy, Platby, Dokumenty, Předá
 | P1 | `SalesRepository.getDirectory` vrací `unitContexts` klíčované pouze kódem jednotky. V globálním snapshotu se dvě stejná čísla z různých projektů mohou přepsat. | Vyžaduje samostatný matching API/UI balík s UUID klíči a testem dvou projektů; není opraveno pouhou opravou odkazů. |
 | P1 | Seznam klientů při chybě/timeoutu serverového filtrování přejde na lokální snapshot a nezobrazí, že výsledek není aktuální. | Samostatně změnit na explicitní error/retry a ochránit souběh lazy-loading stránek. |
 | P2 | U smlouvy je projekt prostý text, aktuální smluvní strany nejsou odkazy. | Přímé projekt/party odkazy, zachovat historii stran. |
+| P2 | Živé E2E: podepsaná TECH57-GEN-RS při čekání na úspěšný readiness GET (200, req-48p) krátce tvrdí, že dokument nelze ověřit. | Samostatný loading stav, žádná falešná chyba ani předčasné povolení otevření/podpisu. |
 | P2 | UnitContracts obsahuje technickou a již zastaralou větu o budoucí aktivaci šablon. | Odstranit, nikoli slibovat dostupnost SBK/KS generování. |
 | P2 | Informace o interním storage/source, logické verzi, řízených operacích zůstávají v několika formulářích. | Postupně odstranit po ověření významu; nezaměnit za business varování. |
 | P2 | Katalog vrací užitečná UUID, ale commercial ContractItem vrací jen kód jednotky + UUID projektu; document relations jsou textové seznamy. | Bezpečně kvalifikovat existující vazbu; budoucí malé DTO rozšíření bez nových tabulek. |
@@ -63,6 +64,12 @@ Jednotka 417 → aktuální kupující F&F → zpět na přesnou jednotku; jedno
 Nové zjištění mimo tento UI balík: jednotka 417 má po načtení projekce etapu SBK, ale její zobrazené RS i SBK jsou ukončené. Nesmí se řešit přepisem ostrých dat ani domýšlením právního rollbacku SBK. Vyžaduje diagnostiku aktuálního case versus historických smluv v dalším workflow balíku. Také při načítání kontextových plateb souhrny krátce ukazují nuly; ty nejsou důkazem nulové pohledávky. Po načtení hodnoty odpovídají evidenci.
 
 Druhý UI balík otestován: 143 frontendových + 46 interakčních testů pass, lint bez errors/warnings, produkční build pass. Finální E2E uzavřených smluv ověřit po jeho publikaci.
+
+### Ověření dokumentové větve
+
+Existující technická TECH57-GEN-RS → Dokumenty → skutečný dokument `8a3e6838-007c-48bc-b00c-ee737f501d77` → zpět na stejnou smlouvu funguje. Žádné generování ani nová dokumentová verze nebyly spuštěny. Readiness backend GET vrací 200 (req-48p), po načtení lze otevřít přesnou podepsanou verzi. Browser skutečně stáhl existující `technical-rs-0057-ue Oct 13 2026.docx` tlačítkem Otevřít přesný dokument ze SharePointu. Nebyl procházen libovolný storage key ani získáván browser token.
+
+Původní chybové hlášení při prvním zobrazení tedy nebylo chybou persistence/Graph: panel dostával documentReady=false po dobu kontroly a vydával čekání za nedostupnost. Oprava předává explicitní verifying a testuje přechod čekání → ověřený dokument. Celkem finálně 47 interakčních testů pass; finanční/smluvní backend beze změny.
 
 ## Doporučené navazující malé balíky
 
