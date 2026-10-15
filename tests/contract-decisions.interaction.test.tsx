@@ -13,6 +13,73 @@ import {projectSalesAggregation,projectUnitSalesBucket,type ProjectSalesBucket} 
 import {contractSummaryCategory,contractSummaryCounts,type ContractSummaryCategory} from "../app/lib/contract-summary";
 import {PackageOpen,UserRound,Users} from "lucide-react";
 import {Projects,ClientChangeStatusModal,ComplaintDetailModal,ContractAddendumModal,ContractNoteModal,FormModal,PaymentDetailModal,PaymentRefundForm,paymentRefundAvailability} from "../app/CRMApp";
+import {relatedUnitHref,relatedClientHref} from '../app/lib/entity-navigation';
+import {searchWorkspace} from '../app/lib/workspace-search';
+import {ClientContractLinks} from '../app/components/client-contract-links';
+import {RelatedUnitLink} from '../app/components/entity-links';
+import {useWorkspaceSearch} from '../app/components/workspace-search';
+import {catalogRepository} from '../app/repositories/catalog-repository';
+import {clientRepository} from '../app/repositories/client-repository';
+import {commercialRepository} from '../app/repositories/commercial-repository';
+import {clients as sampleClients,units as sampleUnits,contracts as sampleContracts} from '../app/crm-data';
+
+test('vazby jednotek používají UUID nebo jednoznačný projekt, nikdy první cizí jednotku',()=>{
+ const rows=[{...sampleUnits[0],id:'417',backendId:'11111111-1111-4111-8111-111111111111',projectBackendId:'p1',project:'A'},{...sampleUnits[0],id:'417',backendId:'22222222-2222-4222-8222-222222222222',projectBackendId:'p2',project:'B'}];
+ assert.equal(relatedUnitHref({unit:'417',projectId:'p2'},rows),'/units/22222222-2222-4222-8222-222222222222');
+ assert.equal(relatedUnitHref({unit:'417'},rows),null);
+ assert.equal(relatedUnitHref({unit:'418',projectId:'p1'},rows),null);
+ assert.equal(relatedUnitHref({unitId:rows[1].backendId},[]),'/units/22222222-2222-4222-8222-222222222222');
+ assert.equal(relatedUnitHref({unit:'417',project:'A'},[rows[0],rows[0]]),null);
+});
+
+test('dva stejně pojmenovaní klienti se nezamění, UUID funguje i mimo načtený katalog',()=>{
+ const a={...sampleClients[0],id:'11111111-1111-4111-8111-111111111111',name:'Jan Novák'};const b={...a,id:'22222222-2222-4222-8222-222222222222'};
+ assert.equal(relatedClientHref('Jan Novák',[a,b]),null);
+ assert.equal(relatedClientHref(b.id,[a,b]),`/clients/${b.id}`);
+ assert.equal(relatedClientHref(b.id,[]),`/clients/${b.id}`);
+});
+
+test('workspace hledání používá vlastní snapshot, normalizuje české názvy a nefalšuje dokumenty',()=>{
+ const data={projects:[{...sampleProjects[0],backendId:'project-b',name:'Hrdlička',code:'HRD'}],units:[{...sampleUnits[0],id:'417',backendId:'unit-b',project:'Hrdlička'}],clients:[{...sampleClients[0],id:'party-b',name:'Firma Žluťoučká',contact:'',email:'klient@firma.cz'}],contracts:[{...sampleContracts[0],id:'contract-b',reference:'RS-417',unit:'417'}]};
+ assert.equal(searchWorkspace(data,'hrdlicka')[0].href,'/projects/project-b');
+ assert.equal(searchWorkspace(data,'zlutoucka')[0].href,'/clients/party-b');
+ assert.equal(searchWorkspace(data,'klient@firma')[0].href,'/clients/party-b');
+ assert.equal(searchWorkspace(data,'RS-417')[0].type,'Smlouva');
+ assert.equal(searchWorkspace(data,'RS-417')[0].href,'/contracts/contract-b');
+ assert.ok(searchWorkspace(data,'417').every(row=>['Projekt','Jednotka','Klient','Smlouva'].includes(row.type)));
+ assert.deepEqual(searchWorkspace({projects:[],units:[],clients:[],contracts:[]},'417'),[]);
+ assert.deepEqual(searchWorkspace(data,'4'),[]);
+});
+
+test('klientské smlouvy zahrnou více projektů podle party ID, ne shody jména',()=>{
+ const base={...sampleContracts[0],client:'Jan Novák',parties:[{id:'cp',partyId:'buyer',name:'Jan Novák',role:'buyer',signatureStatus:'pending'}]};
+ render(<ClientContractLinks partyId="buyer" contracts={[{...base,id:'c1',reference:'RS-A',project:'A'},{...base,id:'c2',reference:'RS-B',project:'B'},{...base,id:'c3',reference:'Cizí RS',parties:[{...base.parties[0],partyId:'someone-else'}]}]}/>);
+ assert.equal(screen.getByRole('link',{name:/RS-A/}).getAttribute('href'),'/contracts/c1');
+ assert.equal(screen.getByRole('link',{name:/RS-B/}).getAttribute('href'),'/contracts/c2');
+ assert.equal(screen.queryByText('Cizí RS'),null);
+});
+
+test('odkaz na jednotku zůstává funkční i když scoped katalog jednotku neobsahuje',()=>{
+ render(<RelatedUnitLink reference={{unitId:'22222222-2222-4222-8222-222222222222'}}>Jednotka 417</RelatedUnitLink>);
+ assert.equal(screen.getByRole('link',{name:'Jednotka 417'}).getAttribute('href'),'/units/22222222-2222-4222-8222-222222222222');
+});
+
+test('globální hledání načítá neomezený autorizovaný snapshot bez přepsání obrazovky a při chybě nevydává seed za výsledek',async()=>{
+ const original={catalog:catalogRepository.getCatalog,directory:clientRepository.getDirectory,commercial:commercialRepository.getSnapshot};
+ let calls=0;
+ const Harness=()=>{const state=useWorkspaceSearch('Hrdlicka',true);return <div>{state.loading?<p role="status">Načítám</p>:state.error?<p role="alert">{state.error}</p>:state.results.map(row=><a key={row.href} href={row.href}>{row.title}</a>)}</div>;};
+ try{
+  catalogRepository.getCatalog=async(_signal,projectId)=>{assert.equal(projectId,undefined);calls++;return{projects:[{...sampleProjects[0],name:'Hrdlička',backendId:'other-project'}],units:[],accessories:[],memberships:[],structures:[],source:'backend-api'};};
+  clientRepository.getDirectory=async(_signal,projectId)=>{assert.equal(projectId,undefined);return{clients:[],unitContexts:{},source:'backend-api'};};
+  commercialRepository.getSnapshot=async(_signal,projectId)=>{assert.equal(projectId,undefined);return{contracts:[],currentPrices:{},priceBreakdowns:{},priceHistories:{},priceProposals:[],contractSummary:{}};};
+  const beforeNames=sampleProjects.map(project=>project.name);
+  const view=render(<Harness/>);await waitFor(()=>assert.ok(screen.getByRole('link',{name:'Hrdlička'})));
+  assert.equal(calls,1);assert.deepEqual(sampleProjects.map(project=>project.name),beforeNames);view.unmount();
+  catalogRepository.getCatalog=async()=>{throw new Error('403');};
+  render(<Harness/>);await waitFor(()=>assert.ok(screen.getByRole('alert').textContent?.includes('nepodařilo')));
+  assert.equal(screen.queryByRole('link',{name:'Hrdlička'}),null);
+ }finally{catalogRepository.getCatalog=original.catalog;clientRepository.getDirectory=original.directory;commercialRepository.getSnapshot=original.commercial;}
+});
 
 let cleanup:()=>void;
 let render:typeof import("@testing-library/react").render;
@@ -65,7 +132,7 @@ test('archivace projektu vyžaduje potvrzení, ukáže závazky a obnovuje bez z
 
 before(async()=>{
   const dom=new JSDOM("<!doctype html><html><body></body></html>",{url:"https://develocrm.test"});
-  Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,Node:dom.window.Node,MouseEvent:dom.window.MouseEvent,KeyboardEvent:dom.window.KeyboardEvent,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:(callback:FrameRequestCallback)=>setTimeout(()=>callback(Date.now()),0),cancelAnimationFrame:clearTimeout});
+  Object.assign(globalThis,{self:dom.window,window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,Node:dom.window.Node,MouseEvent:dom.window.MouseEvent,KeyboardEvent:dom.window.KeyboardEvent,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:(callback:FrameRequestCallback)=>setTimeout(()=>callback(Date.now()),0),cancelAnimationFrame:clearTimeout});
   Object.defineProperty(globalThis,"navigator",{value:dom.window.navigator,configurable:true});
   const library=await import("@testing-library/react");
   ({cleanup,render,screen,fireEvent,waitFor,act}=library);
