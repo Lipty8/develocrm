@@ -2,6 +2,7 @@ import type { MediaLink } from "./media-repository";
 import { mediaRepository } from "./media-repository";
 import { responseAllowsBrowserFallback } from "../lib/data-mode";
 import { apiFetch } from "../lib/api-client";
+import {readError} from '../lib/read-state';
 
 export type DocumentCategory = "contract" | "floor_plan" | "project_documentation" | "client_document" | "price_document" | "reservation" | "other";
 export type DocumentStatus = "draft" | "ready" | "sent" | "negotiation" | "signed" | "archived";
@@ -15,6 +16,7 @@ export type DocumentRecord = {
   createdAt:string;updatedAt:string;author:string|null;version:string|null;units:string[];parties:string[];contracts:string[];salesCases:string[];
   clientChanges:string[];complaints:string[];handovers:string[];
   versions?:DocumentVersionRecord[];events?:DocumentEventRecord[];
+  businessLinks?:Array<{kind:'unit'|'party'|'contract';id:string;label:string}>;
 };
 export type DocumentListResponse={documents:DocumentRecord[];connection:DocumentConnectionState;source:"backend-api"|"preview-adapter"};
 export type DocumentFilters={query?:string;category?:string;typeCode?:string;status?:string;projectId?:string;unitId?:string;partyId?:string;contractId?:string;clientChangeId?:string;complaintId?:string;handoverId?:string};
@@ -102,7 +104,7 @@ class ApiDocumentRepository implements DocumentRepository {
 async function requestDocuments(params:Record<string,string|undefined>,signal?:AbortSignal):Promise<DocumentListResponse>{
   const search=new URLSearchParams();for(const [key,value] of Object.entries(params))if(value)search.set(key,value);
   const response=await apiFetch(`/api/documents?${search}`,{signal,cache:"no-store"});
-  if(!response.ok)throw new Error("Dokumenty se nepodařilo načíst");
+  if(!response.ok)throw readError(response);
   return response.json() as Promise<DocumentListResponse>;
 }
 

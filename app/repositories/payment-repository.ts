@@ -1,5 +1,6 @@
 import { responseAllowsBrowserFallback } from "../lib/data-mode";
 import { apiFetch } from "../lib/api-client";
+import {readError} from '../lib/read-state';
 
 export type PaymentStatus="pending"|"partially_paid"|"paid"|"overdue"|"overpaid"|"cancelled";
 export type PaymentRefundRecord={id:string;amount:number;refundedAt:string;reason:string};
@@ -38,7 +39,7 @@ class ApiPaymentRepository implements PaymentRepository{
     const query=new URLSearchParams(Object.entries(filters).filter((entry):entry is [string,string]=>Boolean(entry[1])));
     const response=await apiFetch(`/api/payments?${query}`,{signal,cache:"no-store"});
     if(response.ok)return await response.json() as {payments:PaymentRecord[];source:"postgresql"};
-    if(!(response.status===503&&responseAllowsBrowserFallback(response)))throw new Error("Platby nelze načíst");
+    if(!(response.status===503&&responseAllowsBrowserFallback(response)))throw readError(response);
     return{payments:filterRows(readPreview(),filters),source:"preview-adapter" as const};
   }
   async record(obligationId:string,input:{amount:number;paidAt:string;variableSymbol?:string;counterpartyAccount?:string;bankTransactionId?:string;note?:string;idempotencyKey?:string}){

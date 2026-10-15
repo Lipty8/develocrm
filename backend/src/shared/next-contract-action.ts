@@ -22,6 +22,8 @@ export type SalesProcessProjection={
   steps:Array<{code:(typeof salesProcessSteps)[number]["code"];label:string;state:"complete"|"current"|"pending"|"skipped"}>;
   nextContractAction:NextContractAction;
   unavailableReason:string|null;
+  reviewRequired:boolean;
+  reviewReason:string|null;
 };
 export type SalesProcessInput={
   hasActiveSalesCase:boolean;
@@ -36,7 +38,6 @@ export type SalesProcessInput={
 const active=(fact:ContractWorkflowFact|undefined)=>Boolean(fact&&!['cancelled','terminated'].includes(fact.status));
 const signed=(fact:ContractWorkflowFact|undefined)=>fact?.status==="signed";
 const commercialStatusLabels:Record<string,string>={available:"Volný",pre_reserved:"V jednání",reserved:"Rezervovaná",contracted:"SBK",sold:"KS",handed_over:"Předáno",blocked:"Blokováno"};
-const stageIndex:Record<string,number>={interest:0,pre_reservation:1,reservation:2,rs:2,sbk:3,ks:4,handover:5};
 
 function resolveNextContractAction(input:SalesProcessInput,activeIndex:number,activeContract:ContractWorkflowFact|undefined,signedTypes:Set<CoreContractType>):NextContractAction{
   if(!input.hasActiveSalesCase)return{kind:"missing_sales_case",label:"Nejdříve přiřadit klienta"};
@@ -61,19 +62,24 @@ export function getSalesProcessState(input:SalesProcessInput):SalesProcessProjec
   else if(active(sbk)){completedThrough=2;activeIndex=3;activeContract=sbk;}
   else if(signed(rs)){completedThrough=2;activeIndex=3;}
   else if(active(rs)){completedThrough=1;activeIndex=2;activeContract=rs;}
-  else if(input.salesStage==="pre_reservation"&&!input.holdType){activeIndex=0;completedThrough=-1;}
-  else if(input.salesStage&&input.salesStage in stageIndex){activeIndex=stageIndex[input.salesStage];completedThrough=activeIndex-1;}
-  else if(input.salesStage==="pre_reservation"||input.holdType==="pre_reservation"){completedThrough=0;activeIndex=1;}
+  else if(input.holdType==="pre_reservation"){completedThrough=0;activeIndex=1;}
   else if(input.hasActiveSalesCase||input.hasInterest){completedThrough=-1;activeIndex=0;}
-  const nextContractAction=resolveNextContractAction(input,activeIndex,activeContract,signedTypes);
+  // Persisted stages are not proof that a contract is still effective. In particular,
+  // terminating SBK/KS does not define whether the sale should restart or close.
+  const terminatedAdvanced=input.contracts.some(fact=>["sbk","ks"].includes(fact.type)&&["cancelled","terminated"].includes(fact.status));
+  const unsupportedStage=input.hasActiveSalesCase&&!rs&&!sbk&&!ks&&["reservation","rs","sbk","ks","handover"].includes(input.salesStage??"");
+  const reviewRequired=!input.handoverCompleted&&(unsupportedStage||(terminatedAdvanced&&!sbk&&!ks));
+  const reviewReason=reviewRequired?"Smlouvy byly ukončeny nebo neodpovídají uložené etapě. Další postup musí potvrdit administrátor.":null;
+  const nextContractAction:NextContractAction=reviewReason?{kind:"none",label:"",reason:reviewReason}:resolveNextContractAction(input,activeIndex,activeContract,signedTypes);
   const currentStage=salesProcessSteps[activeIndex]?.code??"interest";
   const unavailableReason=nextContractAction.kind==="none"?nextContractAction.reason:
     nextContractAction.kind==="missing_sales_case"?"Jednotka nemá aktivní obchodní proces.":
     nextContractAction.kind==="open_contracts"?"Nejdříve dokončete rozpracovanou smlouvu.":null;
   return{
-    completedThrough,activeIndex,currentStage,nextContractAction,unavailableReason,
+    completedThrough,activeIndex,currentStage,nextContractAction,unavailableReason,reviewRequired,reviewReason,
     commercialStatusLabel:input.handoverCompleted?"Předáno":signed(ks)?"KS":signed(sbk)?"SBK":signed(rs)&&!["contracted","sold","handed_over","SBK","KS","Předáno"].includes(input.commercialStatus??"")?"Rezervovaná":input.commercialStatus?commercialStatusLabels[input.commercialStatus]??input.commercialStatus:salesProcessSteps[activeIndex]?.label??"Zájem",
     steps:salesProcessSteps.map((step,index)=>{
+      if(reviewRequired&&index>completedThrough)return{...step,state:"pending" as const};
       if(index===0||index===1)return{...step,state:(index<=completedThrough?"complete":index===activeIndex?"current":"pending") as "complete"|"current"|"pending"};
       if(step.code==="rs"||step.code==="sbk"||step.code==="ks"){
         const fact=({rs,sbk,ks} as const)[step.code];

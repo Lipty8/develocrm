@@ -1,6 +1,7 @@
 import type { ClientRecord, UnitCommercialContext } from "../crm-data";
 import { clientUsesBrowserAdapter, responseAllowsBrowserFallback } from "../lib/data-mode";
 import { apiFetch } from "../lib/api-client";
+import {readError} from '../lib/read-state';
 import { formatPragueDate } from "../lib/date-format";
 
 export type ClientSnapshot = { clients: ClientRecord[]; unitContexts: Record<string,UnitCommercialContext>; source:"backend-api"|"preview-seed" };
@@ -30,7 +31,7 @@ export class ApiClientRepository implements ClientRepository {
     if(!response.ok)throw new Error("Klienty se nepodařilo načíst");
     const snapshot=await response.json() as ClientSnapshot;if(typeof window!=="undefined"&&clientUsesBrowserAdapter()){const edits=JSON.parse(localStorage.getItem("develocrm.client.edits")||"{}");snapshot.clients=snapshot.clients.map(c=>({...c,...(edits[c.id]||{})}));const created=JSON.parse(localStorage.getItem("develocrm.new.clients")||"[]");snapshot.clients.push(...created.filter((row:{id:string})=>!snapshot.clients.some(item=>item.id===row.id)));applyPreviewSalesCommands(snapshot);}return snapshot;
   }
-  async getPage(input:ClientPageInput,signal?:AbortSignal){const query=new URLSearchParams({page:String(input.page),pageSize:String(input.pageSize)});for(const [key,value] of Object.entries(input)){if(key==="page"||key==="pageSize"||value==null||value===""||(Array.isArray(value)&&!value.length))continue;query.set(key,Array.isArray(value)?value.join(","):String(value));}const response=await apiFetch(`/api/clients?${query}`,{signal,cache:"no-store"});if(!response.ok)throw new Error("Stránku klientů se nepodařilo načíst");const payload=await response.json() as {clients:ClientRecord[];total?:number;page?:number;pageSize?:number};return{clients:payload.clients,total:payload.total??payload.clients.length,page:payload.page??input.page,pageSize:payload.pageSize??input.pageSize};}
+  async getPage(input:ClientPageInput,signal?:AbortSignal){const query=new URLSearchParams({page:String(input.page),pageSize:String(input.pageSize)});for(const [key,value] of Object.entries(input)){if(key==="page"||key==="pageSize"||value==null||value===""||(Array.isArray(value)&&!value.length))continue;query.set(key,Array.isArray(value)?value.join(","):String(value));}const response=await apiFetch(`/api/clients?${query}`,{signal,cache:"no-store"});if(!response.ok)throw readError(response);const payload=await response.json() as {clients:ClientRecord[];total?:number;page?:number;pageSize?:number};return{clients:payload.clients,total:payload.total??payload.clients.length,page:payload.page??input.page,pageSize:payload.pageSize??input.pageSize};}
   async exportContacts(partyIds:string[],format:"bcc"|"csv"):Promise<{value:string;count:number}> {
     const response=await apiFetch("/api/clients/export",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({partyIds,format})});
     if(!response.ok)throw new Error("Export není povolen");

@@ -2,6 +2,7 @@ import {addCalendarDays} from "../lib/date-time";
 import {units} from "../crm-data";
 import { responseAllowsBrowserFallback } from "../lib/data-mode";
 import { apiFetch } from "../lib/api-client";
+import {readError} from '../lib/read-state';
 export type HandoverHistoryEvent={id:string;type:"planned"|"rescheduled"|"handed_over"|"cancelled";occurredAt:string;previousScheduledAt:string|null;scheduledAt:string|null;actor:string|null};
 export type HandoverRecord={id:string;projectId:string;project:string;unitId:string;unit:string;scheduledAt:string;client:string;owner:string;salesCaseId:string|null;status:"planned"|"handed_over"|"cancelled";readiness:number;attention:string|null;place:string|null;note:string|null;completedAt:string|null;participants:Array<{partyId:string;name:string;role:string}>;history:HandoverHistoryEvent[]};
 export type HandoverScheduleInput={unitId:string;scheduledAt:string;responsibleMembershipId:string;place?:string|null;note?:string|null;idempotencyKey:string};
@@ -16,7 +17,7 @@ class ApiHandoverRepository implements HandoverRepository{
     const query=new URLSearchParams();if(input.projectId)query.set("projectId",input.projectId);if(input.unitId)query.set("unitId",input.unitId);if(input.status)query.set("status",input.status);if(input.owner)query.set("ownerId",input.owner);if(input.query)query.set("query",input.query);if(input.sort)query.set("sort",input.sort);if(input.direction)query.set("direction",input.direction);
     const response=await apiFetch(`/api/handovers?${query}`,{signal,cache:"no-store"});
     if(response.ok)return (await response.json() as {handovers:HandoverRecord[]}).handovers;
-    if(!(response.status===503&&responseAllowsBrowserFallback(response)))throw new Error((await response.json().catch(()=>({} as {error?:string}))).error??"Předání nelze načíst");
+    if(!(response.status===503&&responseAllowsBrowserFallback(response)))throw readError(response);
     return previewHandovers();
   }
   async schedule(input:HandoverScheduleInput){

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import {afterEach,before,test} from "node:test";
-import React,{useState} from "react";
+import React,{useState,useCallback} from "react";
+import {AsyncNotice,useAsyncRead} from '../app/components/async-content';
+import {ReadError} from '../app/lib/read-state';
 import {JSDOM} from "jsdom";
 import {RowActionMenu} from "../app/components/row-action-menu";
 import {ProjectArchiveAction} from '../app/components/project-archive-action';
@@ -152,6 +154,27 @@ before(async()=>{
 });
 
 afterEach(()=>{cleanup();window.localStorage.clear();});
+
+test('změna obchodního kontextu okamžitě skryje stará data a pozdní odpověď je nepřepíše',async()=>{
+ const finish:Record<string,(value:string)=>void>={};
+ function Harness({id}:{id:string}){const read=useAsyncRead(id,useCallback(()=>new Promise<string>(resolve=>{finish[id]=resolve;}),[id]));return <><AsyncNotice loading={read.loading} error={read.error}/>{read.data&&<span>{read.data}</span>}</>;}
+ const view=render(<Harness id="a"/>);
+ await act(async()=>finish.a('Obchod A'));assert.ok(screen.getByText('Obchod A'));
+ view.rerender(<Harness id="b"/>);assert.equal(screen.queryByText('Obchod A'),null);assert.ok(screen.getByRole('status'));
+ view.rerender(<Harness id="c"/>);
+ await act(async()=>finish.b('Pozdní obchod B'));assert.equal(screen.queryByText('Pozdní obchod B'),null);
+ await act(async()=>finish.c('Obchod C'));assert.ok(screen.getByText('Obchod C'));
+});
+
+test('načítání, prázdno, zákaz a chyba jsou odlišné, opakování načtení funguje',async()=>{
+ let calls=0;
+ const request=async()=>{if(++calls===1)throw new ReadError(403);return [] as string[];};
+ function Harness(){const read=useAsyncRead('permission',request);return <AsyncNotice loading={read.loading} error={read.error} empty={read.data?.length===0} retry={read.retry}/>;}
+ render(<Harness/>);assert.ok(screen.getByRole('status'));
+ await screen.findByText('Nedostatečné oprávnění');assert.equal(screen.queryByText('Žádné záznamy'),null);
+ await userEvent.setup().click(screen.getByRole('button',{name:'Zkusit znovu'}));
+ await screen.findByText('Žádné záznamy');assert.equal(calls,2);
+});
 
 const columns:readonly TableColumnDefinition[]=[
   {id:"name",label:"Název",required:true,defaultVisible:true},

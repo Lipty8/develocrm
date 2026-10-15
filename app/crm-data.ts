@@ -75,6 +75,8 @@ export type ClientRecord = {
   unitRelations?:Array<{unitId:string;code:string;projectId:string;project:string;contractType?:"RS"|"SBK"|"KS";contractStatus?:string}>;
 };
 export type UnitCommercialContext = {
+  unitId?:string;
+  projectId?:string;
   salesCaseId?: string | null;
   buyers: Array<{ partyId: string; name: string; email: string; role: string; share: number | null }>;
   buyerHistory?: Array<{ id:string; occurredAt:string; previousBuyers:Array<{partyId:string;name:string;role:string}>; currentBuyers:Array<{partyId:string;name:string;role:string}>; reason:string; actor:string; sourceContractId?:string|null; sourceContractReference?:string|null }>;
@@ -84,7 +86,7 @@ export type UnitCommercialContext = {
 };
 export type PriceHistoryRecord={id:string;unit:string;type:string;amount:number;amountNet?:number;currency:string;validFrom:string;validTo:string|null;reason:string;author:string;approver:string|null};
 export type ContractHistoryEvent={id:string;fromStatus:string|null;toStatus:string;occurredAt:string;actor:string;note:string;source:"manual"|"automation"|"signature"|"import"};
-export type ContractRecord={id?:string;salesCaseId?:string;unit:string;client:string;projectId?:string;project:string;type:string;typeCode?:string;state:string;statusCode?:string;updated:string;updatedAt?:string;owner:string;action:string;title?:string;reference?:string;parentContractId?:string|null;parentReference?:string|null;assignmentEffectiveAt?:string|null;amendmentNumber?:number|null;baseContractType?:string|null;missingData?:number;missingAttachments?:number;history?:ContractHistoryEvent[];notes?:Array<{id:string;text:string;author:string;createdAt:string;archivedAt:string|null;archiveReason:string|null}>;parties?:Array<{id:string;partyId?:string;name:string;role:string;signatureStatus:string;isCurrent?:boolean;effectiveFrom?:string;effectiveTo?:string|null;assignmentReason?:string|null;isPrimaryBuyer?:boolean;ownershipShare?:number|null}>;versions?:Array<{id:string;number:number;name:string;status:string;basedOnVersionId:string|null;source:string;createdAt:string;signedAt:string|null}>};
+export type ContractRecord={id?:string;salesCaseId?:string;unitId?:string;unit:string;client:string;projectId?:string;project:string;type:string;typeCode?:string;state:string;statusCode?:string;updated:string;updatedAt?:string;owner:string;action:string;title?:string;reference?:string;parentContractId?:string|null;parentReference?:string|null;assignmentEffectiveAt?:string|null;amendmentNumber?:number|null;baseContractType?:string|null;missingData?:number;missingAttachments?:number;history?:ContractHistoryEvent[];notes?:Array<{id:string;text:string;author:string;createdAt:string;archivedAt:string|null;archiveReason:string|null}>;parties?:Array<{id:string;partyId?:string;name:string;role:string;signatureStatus:string;isCurrent?:boolean;effectiveFrom?:string;effectiveTo?:string|null;assignmentReason?:string|null;isPrimaryBuyer?:boolean;ownershipShare?:number|null}>;versions?:Array<{id:string;number:number;name:string;status:string;basedOnVersionId:string|null;source:string;createdAt:string;signedAt:string|null}>};
 
 export const units: UnitRecord[] = [...dejviceUnits as UnitRecord[]];
 export const projects:ProjectRecord[] = [dejviceProject];

@@ -3,6 +3,7 @@ import { contractStatusLabel, isValidContractTransition, recommendedContractActi
 import { recordPreviewActivity } from "./activity-repository";
 import { clientUsesBrowserAdapter, responseAllowsBrowserFallback } from "../lib/data-mode";
 import { apiFetch } from "../lib/api-client";
+import {readError} from '../lib/read-state';
 import type {NextContractAction,SalesProcessProjection} from "../../backend/src/shared/next-contract-action";
 
 export type UnitNextContractAction=NextContractAction&{unitId:string;unitCode:string;salesCaseId:string|null;buyerNames:string[];salesProcess:SalesProcessProjection};
@@ -145,7 +146,7 @@ class ApiCommercialRepository implements CommercialRepository {
   async getNextContractAction(unitId:string,signal?:AbortSignal){
     const response=await apiFetch(`/api/commercial/units/${encodeURIComponent(unitId)}/next-contract-action`,{signal,cache:"no-store"});
     if(response.ok)return response.json() as Promise<UnitNextContractAction>;
-    const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??"Další smluvní krok nelze určit");
+    throw readError(response);
   }
   async createNextContract(input:ContextualContractInput){
     const response=await apiFetch(`/api/commercial/units/${encodeURIComponent(input.unitId)}/next-contract`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});

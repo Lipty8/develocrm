@@ -19,6 +19,8 @@ export type ClientDirectoryItem = {
 export type PartyDuplicateMatch={id:string;name:string;kind:"FO"|"PO";strength:"strong"|"possible";reasons:string[];email:string;phone:string;projects:string[];units:string[]};
 
 export type UnitCommercialContext = {
+  unitId?:string;
+  projectId?:string;
   salesCaseId: string | null;
   buyers: Array<{ partyId: string; name: string; email: string; role: string; share: number | null }>;
   buyerHistory: Array<{ id:string; occurredAt:string; previousBuyers:Array<{partyId:string;name:string;role:string}>; currentBuyers:Array<{partyId:string;name:string;role:string}>; reason:string; actor:string; sourceContractId?:string|null;sourceContractReference?:string|null }>;
@@ -212,10 +214,10 @@ export class SalesRepository {
            WHERE event.tenant_id=unit.tenant_id AND event.sales_case_id=active_case.id
          ) buyer_history ON true`:"";
       const contextRows = await client.query<{
-        unit_code: string;sales_case_id:string|null; buyers: UnitCommercialContext["buyers"]; buyer_history:UnitCommercialContext["buyerHistory"]; interests: UnitCommercialContext["interests"];
+        unit_id:string;project_id:string;unit_code: string;sales_case_id:string|null; buyers: UnitCommercialContext["buyers"]; buyer_history:UnitCommercialContext["buyerHistory"]; interests: UnitCommercialContext["interests"];
         stage: string | null; hold: UnitCommercialContext["hold"];
       }>(
-        `SELECT unit.code unit_code,active_case.id sales_case_id,active_case.current_stage stage,
+        `SELECT unit.id unit_id,unit.project_id,unit.code unit_code,active_case.id sales_case_id,active_case.current_stage stage,
           COALESCE(buyers.items,'[]'::jsonb) buyers,${buyerHistorySelect},COALESCE(interests.items,'[]'::jsonb) interests,hold.item hold
          FROM units unit
          LEFT JOIN LATERAL (SELECT id,current_stage FROM sales_cases WHERE tenant_id=unit.tenant_id AND unit_id=unit.id AND status='active' ORDER BY opened_at DESC,id DESC LIMIT 1) active_case ON true
@@ -241,7 +243,7 @@ export class SalesRepository {
              AND ${partyAccess}
          ) interests ON true
          LEFT JOIN LATERAL (SELECT jsonb_build_object('id',id,'type',hold_type,'expiresAt',expires_at,'isExpirable',hold_type='pre_reservation') item FROM unit_holds
-           WHERE tenant_id=unit.tenant_id AND unit_id=unit.id AND status='active' AND (hold_type='reservation' OR expires_at>now()) ORDER BY expires_at DESC LIMIT 1) hold ON true
+           WHERE tenant_id=unit.tenant_id AND unit_id=unit.id AND sales_case_id=active_case.id AND status='active' AND starts_at<=now() AND (hold_type='reservation' OR expires_at>now()) ORDER BY expires_at DESC LIMIT 1) hold ON true
          WHERE unit.tenant_id=$1 AND unit.archived_at IS NULL
            AND EXISTS(SELECT 1 FROM projects active_project WHERE active_project.tenant_id=unit.tenant_id AND active_project.id=unit.project_id AND (active_project.archived_at IS NULL OR (${archiveRead.replaceAll("project.id","active_project.id")})))
            AND app.has_project_permission(unit.tenant_id,$2,unit.project_id,'sales_case.read')`,
@@ -262,7 +264,7 @@ export class SalesRepository {
             units: unitRelations.map(item=>item.code),unitRelations,projects: projectNames.join(", "),projectIds,projectNames,state,projectRelationships,
             contractStatus: bestContract?.contractType ? `${bestContract.contractType}${bestContract.contractStatus?` · ${contractStatusLabel(bestContract.contractStatus)}`:""}` : "Bez smlouvy",initials: initials(row.display_name),interestHistory: row.interest_history,activityHistory:activitiesByParty.get(row.id)??[],firstName:row.first_name??undefined,lastName:row.last_name??undefined,legalName:row.legal_name??undefined,registrationNumber:row.registration_number??undefined,vatNumber:row.vat_number??undefined,contactPerson:row.contact_person??undefined,address:row.address,updatedAt:row.updated_at,lifecycleStatus:row.lifecycle_status };
         }),
-        unitContexts: Object.fromEntries(contextRows.rows.map((row) => [row.unit_code,{ salesCaseId:row.sales_case_id,buyers: row.buyers,buyerHistory:row.buyer_history,interests: row.interests,stage: row.stage,hold: row.hold }])),
+        unitContexts: Object.fromEntries(contextRows.rows.map((row) => [row.unit_id,{ unitId:row.unit_id,projectId:row.project_id,salesCaseId:row.sales_case_id,buyers: row.buyers,buyerHistory:row.buyer_history,interests: row.interests,stage: row.stage,hold: row.hold }])),
       };
     });
   }

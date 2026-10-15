@@ -54,17 +54,37 @@ test("zrušená RS neblokuje novou RS v aktuálním obchodním případu",()=>{
   assert.deepEqual(getNextContractAction({hasActiveSalesCase:true,contracts}),{kind:"create_contract",contractType:"rs",allowedContractTypes:["rs","sbk","ks"],label:"Vytvořit smlouvu"});
 });
 
-test("aktivní etapa sales case udrží timeline a CTA konzistentní i po ukončení historické smlouvy",()=>{
+test("ukončené smlouvy nejsou důkazem aktuální etapy: jednotka 417 vyžaduje posouzení",()=>{
   const projection=getSalesProcessState({hasActiveSalesCase:true,commercialStatus:"contracted",salesStage:"sbk",contracts:[
     {id:"old-rs",type:"rs",status:"terminated"},{id:"old-sbk",type:"sbk",status:"terminated"},
   ]});
   assert.equal(projection.commercialStatusLabel,"SBK");
-  assert.equal(projection.currentStage,"sbk");
-  assert.deepEqual(projection.steps.map(step=>step.state),["complete","complete","skipped","current","pending","pending"]);
-  assert.deepEqual(projection.nextContractAction,{kind:"create_contract",contractType:"sbk",allowedContractTypes:["sbk","ks"],label:"Vytvořit smlouvu"});
+  assert.equal(projection.reviewRequired,true);
+  assert.ok(projection.steps.every(step=>step.state==='pending'));
+  assert.equal(projection.nextContractAction.kind,'none');
+  assert.match(projection.reviewReason!,/administrátor/);
 });
 
-test("etapa KS nabídne KS a etapa předání už další smlouvu nenabízí",()=>{
-  assert.deepEqual(getNextContractAction({hasActiveSalesCase:true,salesStage:"ks",contracts:[]}),{kind:"create_contract",contractType:"ks",allowedContractTypes:["ks"],label:"Vytvořit smlouvu"});
-  assert.equal(getNextContractAction({hasActiveSalesCase:true,salesStage:"handover",contracts:[]}).kind,"none");
+test("uložená pokročilá etapa bez smluv nesmí zakládat smluvní fakta",()=>{
+  for(const salesStage of ['rs','sbk','ks','handover']){
+    const state=getSalesProcessState({hasActiveSalesCase:true,salesStage,contracts:[]});
+    assert.equal(state.nextContractAction.kind,'none');
+    assert.equal(state.reviewRequired,true);
+  }
+});
+
+test('podepsaná RS je rezervace, SBK je následující krok, ne podepsaná smlouva',()=>{
+  const state=getSalesProcessState({hasActiveSalesCase:true,commercialStatus:'reserved',salesStage:'reservation',contracts:[{id:'rs',type:'rs',status:'signed'}]});
+  assert.equal(state.commercialStatusLabel,'Rezervovaná');
+  assert.equal(state.currentStage,'sbk');
+  assert.equal(state.reviewRequired,false);
+  assert.equal(state.steps[2].state,'complete');
+  assert.equal(state.steps[3].state,'current');
+});
+
+test('vypršelá předrezervace bez aktivní blokace nepřebírá starou etapu',()=>{
+  const state=getSalesProcessState({hasActiveSalesCase:true,commercialStatus:'available',salesStage:'pre_reservation',contracts:[]});
+  assert.equal(state.currentStage,'interest');
+  assert.equal(state.steps[1].state,'pending');
+  assert.equal(state.reviewRequired,false);
 });

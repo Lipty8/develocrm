@@ -113,7 +113,7 @@ test("client views, unit commercial context and exports use the Block C reposito
   ]);
   assert.match(app,/clientRepository\.getDirectory/);
   assert.match(app,/clientRepository\.exportContacts/);
-  assert.match(app,/unitCommercialContexts\[unit\.id\]/);
+  assert.match(app,/getUnitContext\(unit,unitCommercialContexts\)/);
   assert.match(repository,/interface ClientRepository/);
   assert.match(route,/DEVELOCRM_API_URL/);
   assert.match(route,/preview-seed/);
@@ -124,7 +124,7 @@ test("prices and contracts use the Block D repository without duplicating workfl
   const [app,repository,route]=await Promise.all([readFile(appUrl,"utf8"),readFile(commercialRepositoryUrl,"utf8"),readFile(commercialRouteUrl,"utf8")]);
   assert.match(app,/commercialRepository\.getSnapshot/);
   assert.match(app,/unitPriceHistories\[unit\.backendId\?\?unit\.id\]/);
-  assert.match(app,/contracts\.filter\(contract=>contract\.unit===unit\.id\)/);
+  assert.match(app,/contracts\.filter\(contract=>contractBelongsToUnit\(contract,unit\)\)/);
   assert.match(app,/latest\.number/);
   assert.match(repository,/interface CommercialRepository/);
   assert.match(route,/DEVELOCRM_API_URL/);

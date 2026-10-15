@@ -7,7 +7,7 @@ const service=await readFile(new URL("../backend/src/commercial/service.ts",impo
 const paymentMigration=await readFile(new URL("../backend/migrations/0035_manual_payment_recording.sql",import.meta.url),"utf8");
 
 test("detail jednotky používá dynamickou smluvní akci a nemá duplicitní doporučený blok",()=>{
-  assert.match(crm,/getNextContractAction\(unitId/);
+  assert.match(crm,/getNextContractAction\(unit\.backendId/);
   assert.doesNotMatch(crm,/Vygenerovat SBK/);
   assert.doesNotMatch(crm,/DOPORUČENÝ DALŠÍ KROK/);
 });

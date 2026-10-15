@@ -22,6 +22,7 @@ export type DocumentListItem = {
   author: string | null;
   version: string | null;
   units: string[];
+  businessLinks?:Array<{kind:'unit'|'party'|'contract';id:string;label:string}>;
   parties: string[];
   contracts: string[];
   salesCases: string[];
@@ -64,6 +65,7 @@ type DocumentRow = {
   file_size: string | number | null; storage_provider: "sharepoint" | "preview" | "external"; web_url: string | null;
   etag: string | null; sensitivity: "normal" | "sensitive"; created_at:string;updated_at: string; author: string | null; version_label: string | null;
   unit_codes: string | null; party_names: string | null; contract_refs: string | null;
+  business_links?:DocumentListItem['businessLinks'];
   sales_case_refs:string|null;
   client_change_refs:string|null; complaint_refs:string|null; handover_refs:string|null;
   external_drive_id?: string | null; external_item_id?: string | null; archived_at?: string | null;
@@ -76,6 +78,14 @@ const documentSelect = `
     document.file_size,document.storage_provider,document.web_url,document.etag,document.sensitivity,document.created_at,document.updated_at,
     document.external_drive_id,document.external_item_id,document.archived_at,
     author.display_name author,
+    COALESCE((SELECT jsonb_agg(jsonb_build_object('kind',relation.kind,'id',relation.id,'label',relation.label) ORDER BY relation.kind,relation.label) FROM (
+      SELECT 'unit' kind,unit.id,unit.code label FROM unit_documents link JOIN units unit ON unit.tenant_id=link.tenant_id AND unit.project_id=link.project_id AND unit.id=link.unit_id
+       WHERE link.tenant_id=document.tenant_id AND link.document_id=document.id AND app.has_project_permission(document.tenant_id,$2,unit.project_id,'unit.read')
+      UNION ALL SELECT 'party',party.id,party.display_name FROM party_documents link JOIN parties party ON party.tenant_id=link.tenant_id AND party.id=link.party_id
+       WHERE link.tenant_id=document.tenant_id AND link.document_id=document.id AND app.has_project_permission(document.tenant_id,$2,document.project_id,'clients.read')
+      UNION ALL SELECT 'contract',contract.id,contract.reference FROM contract_documents link JOIN contracts contract ON contract.tenant_id=link.tenant_id AND contract.project_id=link.project_id AND contract.id=link.contract_id
+       WHERE link.tenant_id=document.tenant_id AND link.document_id=document.id AND app.has_project_permission(document.tenant_id,$2,contract.project_id,'contract.read')
+    ) relation),'[]'::jsonb) business_links,
     (SELECT version.version_label FROM document_versions version WHERE version.tenant_id=document.tenant_id AND version.document_id=document.id ORDER BY version.created_at DESC,version.id DESC LIMIT 1) version_label,
     (SELECT string_agg(DISTINCT unit.code, ', ' ORDER BY unit.code) FROM unit_documents link JOIN units unit ON unit.tenant_id=link.tenant_id AND unit.project_id=link.project_id AND unit.id=link.unit_id WHERE link.tenant_id=document.tenant_id AND link.document_id=document.id) unit_codes,
     (SELECT string_agg(DISTINCT party.display_name, ', ' ORDER BY party.display_name) FROM party_documents link JOIN parties party ON party.tenant_id=link.tenant_id AND party.id=link.party_id WHERE link.tenant_id=document.tenant_id AND link.document_id=document.id) party_names,
@@ -328,7 +338,7 @@ export class DocumentRepository {
   }
 }
 
-function mapDocument(row:DocumentRow):DocumentListItem{return{id:row.id,projectId:row.project_id,projectName:row.project_name,name:row.name,category:row.category,typeCode:row.type_code,typeName:row.type_name,status:row.status_code,note:row.note,mimeType:row.mime_type,fileSize:numberOrNull(row.file_size),storageProvider:row.storage_provider,webUrl:row.web_url,etag:row.etag,sensitivity:row.sensitivity,createdAt:row.created_at,updatedAt:row.updated_at,author:row.author,version:row.version_label,units:splitList(row.unit_codes),parties:splitList(row.party_names),contracts:splitList(row.contract_refs),salesCases:splitList(row.sales_case_refs),clientChanges:splitList(row.client_change_refs),complaints:splitList(row.complaint_refs),handovers:splitList(row.handover_refs)};}
+function mapDocument(row:DocumentRow):DocumentListItem{return{id:row.id,projectId:row.project_id,projectName:row.project_name,name:row.name,category:row.category,typeCode:row.type_code,typeName:row.type_name,status:row.status_code,note:row.note,mimeType:row.mime_type,fileSize:numberOrNull(row.file_size),storageProvider:row.storage_provider,webUrl:row.web_url,etag:row.etag,sensitivity:row.sensitivity,createdAt:row.created_at,updatedAt:row.updated_at,author:row.author,version:row.version_label,units:splitList(row.unit_codes),businessLinks:row.business_links??[],parties:splitList(row.party_names),contracts:splitList(row.contract_refs),salesCases:splitList(row.sales_case_refs),clientChanges:splitList(row.client_change_refs),complaints:splitList(row.complaint_refs),handovers:splitList(row.handover_refs)};}
 function mapUploadReservation(row:Record<string,unknown>):DocumentUploadReservation{return{
   id:String(row.id),projectId:String(row.project_id),idempotencyKey:String(row.idempotency_key),requestHash:String(row.request_hash),
   operationType:row.operation_type as "create"|"version",documentId:String(row.document_id),documentVersionId:String(row.document_version_id),

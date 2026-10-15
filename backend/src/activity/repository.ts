@@ -3,6 +3,21 @@ import type { Database } from "../database.js";
 export type TimelineItem={id:string;date:string;title:string;detail:string;icon:string;action:string};
 export class ActivityRepository{
  constructor(private readonly database:Database){}
+ async workspaceTimeline(input:{tenantId:string;userId:string;membershipId:string}){return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
+  // Only project/unit events are included here. Access to a project alone must
+  // not disclose payment, contract or client audit details on a shared dashboard.
+  const result=await client.query<{id:string;occurred_at:string;action:string;before_data:Record<string,unknown>|null;after_data:Record<string,unknown>|null;actor:string|null;project:string;unit:string|null}>(
+   `SELECT audit.id,audit.occurred_at::text,audit.action,audit.before_data,audit.after_data,actor.display_name actor,project.name project,unit.code unit
+    FROM audit_log audit
+    LEFT JOIN users actor ON actor.id=audit.actor_user_id
+    LEFT JOIN units unit ON unit.tenant_id=audit.tenant_id AND audit.entity_type='unit' AND unit.id=audit.entity_id AND unit.archived_at IS NULL
+    JOIN projects project ON project.tenant_id=audit.tenant_id AND project.id=CASE WHEN audit.entity_type='project' THEN audit.entity_id ELSE unit.project_id END
+    WHERE audit.tenant_id=$1 AND project.archived_at IS NULL
+      AND app.has_project_permission(project.tenant_id,$2,project.id,'projects.read')
+      AND (audit.entity_type='project' OR (audit.entity_type='unit' AND app.has_project_permission(project.tenant_id,$2,project.id,'unit.read')))
+    ORDER BY audit.occurred_at DESC,audit.id DESC LIMIT 20`,[input.tenantId,input.membershipId]);
+  return result.rows.map(row=>({...mapTimeline(row),detail:[row.project,row.unit, row.actor??'Systém'].filter(Boolean).join(' · ')}));
+ });}
  async unitTimeline(input:{tenantId:string;userId:string;membershipId:string;unitId:string}){return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
   const result=await client.query<{id:string;occurred_at:string;action:string;before_data:Record<string,unknown>|null;after_data:Record<string,unknown>|null;actor:string|null}>(
    `SELECT audit.id,audit.occurred_at::text,audit.action,audit.before_data,audit.after_data,actor.display_name actor

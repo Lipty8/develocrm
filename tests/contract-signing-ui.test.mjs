@@ -31,7 +31,7 @@ test("vizuální prodejní proces používá smlouvy a nemá duplicitní krok re
   assert.match(workflow,/\["Zájem", "V jednání", "RS", "SBK", "KS", "Předání"\]/);
   assert.doesNotMatch(workflow,/"V jednání", "Rezervace"/);
   assert.match(workflow,/getSalesProcessState/);
-  assert.match(workflow,/contract\.salesCaseId===input\.context\.salesCaseId/);
+  assert.match(workflow,/currentCaseContracts\(input.unit,input.context,input.contracts\)/);
   assert.match(app,/projectUnitSalesWorkflow/);
   assert.match(app,/nextContractAction\?\.salesProcess\?\?projectUnitSalesWorkflow/);
   assert.doesNotMatch(app,/<Badge>\{unit\.status\}<\/Badge> Ve vyjednávání/);

@@ -82,6 +82,11 @@ test("create, link a version operace jsou auditované a emitují outbox", async 
   await db.query("SELECT app.link_document_to_unit($1,$2,$3,$4)", [tenant, documentId, unit, member]);
   await db.query("SELECT app.link_document_to_party($1,$2,$3,$4)", [tenant, documentId, party, member]);
   await db.query("SELECT app.link_document_to_contract($1,$2,$3,$4,$5,$6)", [tenant, documentId, contract, contractVersion, documentVersionId, member]);
+  const adapter={withContext:async <T>(_context:unknown,work:(client:{query:typeof db.query})=>Promise<T>)=>work({query:db.query.bind(db)})} as unknown as Database;
+  const loaded=await new DocumentRepository(adapter).getById({tenantId:tenant,userId:user,membershipId:member,documentId});
+  // This legacy fixture grants unit.read but not the newer clients.read /
+  // contract.read keys. Document access alone must not expose those targets.
+  assert.deepEqual(loaded?.businessLinks?.map(link=>[link.kind,link.id]),[['unit',unit]]);
   assert.equal((await db.query("SELECT id FROM project_documents WHERE document_id=$1", [documentId])).rows.length, 1);
   assert.equal((await db.query("SELECT id FROM unit_documents WHERE document_id=$1", [documentId])).rows.length, 1);
   assert.equal((await db.query("SELECT id FROM party_documents WHERE document_id=$1", [documentId])).rows.length, 1);

@@ -1,14 +1,15 @@
 import type { ContractRecord, UnitCommercialContext, UnitRecord } from "../crm-data";
 import {getSalesProcessState,type SalesProcessProjection} from "../../backend/src/shared/next-contract-action";
+import {currentCaseContracts} from './business-context';
 
 export const unitSalesWorkflowSteps = ["Zájem", "V jednání", "RS", "SBK", "KS", "Předání"] as const;
 
 export function projectUnitSalesWorkflow(input: {
-  unit: Pick<UnitRecord, "id" | "handover" | "status">;
+  unit: Pick<UnitRecord, "id" | "backendId" | "projectBackendId" | "project" | "handover" | "status">;
   context?: UnitCommercialContext;
   contracts: ContractRecord[];
 }): SalesProcessProjection {
-  const relevant = input.contracts.filter(contract => contract.unit === input.unit.id&&(!input.context?.salesCaseId||contract.salesCaseId===input.context.salesCaseId));
+  const relevant = currentCaseContracts(input.unit,input.context,input.contracts);
   const projection=getSalesProcessState({
     hasActiveSalesCase:Boolean(input.context?.salesCaseId),
     commercialStatus:input.unit.status,
