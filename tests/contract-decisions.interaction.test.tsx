@@ -12,7 +12,7 @@ import {SummaryStats,toggledSummaryFilter} from "../app/components/summary-stats
 import {projectSalesAggregation,projectUnitSalesBucket,type ProjectSalesBucket} from "../app/lib/project-sales-performance";
 import {contractSummaryCategory,contractSummaryCounts,type ContractSummaryCategory} from "../app/lib/contract-summary";
 import {PackageOpen,UserRound,Users} from "lucide-react";
-import {Projects,ClientChangeStatusModal,ComplaintDetailModal,ContractAddendumModal,ContractNoteModal,FormModal,PaymentDetailModal,PaymentRefundForm,paymentRefundAvailability} from "../app/CRMApp";
+import {Projects,ContractDetail,ClientChangeStatusModal,ComplaintDetailModal,ContractAddendumModal,ContractNoteModal,FormModal,PaymentDetailModal,PaymentRefundForm,paymentRefundAvailability} from "../app/CRMApp";
 import {relatedUnitHref,relatedClientHref} from '../app/lib/entity-navigation';
 import {searchWorkspace} from '../app/lib/workspace-search';
 import {ClientContractLinks} from '../app/components/client-contract-links';
@@ -88,6 +88,18 @@ let fireEvent:typeof import("@testing-library/react").fireEvent;
 let waitFor:typeof import("@testing-library/react").waitFor;
 let act:typeof import("@testing-library/react").act;
 let userEvent:typeof import("@testing-library/user-event").default;
+
+test('ukončená ani zrušená RS nespouští generování a neukazuje V přípravě jako aktuální krok',()=>{
+ for(const status of ['terminated','cancelled']){
+  const view=render(<ContractDetail contract={{...sampleContracts[0],id:'closed-contract',typeCode:'rs',statusCode:status,history:[],parties:[],versions:[]}} close={()=>{}} openUnit={()=>{}} openClient={()=>{}} onWorkflow={()=>{throw new Error('Closed workflow');}} openDocument={()=>{}} canManage={true} isAdmin={true} onChanged={()=>{}}/>);
+  assert.ok(screen.getByText(/Smlouva již nemá aktivní krok/));
+  assert.equal(screen.queryByRole('button',{name:'Změnit stav'}),null);
+  assert.equal(screen.queryByRole('button',{name:/V přípravě Aktuální krok/}),null);
+  assert.equal(screen.queryByText('Znovu zkontrolovat'),null);
+  assert.equal(screen.queryByText('Vygenerovat rezervační smlouvu'),null);
+  view.unmount();
+ }
+});
 
 test('portfolio nepřebírá stará projektová data a KPI zůstává stejné při změně filtru',async()=>{
  let resolveCatalog!:(snapshot:CatalogSnapshot)=>void;let requests=0;

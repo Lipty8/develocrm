@@ -19,6 +19,7 @@ Jednotka zůstává rozdělená na Přehled, Smlouvy, Platby, Dokumenty, Předá
 | P1 | Hledání vytváří výsledek typu Dokument ze smlouvy a otevírá smlouvu, nikoli dokument. | Odstranit falešný typ výsledku; v tomto balíku hledat skutečné projekty/jednotky/klienty/smlouvy. |
 | P1 | ClientDetail má jednotky a dokumenty, samostatnou PaymentContextTable, ale chybí přímý seznam jeho smluv; odkazy na klienta používají jméno. | Seznam smluv podle `contract_parties.partyId`, odkazy na party UUID. |
 | P1 | „Sdílet odkaz“ jednotky pouze zobrazuje toast o zkopírování, clipboard se nemění. | Skutečný zápis kanonické URL do clipboardu, úspěch až po dokončení, zvlášť chyba. |
+| P1 | Živé E2E: ukončená RS 417 spouští generation readiness, ta vrací nenalezenou RS; průběh přitom označuje V přípravě za aktuální krok. | Druhý malý UI balík: uzavřené smlouvy nemají aktivní průběh, generation ani běžné CTA změny stavu. Historie, verze, evidence a platby beze změny. |
 | P1 | Dashboard `today-events` vypisuje pevně „Bez naplánovaných událostí / Rezidence Dejvice“ a activity dotaz bere první projekt. | Backlog: kalendář z existujících handovers/tasks a průřezová activity query; nepovažovat za skutečný globální kalendář. |
 | P1 | Některé request efekty mění globální pole i po abortu při přechodu mezi projekty. | Guard před změnou sdílených polí; širší odstranění mutable stores není součást tohoto malého balíku. |
 | P1 | `SalesRepository.getDirectory` vrací `unitContexts` klíčované pouze kódem jednotky. V globálním snapshotu se dvě stejná čísla z různých projektů mohou přepsat. | Vyžaduje samostatný matching API/UI balík s UUID klíči a testem dvou projektů; není opraveno pouhou opravou odkazů. |
@@ -52,6 +53,16 @@ Bezpečné entity odkazy, ID klienta, víceprojektový klient, přímé smlouvy 
 - Frontend production build pass; cílený lint 0 errors / 0 warnings (jen informační Babel poznámka k velikosti CRMApp).
 - Celoprojektový samostatný tsc zůstává nezelený. Nezměněný baseline má stejné kategorie diagnostik v CRMApp, Cloudflare a testech; nejsou opravovány nesouvisejícím přepisem. Nové entity-navigation/workspace-search komponenty nemají vlastní typovou diagnostiku.
 - Matching deployment a autentizovaný read-only browser E2E doplnit po provedení. Soukromé preview při kontrolním otevření vyžaduje nové přihlášení vlastníka; žádný bypass ani rozšíření sdílení.
+
+### První živé ověření (Sites 132)
+
+Po standardním přihlášení Adam Lipták / Administrátor: Dejvice → globální hledání `hrdlicka` → Hrdlička UUID; z prázdné Hrdličky hledání `417` → jednotka Dejvice UUID i skutečné RS/SBK výsledky. Žádné falešné Dokument výsledky.
+
+Jednotka 417 → aktuální kupující F&F → zpět na přesnou jednotku; jednotka → RS 417 → smluvní strana Monika → její dvě smlouvy. Reload klienta zachová správné UUID, obě smlouvy a dvě platební povinnosti. Z klienta otevřen detail rezervačního poplatku (3 263 000 Kč), jeho odkazy míří přesně na jednotku/klienta/RS. Klik platba → smlouva prošel. Žádná mutace obchodu, podpisu, platby ani vratky nebyla potvrzena.
+
+Nové zjištění mimo tento UI balík: jednotka 417 má po načtení projekce etapu SBK, ale její zobrazené RS i SBK jsou ukončené. Nesmí se řešit přepisem ostrých dat ani domýšlením právního rollbacku SBK. Vyžaduje diagnostiku aktuálního case versus historických smluv v dalším workflow balíku. Také při načítání kontextových plateb souhrny krátce ukazují nuly; ty nejsou důkazem nulové pohledávky. Po načtení hodnoty odpovídají evidenci.
+
+Druhý UI balík otestován: 143 frontendových + 46 interakčních testů pass, lint bez errors/warnings, produkční build pass. Finální E2E uzavřených smluv ověřit po jeho publikaci.
 
 ## Doporučené navazující malé balíky
 
