@@ -67,7 +67,7 @@ export type ClientRecord = {
   units: string[]; projects: string; projectIds?:string[]; projectNames: string[]; state: string; contractStatus: string; initials: string;
   interestHistory?: InterestHistoryRecord[];
   activityHistory?: ClientActivityRecord[];
-  firstName?:string; lastName?:string; legalName?:string; registrationNumber?:string; vatNumber?:string; contactPerson?:string;
+  canReadContractIdentity?:boolean;salutation?:string|null;birthDate?:string|null;firstName?:string; lastName?:string; legalName?:string; registrationNumber?:string; vatNumber?:string; contactPerson?:string;
   address?:{line1:string;line2?:string;city:string;postalCode?:string;countryCode:string;addressType:string}|null;
   updatedAt?:string;
   lifecycleStatus?:"active"|"inactive"|"merged"|"archived";

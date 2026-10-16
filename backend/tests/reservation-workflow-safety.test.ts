@@ -13,6 +13,7 @@ import {Database} from "../src/database.js";
 import {expirePreReservations} from "../src/sales/hold-expiry-job.js";
 import {signatureDocument} from "./helpers/signature-document.js";
 import {InventoryImportService} from "../src/inventory/import-service.js";
+import {SalesRepository} from '../src/sales/repository.js';
 
 async function fixture(postgresUrl?:string){
   const memory=postgresUrl?undefined:new PGlite();
@@ -75,6 +76,23 @@ for(const usePostgres of [false,true])test(`contract-end release invariants (${u
     await f.sign({contract_id:id,version_id:version!});return id;
   }
   try{
+    await t.test('existing client editor persists salutation and birth date with party scope and minimal audit',async()=>{
+      const c=await f.start();
+      const party=(await f.client.query<{id:string;first_name:string;last_name:string}>("SELECT p.party_id id,d.first_name,d.last_name FROM contract_parties p JOIN party_individual_details d ON d.tenant_id=p.tenant_id AND d.party_id=p.party_id WHERE p.contract_id=$1 LIMIT 1",[c.contract_id])).rows[0];
+      const runtime=f.connectionUrl?new Database(f.connectionUrl):null;
+      const adapter=runtime??{withContext:async(context:{tenantId:string;userId:string},work:(client:SqlClient)=>Promise<unknown>)=>{await f.client.query('BEGIN');try{await f.client.query("SELECT set_config('app.tenant_id',$1,true),set_config('app.user_id',$2,true)",[context.tenantId,context.userId]);const value=await work(f.client);await f.client.query('COMMIT');return value;}catch(error){await f.client.query('ROLLBACK');throw error;}}};
+      try{
+        const repo=new SalesRepository(adapter as Database);const context={tenantId:f.ids.tenantId,userId:f.ids.userId,membershipId:f.ids.membershipId};
+        await repo.updateProfile({...context,partyId:party.id,firstName:party.first_name,lastName:party.last_name,salutation:'pan',birthDate:'1990-01-01'});
+        const stored=(await f.client.query<{salutation:string;birth_date:string}>("SELECT salutation,date_of_birth::text birth_date FROM party_individual_details WHERE party_id=$1",[party.id])).rows[0];
+        assert.equal(stored.salutation,'pan');assert.equal(stored.birth_date,'1990-01-01');
+        const listed=(await repo.getDirectory(context)).clients.find(p=>p.id===party.id);assert.equal(listed?.birthDate,'1990-01-01');assert.equal(listed?.salutation,'pan');
+        await assert.rejects(repo.updateProfile({...context,membershipId:randomUUID(),partyId:party.id,firstName:party.first_name,lastName:party.last_name,birthDate:'1991-01-01'}),/permission/);
+        await assert.rejects(repo.updateProfile({...context,partyId:party.id,firstName:party.first_name,lastName:party.last_name,birthDate:'2999-01-01'}),/datum narození/);
+        const audit=(await f.client.query<{after_data:unknown}>("SELECT after_data FROM audit_log WHERE entity_id=$1 AND action='party.contract_identity_updated'",[party.id])).rows;
+        assert.equal(audit.length,1);assert.ok(!JSON.stringify(audit).includes('1990-01-01'));
+      }finally{await runtime?.close();}
+    });
     await t.test('unsigned SBK draft survives RS termination without protecting the unit or reopening the closed sale',async()=>{
       const c=await f.start();await f.sign(c);
       const draft=(await f.client.query<{id:string}>("SELECT app.create_contract($1,$2,'sbk',$3,'Historical draft',$4) id",[f.ids.tenantId,c.caseId,randomUUID(),f.ids.membershipId])).rows[0].id;

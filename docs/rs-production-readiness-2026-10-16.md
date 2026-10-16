@@ -45,6 +45,12 @@ retained. Frontend hides progression/signature/upload actions for historical cas
   fee, terms and exact selected template label. UI accepts no placeholder values.
 - Missing fields link to existing client/unit/project/template screens with a
   validated return-to-contract link. Focus/visibility refresh reloads readiness.
+- Browser inspection found that the existing client editor did not expose stored
+  salutation/date of birth. These fields now use the same canonical individual
+  details, existing party/project authorization, one profile transaction and audit
+  without duplicating the actual birth date into the additional audit payload.
+  The directory exposes birth date only with the existing contact-data access.
+  Profile/contact/address updates cannot override authenticated context in JSON.
 - Generation retries keep one key until successful response. Previous document
   versions remain append-only; existing generation/upload pipelines are reused.
 - Existing project editor now manages canonical project_contract_settings, using
