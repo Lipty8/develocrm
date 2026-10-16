@@ -14,7 +14,7 @@ import {SummaryStats,toggledSummaryFilter} from "../app/components/summary-stats
 import {projectSalesAggregation,projectUnitSalesBucket,type ProjectSalesBucket} from "../app/lib/project-sales-performance";
 import {contractSummaryCategory,contractSummaryCounts,type ContractSummaryCategory} from "../app/lib/contract-summary";
 import {PackageOpen,UserRound,Users} from "lucide-react";
-import {Projects,ContractDetail,ContractWorkflowModal,ClientChangeStatusModal,ComplaintDetailModal,ContractAddendumModal,ContractNoteModal,FormModal,PaymentDetailModal,PaymentRefundForm,paymentRefundAvailability} from "../app/CRMApp";
+import {Projects,UnitContracts,ContractDetail,ContractWorkflowModal,ClientChangeStatusModal,ComplaintDetailModal,ContractAddendumModal,ContractNoteModal,FormModal,PaymentDetailModal,PaymentRefundForm,paymentRefundAvailability} from "../app/CRMApp";
 import {paymentRepository} from '../app/repositories/payment-repository';
 import {relatedUnitHref,relatedClientHref} from '../app/lib/entity-navigation';
 import {searchWorkspace} from '../app/lib/workspace-search';
@@ -43,6 +43,17 @@ test('ukončení smlouvy vyžaduje viditelné potvrzení bez systémového dialo
   await user.click(screen.getByRole('button',{name:'Uložit'}));
   await waitFor(()=>assert.equal(calls,1));
  }finally{paymentRepository.list=original;window.confirm=originalConfirm;}
+});
+
+test('seznam smluv jednotky zachová historický návrh bez akce na změnu stavu',()=>{
+ const original=[...sampleContracts];
+ try{
+  sampleContracts.splice(0,sampleContracts.length,{...original[0],id:'historical-sbk',unitId:'technical-unit',type:'SBK',typeCode:'sbk',statusCode:'draft',salesCaseStatus:'cancelled',reference:'TECH-HISTORICAL-SBK'});
+  render(<UnitContracts unit={{...sampleUnits[0],backendId:'technical-unit'}} openContract={()=>{}} nextContractAction={null} onWorkflow={()=>{throw new Error('Historical contract must not advance');}}/>);
+  assert.ok(screen.getByText(/TECH-HISTORICAL-SBK/));
+  assert.equal(screen.queryByRole('button',{name:/Změnit stav/}),null);
+  assert.ok(screen.getByRole('button',{name:'Otevřít smlouvu'}));
+ }finally{sampleContracts.splice(0,sampleContracts.length,...original);}
 });
 
 test('ukončení smlouvy ukazuje uvolnění nebo konkrétní překážku bez finančního slibu',()=>{
