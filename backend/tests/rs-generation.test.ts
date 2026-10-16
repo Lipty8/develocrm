@@ -13,6 +13,33 @@ test("RS připravenost rozlišuje kompletní a chybějící business údaje",asy
   current=source({buyers:[{...source().buyers[0],address:null}],reservationFee:null});const result=await service.readiness({...context,contractId:current.contractId});assert.equal(result.ready,false);assert.deepEqual(result.issues.map(item=>item.code).sort(),["buyer_address","reservation_fee"]);
 });
 
+test('kontrolní přehled používá skutečný smluvní kontext a odkazuje na opravu kupujícího',async()=>{
+  let current=source({templateName:'Projektová RS',templateVersionLabel:'v3',templateEffectiveFrom:'2026-10-01'});
+  const service=new RsGenerationService({load:async()=>current} as never,{} as never);
+  const first=await service.readiness({...context,contractId:current.contractId});
+  assert.equal(first.summary?.totalPrice,22_000_000);assert.equal(first.summary?.reservationFee,250_000);
+  assert.equal(first.summary?.template?.version,'v3');assert.equal(first.summary?.buyers[0].label,'Jan Novák');
+  current=source({buyers:[{...source().buyers[0],displayName:'Petr Nový',firstName:'Petr',lastName:'Nový',address:null}]});
+  const next=await service.readiness({...context,contractId:current.contractId});
+  assert.equal(next.summary?.buyers[0].label,'Petr Nový');
+  assert.ok(next.issues.find(i=>i.code==='buyer_address')?.action?.href.startsWith(`/clients/${current.buyers[0].id}?returnTo=`));
+});
+
+test('uzavřený obchod, neplatná plocha a nepodporovaná terasa zastaví přípravu bez právních domněnek',async()=>{
+  const current=source({caseStatus:'cancelled',areaM2:0,terraceM2:12});const service=new RsGenerationService({load:async()=>current} as never,{} as never);
+  const result=await service.readiness({...context,contractId:current.contractId});
+  assert.equal(result.ready,false);assert.deepEqual(result.issues.map(i=>i.code).sort(),['closed_case','unit_area','unsupported_terrace']);
+});
+
+test('výběr RS šablony respektuje tenant, projekt, výchozí variantu, schválení a účinnost',async()=>{
+  let sql='';let values:unknown[]=[];
+  const repo=new RsGenerationRepository({withContext:async(_ctx:unknown,work:(client:unknown)=>unknown)=>work({query:async(q:string,v:unknown[])=>{sql=q;values=v;return{rows:[]};}})} as never);
+  assert.equal(await repo.load({...context,contractId:source().contractId,permission:'contract.read'}),null);
+  assert.ok(sql.includes('version.tenant_id=contract.tenant_id'));assert.ok(sql.includes('version.project_id=contract.project_id'));
+  assert.ok(sql.includes("template.variant_key='default'"));assert.ok(sql.includes("version.approval_status='approved'"));assert.ok(sql.includes('version.effective_from<=CURRENT_DATE'));
+  assert.equal(values[0],context.tenantId);assert.equal(values[1],context.membershipId);
+});
+
 test("skutečná v1 šablona bezpečně blokuje firmu a více kupujících",async()=>{
   for(const buyers of [[{...source().buyers[0],partyType:"organization"}],[source().buyers[0],{...source().buyers[0],id:"other"}]]){
     const current=source({buyers});const service=new RsGenerationService({load:async()=>current} as never,{} as never);const result=await service.readiness({...context,contractId:current.contractId});assert.equal(result.ready,false);assert.ok(result.issues.some(item=>item.code=== (buyers.length>1?"buyer_count":"buyer_type")));

@@ -3,16 +3,17 @@ import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 
 const app=await readFile(new URL("../app/CRMApp.tsx",import.meta.url),"utf8");
+const panel=await readFile(new URL("../app/components/rs-generation-panel.tsx",import.meta.url),"utf8");
 const repository=await readFile(new URL("../app/repositories/commercial-repository.ts",import.meta.url),"utf8");
 const readinessRoute=await readFile(new URL("../app/api/commercial/contracts/[contractId]/rs-readiness/route.ts",import.meta.url),"utf8");
 const generationRoute=await readFile(new URL("../app/api/commercial/contracts/[contractId]/generate-rs/route.ts",import.meta.url),"utf8");
 
 test("detail RS ukazuje připravenost, chyby a jedinou generovací akci",()=>{
-  assert.match(app,/function RsGenerationPanel/);
-  assert.match(app,/Vygenerovat rezervační smlouvu/);
-  assert.match(app,/Vytvořit novou verzi/);
-  assert.match(app,/Otevřít v SharePointu/);
-  assert.match(app,/readiness\.issues\.map/);
+  assert.match(panel,/function RsGenerationPanel/);
+  assert.match(panel,/Vygenerovat RS/);
+  assert.match(panel,/Vytvořit novou verzi RS/);
+  assert.match(panel,/Otevřít dokument/);
+  assert.match(panel,/readiness\.issues\.map/);
   assert.match(app,/contract\.typeCode==="rs"/);
 });
 

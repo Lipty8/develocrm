@@ -9,6 +9,7 @@ import { projectSalesPerformancePercent } from "../../lib/project-sales-performa
 
 type BackendCatalog = {
   projects: Array<{
+    contractSettings?:ProjectRecord['contractSettings'];canManageContractSettings?:boolean;
     id: string; code: string; name: string; location: string | null; manager: string | null;
     lifecycleStatus:string; archivedAt:string|null; managerMembershipId:string|null; plannedHandoverFrom: string | null; plannedHandoverTo: string | null; constructionStatus: string | null;
     counts: Record<string, number>;
@@ -96,6 +97,7 @@ function adaptBackendCatalog(catalog: BackendCatalog, priceBreakdowns?: BackendP
     const unitCount = Object.values(project.counts).reduce((sum, count) => sum + count, 0);
     return {
       backendId:project.id,name: project.name,sourceName:project.name, code: project.code, location: project.location ?? "",
+      contractSettings:project.contractSettings,canManageContractSettings:project.canManageContractSettings,
       progress: projectSalesPerformancePercent({units:unitCount,available,preReserved,reserved,sold,handedOver}), units: unitCount,
       available, preReserved, reserved, sold, handedOver, attention: 0,
       color: (["sage", "sand", "slate"] as const)[index % 3], stage: projectConstructionLabel(project.constructionStatus),stageCode:project.constructionStatus,

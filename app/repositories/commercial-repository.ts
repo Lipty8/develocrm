@@ -9,8 +9,8 @@ import type {NextContractAction,SalesProcessProjection} from "../../backend/src/
 export type UnitNextContractAction=NextContractAction&{unitId:string;unitCode:string;salesCaseId:string|null;buyerNames:string[];salesProcess:SalesProcessProjection};
 export type ContractCreateResult={id:string;versionId:string;paymentObligationId:string|null;paymentAmount:number|null;type?:"rs"|"sbk"|"ks";reference?:string;title?:string};
 export type ContextualContractInput={unitId:string;type:"rs"|"sbk"|"ks";idempotencyKey:string;paymentCalculationType?:"percentage"|"fixed";paymentInputValue?:number;paymentDueAt?:string};
-export type RsReadinessIssue={code:string;field:string;message:string};
-export type RsReadiness={ready:boolean;issues:RsReadinessIssue[];contractId:string;projectId?:string;templateVersionId?:string|null;currentDocument?:{documentId:string;documentVersionId:string;version:number;webUrl:string|null}|null};
+import type {RsReadiness,RsReadinessIssue} from '../../backend/src/shared/rs-readiness';
+export type {RsReadiness,RsReadinessIssue} from '../../backend/src/shared/rs-readiness';
 
 export type CommercialSnapshot = {
   currentPrices: Record<string, number>;

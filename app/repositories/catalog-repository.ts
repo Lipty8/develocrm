@@ -7,7 +7,7 @@ import { projectConstructionLabel } from "../lib/project-construction";
 import { projectCompletionLabel } from "../lib/project-completion";
 
 export type CatalogSnapshot = { projects: ProjectRecord[]; units: UnitRecord[]; accessories:CatalogAccessoryRecord[]; memberships:MembershipOption[]; structures:ProjectStructureOption[]; source: "backend-api" | "preview-seed" };
-export type ProjectUpdate={id:string;name:string;location?:string|null;lifecycleStatus:string;managerMembershipId?:string|null;plannedHandoverFrom?:string|null;plannedHandoverTo?:string|null};
+export type ProjectUpdate={contractSettings?:import("../../backend/src/shared/project-contract-settings").ProjectContractSettings;id:string;name:string;location?:string|null;lifecycleStatus:string;managerMembershipId?:string|null;plannedHandoverFrom?:string|null;plannedHandoverTo?:string|null};
 export type ProjectCreate={name:string;code:string;slug:string;location?:string|null;address?:string|null;description?:string|null;constructionStatus:string;plannedHandoverFrom?:string|null;managerMembershipId?:string|null;projectCompany?:string|null;defaultCurrency:string;plannedUnitCount?:number|null;note?:string|null};
 export type UnitUpdate={id:string;structureId?:string|null;layout?:string|null;floorLabel?:string|null;floorNumber?:number|null;areaM2:number;usableAreaM2?:number|null;orientation?:string|null;balconyM2?:number|null;terraceM2?:number|null;gardenM2?:number|null};
 export type InventoryEntityType="unit"|"cellar"|"parking";

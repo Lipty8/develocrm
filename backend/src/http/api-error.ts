@@ -25,7 +25,10 @@ export function mapApiError(input: unknown, statusCode: number, correlationId: s
   if (!TECHNICAL_PATTERN.test(source) && /[áčďéěíňóřšťúůýž]/i.test(source) && source.length <= 240) {
     message = source;
   }
-  if (/SIGNED_CONTRACT_PROTECTS_RESERVATION/.test(source)) {
+  if (/CONTRACT_CASE_CLOSED/.test(source)) {
+    code = "CONTRACT_CASE_CLOSED";
+    message = "Obchod již byl ukončen. Historickou smlouvu nelze posunout ani podepsat.";
+  } else if (/SIGNED_CONTRACT_PROTECTS_RESERVATION/.test(source)) {
     code = "SIGNED_CONTRACT_PROTECTS_RESERVATION";
     message = "Jednotku nelze uvolnit, protože má podepsanou smlouvu.";
   } else if (/permission|required|oprávnění/i.test(source)) {

@@ -3,7 +3,7 @@ import test from "node:test";
 import {contextualContractIdentity,getNextContractAction,getSalesProcessState} from "../src/shared/next-contract-action.js";
 
 test("první smlouva může být RS, SBK nebo KS a názvy vznikají automaticky",()=>{
-  assert.deepEqual(getNextContractAction({hasActiveSalesCase:true,contracts:[]}),{kind:"create_contract",contractType:"rs",allowedContractTypes:["rs","sbk","ks"],label:"Vytvořit smlouvu"});
+  assert.deepEqual(getNextContractAction({hasActiveSalesCase:true,contracts:[]}),{kind:"create_contract",contractType:"rs",allowedContractTypes:["rs","sbk","ks"],label:"Připravit rezervační smlouvu"});
   assert.deepEqual(contextualContractIdentity("rs","101"),{reference:"RS 101",title:"Rezervační smlouva · 101"});
 });
 
@@ -51,7 +51,7 @@ test("podepsaná KS dokončí smluvní postup bez dalšího CTA",()=>{
 
 test("zrušená RS neblokuje novou RS v aktuálním obchodním případu",()=>{
   const contracts=[{id:"cancelled-rs",type:"rs",status:"cancelled"}];
-  assert.deepEqual(getNextContractAction({hasActiveSalesCase:true,contracts}),{kind:"create_contract",contractType:"rs",allowedContractTypes:["rs","sbk","ks"],label:"Vytvořit smlouvu"});
+  assert.deepEqual(getNextContractAction({hasActiveSalesCase:true,contracts}),{kind:"create_contract",contractType:"rs",allowedContractTypes:["rs","sbk","ks"],label:"Připravit rezervační smlouvu"});
 });
 
 test("ukončené smlouvy nejsou důkazem aktuální etapy: jednotka 417 vyžaduje posouzení",()=>{

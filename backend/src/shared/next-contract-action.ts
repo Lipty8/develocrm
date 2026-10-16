@@ -45,7 +45,7 @@ function resolveNextContractAction(input:SalesProcessInput,activeIndex:number,ac
   if(signedTypes.has("ks")||activeIndex>=5)return{kind:"none",label:"",reason:"Kupní smlouva je podepsaná. Další etapou je předání."};
   const allowedContractTypes:CoreContractType[]=signedTypes.has("sbk")||activeIndex>=4?["ks"]:signedTypes.has("rs")||activeIndex>=3?["sbk","ks"]:["rs","sbk","ks"];
   const contractType=allowedContractTypes[0];
-  return{kind:"create_contract",contractType,allowedContractTypes,label:"Vytvořit smlouvu"};
+  return{kind:"create_contract",contractType,allowedContractTypes,label:contractType==='rs'?"Připravit rezervační smlouvu":"Vytvořit smlouvu"};
 }
 
 export function getSalesProcessState(input:SalesProcessInput):SalesProcessProjection{

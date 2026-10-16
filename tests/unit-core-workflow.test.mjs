@@ -19,7 +19,7 @@ test("detail jednotky používá dynamickou smluvní akci a nemá duplicitní do
 test("kontextová smlouva je předvyplněná a backend určuje typ i identitu",()=>{
   assert.match(service,/getNextContractAction/);
   assert.match(service,/contextualContractIdentity/);
-  assert.match(crm,/Jednotka, klient, projekt i obchodní proces se doplní automaticky/);
+  assert.match(crm,/Po uložení zkontrolujete údaje smlouvy/);
 });
 
 test("úhrada na jednotce používá transakce a oprávnění payments.record",()=>{

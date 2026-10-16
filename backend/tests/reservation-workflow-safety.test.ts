@@ -75,6 +75,27 @@ for(const usePostgres of [false,true])test(`contract-end release invariants (${u
     await f.sign({contract_id:id,version_id:version!});return id;
   }
   try{
+    await t.test('unsigned SBK draft survives RS termination without protecting the unit or reopening the closed sale',async()=>{
+      const c=await f.start();await f.sign(c);
+      const draft=(await f.client.query<{id:string}>("SELECT app.create_contract($1,$2,'sbk',$3,'Historical draft',$4) id",[f.ids.tenantId,c.caseId,randomUUID(),f.ids.membershipId])).rows[0].id;
+      await terminate(c.contract_id);
+      assert.equal((await outcome(c.contract_id)).state,'released');
+      assert.equal((await f.client.query("SELECT commercial_status FROM units WHERE id=$1",[c.unitId])).rows[0].commercial_status,'available');
+      assert.equal((await f.client.query("SELECT current_status FROM contracts WHERE id=$1",[draft])).rows[0].current_status,'draft');
+      await assert.rejects(f.client.query("SELECT app.transition_contract_status($1,$2,'sent','Attempt to reopen',$3)",[f.ids.tenantId,draft,f.ids.membershipId]),/CONTRACT_CASE_CLOSED/);
+      assert.equal((await f.client.query("SELECT status FROM sales_cases WHERE id=$1",[c.caseId])).rows[0].status,'cancelled');
+      assert.equal((await f.client.query("SELECT count(*)::int n FROM contract_versions WHERE contract_id=$1",[draft])).rows[0].n,1);
+    });
+    await t.test('signature entry points cannot sign an approved document in a historically closed case',async()=>{
+      const c=await f.start();
+      // Offline legacy fixture: a closed sale can still contain unfinished evidence.
+      await f.client.query("UPDATE sales_cases SET status='cancelled',closed_at=now() WHERE id=$1",[c.caseId]);
+      await assert.rejects(f.sign(c),/CONTRACT_CASE_CLOSED/);
+      const party=(await f.client.query<{id:string}>("SELECT id FROM contract_parties WHERE contract_id=$1 AND signing_required LIMIT 1",[c.contract_id])).rows[0].id;
+      await assert.rejects(f.client.query("SELECT app.record_contract_party_signature($1,$2,$3,$4,'Historical signature')",[f.ids.tenantId,party,c.version_id,f.ids.membershipId]),/CONTRACT_CASE_CLOSED/);
+      assert.equal((await f.client.query("SELECT current_status FROM contracts WHERE id=$1",[c.contract_id])).rows[0].current_status,'approved');
+      assert.equal((await f.client.query("SELECT count(*)::int n FROM contract_versions WHERE contract_id=$1 AND signed_at IS NOT NULL",[c.contract_id])).rows[0].n,0);
+    });
     await t.test('single signed RS releases unit, closes case and preserves unpaid obligations; retries do not duplicate',async()=>{
       const c=await f.start();await f.sign(c);
       const before=(await f.client.query("SELECT id,amount,cancelled_at FROM payment_obligations WHERE sales_case_id=$1",[c.caseId])).rows;
@@ -91,6 +112,15 @@ for(const usePostgres of [false,true])test(`contract-end release invariants (${u
       assert.equal((await f.state(c.unitId)).commercial_status,'contracted');
       await terminate(sbk);assert.equal((await outcome(sbk)).state,'released');
       assert.equal((await f.client.query("SELECT commercial_status FROM units WHERE id=$1",[c.unitId])).rows[0].commercial_status,'available');
+    });
+    await t.test('a successor whose termination is not yet effective still blocks release',async()=>{
+      const c=await f.start();await f.sign(c);const sbk=await signed('sbk',c);
+      await terminate(sbk);
+      // Offline fixture for a previously imported future-effective termination.
+      await f.client.query("UPDATE contracts SET ended_at=now()+interval '1 day' WHERE id=$1",[sbk]);
+      await terminate(c.contract_id);
+      assert.ok((await outcome(c.contract_id)).reasons.some(r=>r.code==='OTHER_CONTRACT'));
+      assert.equal((await f.state(c.unitId)).commercial_status,'contracted');
     });
     await t.test('KS cancellation never proves ownership clearance',async()=>{
       const c=await f.start();await f.sign(c);const ks=await signed('ks',c);
@@ -135,6 +165,23 @@ for(const usePostgres of [false,true])test(`contract-end release invariants (${u
       await assert.rejects(f.client.query("SELECT app.transition_contract_status_with_refund_decisions($1,$2,'terminated','Technical','[]',$3,$4)",[randomUUID(),c.contract_id,randomUUID(),f.ids.membershipId]));
       await assert.rejects(f.client.query("SELECT app.transition_contract_status_with_refund_decisions($1,$2,'terminated','Technical','[]',$3,$4)",[f.ids.tenantId,c.contract_id,randomUUID(),randomUUID()]));
       assert.equal((await f.state(c.unitId)).commercial_status,'reserved');
+    });
+    if(f.pool)for(const endFirst of [true,false])await t.test(`real RS termination vs SBK draft advancement, termination first=${endFirst}`,async()=>{
+      const c=await f.start();await f.sign(c);
+      const draft=(await f.client.query<{id:string}>("SELECT app.create_contract($1,$2,'sbk',$3,'Concurrent draft',$4) id",[f.ids.tenantId,c.caseId,randomUUID(),f.ids.membershipId])).rows[0].id;
+      const a=await f.pool!.connect(),b=await f.pool!.connect();
+      const advance=(db:SqlClient)=>db.query("SELECT app.transition_contract_status($1,$2,'sent','Concurrent advancement',$3)",[f.ids.tenantId,draft,f.ids.membershipId]);
+      try{
+        for(const db of [a,b]){await db.query('BEGIN');await db.query("SET LOCAL ROLE develocrm_app;SET LOCAL statement_timeout='5s'");await db.query("SELECT set_config('app.tenant_id',$1,true),set_config('app.user_id',$2,true)",[f.ids.tenantId,f.ids.userId]);}
+        await (endFirst?terminate(c.contract_id,a):advance(a));
+        const pid=(await b.query<{id:number}>('SELECT pg_backend_pid() id')).rows[0].id;
+        const pending=(endFirst?advance(b):terminate(c.contract_id,b)).then(async()=>{await b.query('COMMIT');return null;},async(error:Error&{code?:string})=>{await b.query('ROLLBACK');return error;});
+        let waiting=false;for(let i=0;i<100&&!waiting;i++){waiting=(await f.pool!.query<{waiting:boolean}>("SELECT wait_event_type='Lock' waiting FROM pg_stat_activity WHERE pid=$1",[pid])).rows[0].waiting;if(!waiting)await new Promise(resolve=>setTimeout(resolve,10));}
+        assert.ok(waiting,'the second operation must actually wait on the same unit lock');
+        await a.query('COMMIT');const error=await pending;
+        if(endFirst){assert.match(error?.message??'',/CONTRACT_CASE_CLOSED/);assert.notEqual(error?.code,'40P01');assert.equal((await outcome(c.contract_id)).state,'released');}
+        else{assert.equal(error,null);assert.ok((await outcome(c.contract_id)).reasons.some(r=>r.code==='OTHER_CONTRACT'));assert.equal((await f.state(c.unitId)).commercial_status,'reserved');}
+      }finally{for(const db of [a,b]){await db.query('ROLLBACK');db.release();}}
     });
     if(f.pool)await t.test('real concurrent termination and two reservations serialize at unit lock',async()=>{
       const c=await f.start();await f.sign(c);

@@ -17,7 +17,7 @@ test("detail smlouvy nabízí řízené označení aktuální verze jako podepsa
   assert.match(repository,/signContract/);
   assert.match(proxy,/forwardBackendMutation/);
   assert.match(app,/refreshUnitWorkflow\(\)/);
-  assert.match(nextAction,/return\{kind:"create_contract",contractType,allowedContractTypes,label:"Vytvořit smlouvu"\}/);
+  assert.match(nextAction,/contractType===\x27rs\x27\?"Připravit rezervační smlouvu":"Vytvořit smlouvu"/);
   assert.doesNotMatch(nextAction,/Čeká na úhradu rezervačního poplatku/);
   assert.match(app,/Smlouva byla označena jako podepsaná a obchodní proces byl aktualizován/);
   assert.doesNotMatch(app,/ContractSignatureModal/);

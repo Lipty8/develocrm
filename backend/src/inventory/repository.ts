@@ -1,7 +1,9 @@
 import type { Database } from "../database.js";
 import {archiveReadSql} from './project-visibility.js';
+import {validateProjectContractSettings,type ProjectContractSettings} from '../shared/project-contract-settings.js';
 
 export type CatalogProject = {
+  contractSettings?:ProjectContractSettings|null;canManageContractSettings?:boolean;
   id: string; code: string; name: string; location: string | null; lifecycleStatus: string; archivedAt:string|null;
   manager: string | null; managerMembershipId:string|null; plannedHandoverFrom: string | null; plannedHandoverTo: string | null;
   constructionStatus: string | null;
@@ -86,7 +88,13 @@ export class InventoryRepository {
       const businessCountJoin = businessProjection.rows[0]?.available
         ? "CROSS JOIN LATERAL app.unit_business_projection(unit.tenant_id,unit.id) projection"
         : "";
+      const hasContractSettings=(await client.query<{available:boolean}>("SELECT to_regclass('public.project_contract_settings') IS NOT NULL available")).rows[0]?.available;
+      const settingsProjection=hasContractSettings?`CASE WHEN app.has_project_permission(project.tenant_id,$2,project.id,'contract.read') THEN
+                  (SELECT jsonb_build_object('name',s.seller_name,'registrationNumber',s.seller_registration_number,'address',s.seller_address,'registryEntry',s.seller_registry_entry,
+                    'representative',s.seller_representative,'email',s.seller_email,'dataBox',s.seller_data_box,'bankAccount',s.seller_bank_account,'bankName',s.seller_bank_name,'reservationPeriodDays',s.reservation_period_days)
+                    FROM project_contract_settings s WHERE s.tenant_id=project.tenant_id AND s.project_id=project.id) ELSE NULL END`:'NULL::jsonb';
       const projects = await client.query<{
+        contract_settings:ProjectContractSettings|null;can_manage_contract_settings:boolean;
         id: string; code: string; name: string; location: string | null; lifecycle_status: string; archived_at:string|null;
         manager: string | null; manager_membership_id:string|null; planned_handover_from: string | null; planned_handover_to: string | null;
         construction_status: string | null; counts: Record<string, number>;
@@ -95,6 +103,8 @@ export class InventoryRepository {
                 manager_user.display_name AS manager,project.manager_membership_id,
                 project.planned_handover_from::text, project.planned_handover_to::text,
                 construction.status_code AS construction_status,
+                ${settingsProjection} contract_settings,
+                app.has_project_permission(project.tenant_id,$2,project.id,'contract.manage') can_manage_contract_settings,
                 COALESCE(status_counts.counts, '{}'::jsonb) AS counts
          FROM projects project
          LEFT JOIN tenant_memberships manager_membership
@@ -237,6 +247,7 @@ export class InventoryRepository {
       const structures=await client.query<{id:string;project_id:string;project_name:string;name:string;kind:string}>(`SELECT structure.id,structure.project_id,project.name project_name,structure.name,structure.kind FROM project_structures structure JOIN projects project ON project.tenant_id=structure.tenant_id AND project.id=structure.project_id WHERE structure.tenant_id=$1 AND structure.archived_at IS NULL AND (project.archived_at IS NULL OR (${scopedArchiveRead})) AND app.has_project_permission(structure.tenant_id,$2,structure.project_id,'project.read') AND ($3::uuid IS NULL OR structure.project_id=$3) ORDER BY project.name,structure.sort_order,structure.name`,[input.tenantId,input.membershipId,input.projectId??null]);
       return {
         projects: projects.rows.map((row): CatalogProject => ({
+          contractSettings:row.contract_settings,canManageContractSettings:row.can_manage_contract_settings,
           id: row.id, code: row.code, name: row.name, location: row.location,
           lifecycleStatus: row.lifecycle_status,archivedAt:row.archived_at, manager: row.manager,managerMembershipId:row.manager_membership_id,
           plannedHandoverFrom: row.planned_handover_from, plannedHandoverTo: row.planned_handover_to,
@@ -267,8 +278,22 @@ export class InventoryRepository {
     });
   }
 
-  async updateProject(input: {tenantId:string;userId:string;membershipId:string;projectId:string;name:string;location?:string|null;lifecycleStatus:string;managerMembershipId?:string|null;plannedHandoverFrom?:string|null;plannedHandoverTo?:string|null}) {
-    return this.database.withContext({tenantId:input.tenantId,userId:input.userId}, async client => (await client.query<{id:string}>("SELECT app.update_project_details($1,$2,$3,$4,$5,$6,$7,$8,$9) id", [input.tenantId,input.projectId,input.name,input.location??null,input.lifecycleStatus,input.managerMembershipId??null,input.plannedHandoverFrom??null,input.plannedHandoverTo??null,input.membershipId])).rows[0]);
+  async updateProject(input: {tenantId:string;userId:string;membershipId:string;projectId:string;name:string;location?:string|null;lifecycleStatus:string;managerMembershipId?:string|null;plannedHandoverFrom?:string|null;plannedHandoverTo?:string|null;contractSettings?:ProjectContractSettings}) {
+    return this.database.withContext({tenantId:input.tenantId,userId:input.userId}, async client => {
+      if(input.contractSettings){
+        validateProjectContractSettings(input.contractSettings);
+        if(!(await client.query<{allowed:boolean}>("SELECT app.has_project_permission($1,$2,$3,'contract.manage') allowed",[input.tenantId,input.membershipId,input.projectId])).rows[0]?.allowed)throw new Error('contract.manage permission required');
+      }
+      const row=(await client.query<{id:string}>("SELECT app.update_project_details($1,$2,$3,$4,$5,$6,$7,$8,$9) id", [input.tenantId,input.projectId,input.name,input.location??null,input.lifecycleStatus,input.managerMembershipId??null,input.plannedHandoverFrom??null,input.plannedHandoverTo??null,input.membershipId])).rows[0];
+      if(input.contractSettings){const s=input.contractSettings;
+        await client.query(`INSERT INTO project_contract_settings(tenant_id,project_id,seller_name,seller_registration_number,seller_address,seller_registry_entry,seller_representative,seller_email,seller_data_box,seller_bank_account,seller_bank_name,reservation_period_days,created_by_membership_id)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT(tenant_id,project_id) DO UPDATE SET seller_name=EXCLUDED.seller_name,seller_registration_number=EXCLUDED.seller_registration_number,
+          seller_address=EXCLUDED.seller_address,seller_registry_entry=EXCLUDED.seller_registry_entry,seller_representative=EXCLUDED.seller_representative,seller_email=EXCLUDED.seller_email,seller_data_box=EXCLUDED.seller_data_box,
+          seller_bank_account=EXCLUDED.seller_bank_account,seller_bank_name=EXCLUDED.seller_bank_name,reservation_period_days=EXCLUDED.reservation_period_days`,[input.tenantId,input.projectId,s.name.trim(),s.registrationNumber.trim(),s.address.trim(),s.registryEntry.trim(),s.representative.trim(),s.email.trim(),s.dataBox.trim(),s.bankAccount.trim(),s.bankName.trim(),s.reservationPeriodDays,input.membershipId]);
+        await client.query("INSERT INTO audit_log(tenant_id,actor_user_id,action,entity_type,entity_id,after_data) VALUES($1,$2,'project.contract_settings_updated','project',$3,jsonb_build_object('sellerName',$4::text))",[input.tenantId,input.userId,input.projectId,s.name.trim()]);
+        await client.query("INSERT INTO outbox_events(tenant_id,aggregate_type,aggregate_id,event_type,payload) VALUES($1,'project',$2,'project.contract_settings_updated.v1',jsonb_build_object('projectId',$2::uuid))",[input.tenantId,input.projectId]);
+      }return row;
+    });
   }
   async updateUnit(input: {tenantId:string;userId:string;membershipId:string;unitId:string;structureId?:string|null;layout?:string|null;floorLabel?:string|null;floorNumber?:number|null;areaM2:number;usableAreaM2?:number|null;orientation?:string|null;balconyM2?:number|null;terraceM2?:number|null;gardenM2?:number|null}) {
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId}, async client => (await client.query<{id:string}>("SELECT app.update_unit_details_v2($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) id", [input.tenantId,input.unitId,input.structureId??null,input.layout??null,input.floorLabel??null,input.floorNumber??null,input.areaM2,input.usableAreaM2??null,input.orientation??null,input.balconyM2??null,input.terraceM2??null,input.gardenM2??null,input.membershipId])).rows[0]);

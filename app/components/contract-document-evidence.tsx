@@ -23,7 +23,7 @@ export function ContractDocumentEvidence({contractId,version,canUpload,onChanged
     {version?.documentVersionId&&<p>Verze {version.number} · {version.documentName}{signed&&version.signatureRecordedAt?` · Evidováno ${formatPragueDateTime(version.signatureRecordedAt)}`:""}</p>}
     {signed&&version?.evidenceState==='legacy_missing'&&<p>Historický podpis · čeká na doložení podepsaného dokumentu. Původní evidence podpisu zůstává zachována.</p>}
     {verifying?<p role="status">Ověřuji dostupnost dokumentu…</p>:!version?.documentReady&&version?.evidenceState!=='legacy_missing'&&<p role={signed?'alert':undefined}>{signed?"Podepsaný dokument nelze ověřit. Obraťte se na administrátora.":"Před evidencí podpisu připravte finální dokument."}</p>}</div>
-    {version?.documentReady&&<button className="secondary-button" onClick={open}>Otevřít přesný dokument ze SharePointu</button>}</div>
+    {version?.documentReady&&<button className="secondary-button" onClick={open}>{version.documentName?.toLowerCase().endsWith(".docx")?"Stáhnout Word":"Otevřít přesný dokument ze SharePointu"}</button>}</div>
     {canUpload&&!signed&&<div className="form-row"><label><span>Externí dokument (DOCX nebo PDF, do 4 MB)</span><input type="file" accept=".docx,.pdf" disabled={busy} onChange={event=>{setFile(event.target.files?.[0]??null);setKey(crypto.randomUUID());setError("");}}/></label>
       <button className="secondary-button" disabled={!file||busy} onClick={upload}>{busy?"Ukládám…":"Nahrát externí dokument"}</button></div>}
     {error&&<p role="alert">{error}</p>}

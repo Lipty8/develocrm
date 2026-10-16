@@ -8,6 +8,7 @@ export type RsSource={contractId:string;projectId:string;projectName:string;proj
   layout:string|null;floorLabel:string|null;areaM2:number;balconyM2:number|null;gardenM2:number|null;unitPrice:number|null;totalPrice:number|null;
   reservationFee:number|null;reservationFeeDueDays:number;reservationPeriodDays:number;settings:null|{name:string;registrationNumber:string;address:string;registryEntry:string;
     representative:string;email:string;dataBox:string;bankAccount:string;bankName:string};salesCaseId:string;reference:string;status:string;buyers:RsBuyer[];accessories:RsAccessory[];
+  caseStatus?:string;terraceM2?:number|null;templateName?:string|null;templateVersionLabel?:string|null;templateEffectiveFrom?:string|null;contractVersionId?:string|null;
   templateVersionId:string|null;templateHash:string|null;documentId:string|null;documentVersionId:string|null;documentMimeType?:string|null;webUrl:string|null;contractVersion:number|null};
 
 export class RsGenerationRepository{
@@ -27,17 +28,20 @@ export class RsGenerationRepository{
       const row=(await client.query<Record<string,unknown>>(`
         SELECT contract.id contract_id,contract.project_id,project.name project_name,project.code project_code,
           extract(year from project.planned_handover_from)::text completion_year,contract.unit_id,unit.code unit_code,unit.layout,unit.floor_label,
-          unit.area_m2,unit.balcony_m2,unit.garden_m2,contract.unit_price_snapshot,contract.total_price_snapshot,
+          unit.area_m2,unit.balcony_m2,unit.terrace_m2,unit.garden_m2,contract.unit_price_snapshot,contract.total_price_snapshot,
           contract.reservation_fee_amount,contract.reservation_fee_due_days,COALESCE(settings.reservation_period_days,30) reservation_period_days,
           CASE WHEN settings.project_id IS NULL THEN NULL ELSE jsonb_build_object('name',settings.seller_name,'registrationNumber',settings.seller_registration_number,
             'address',settings.seller_address,'registryEntry',settings.seller_registry_entry,'representative',settings.seller_representative,
             'email',settings.seller_email,'dataBox',settings.seller_data_box,'bankAccount',settings.seller_bank_account,'bankName',settings.seller_bank_name) END settings,
-          contract.sales_case_id,contract.reference,contract.current_status,
+          contract.sales_case_id,sales_case.status case_status,contract.reference,contract.current_status,
           COALESCE((SELECT jsonb_agg(jsonb_build_object('id',party.id,'partyType',party.party_type,'displayName',party.display_name,
             'salutation',detail.salutation,'firstName',detail.first_name,'lastName',detail.last_name,'birthDate',detail.date_of_birth,
             'registrationNumber',organization.registration_number,
             'address',(SELECT concat_ws(', ',address.line1,NULLIF(address.line2,''),concat_ws(' ',address.postal_code,address.city)) FROM party_addresses address
-              WHERE address.tenant_id=party.tenant_id AND address.party_id=party.id AND address.valid_to IS NULL ORDER BY address.is_primary DESC,address.created_at DESC LIMIT 1),
+              WHERE address.tenant_id=party.tenant_id AND address.party_id=party.id AND address.valid_to IS NULL
+                AND address.address_type=CASE WHEN party.party_type='individual' THEN 'residence' ELSE 'registered_office' END
+                AND length(btrim(address.line1))>0 AND length(btrim(address.city))>0
+                ORDER BY address.is_primary DESC,address.created_at DESC LIMIT 1),
             'email',(SELECT contact.value FROM party_contacts contact WHERE contact.tenant_id=party.tenant_id AND contact.party_id=party.id AND contact.contact_type='email' AND contact.archived_at IS NULL ORDER BY contact.is_primary DESC,contact.created_at LIMIT 1),
             'phone',(SELECT contact.value FROM party_contacts contact WHERE contact.tenant_id=party.tenant_id AND contact.party_id=party.id AND contact.contact_type='phone' AND contact.archived_at IS NULL ORDER BY contact.is_primary DESC,contact.created_at LIMIT 1),
             'dataBox',(SELECT contact.value FROM party_contacts contact WHERE contact.tenant_id=party.tenant_id AND contact.party_id=party.id AND contact.contact_type='data_box' AND contact.archived_at IS NULL ORDER BY contact.is_primary DESC,contact.created_at LIMIT 1))
@@ -49,16 +53,17 @@ export class RsGenerationRepository{
               AND contract_party.participant_role IN('buyer','co_buyer') AND contract_party.effective_to IS NULL),'[]'::jsonb) buyers,
           COALESCE((SELECT jsonb_agg(item||jsonb_build_object('floorLabel',accessory.floor_label,'description',accessory.description) ORDER BY item->>'type',item->>'code')
             FROM jsonb_array_elements(contract.accessory_price_snapshot) item LEFT JOIN accessories accessory ON accessory.tenant_id=contract.tenant_id AND accessory.id=(item->>'accessoryId')::uuid),'[]'::jsonb) accessories,
-          template_version.id template_version_id,template_version.content_hash template_hash,
-          latest.document_id,latest.document_version_id,document.mime_type document_mime_type,document.web_url,latest.version_number contract_version
+          template_version.id template_version_id,template_version.content_hash template_hash,template_version.name template_name,template_version.version_label,template_version.effective_from,
+          latest.id contract_version_id,latest.document_id,latest.document_version_id,document.mime_type document_mime_type,document.web_url,latest.version_number contract_version
         FROM contracts contract JOIN projects project ON project.tenant_id=contract.tenant_id AND project.id=contract.project_id
         JOIN units unit ON unit.tenant_id=contract.tenant_id AND unit.id=contract.unit_id
+        JOIN sales_cases sales_case ON sales_case.tenant_id=contract.tenant_id AND sales_case.id=contract.sales_case_id AND sales_case.unit_id=contract.unit_id AND sales_case.project_id=contract.project_id
         LEFT JOIN project_contract_settings settings ON settings.tenant_id=contract.tenant_id AND settings.project_id=contract.project_id
-        LEFT JOIN LATERAL(SELECT version.id,version.content_hash FROM document_template_versions version
+        LEFT JOIN LATERAL(SELECT version.id,version.content_hash,template.name,version.version_label,version.effective_from FROM document_template_versions version
           JOIN document_templates template ON template.tenant_id=version.tenant_id AND template.id=version.template_id
-          WHERE version.tenant_id=contract.tenant_id AND version.project_id=contract.project_id AND template.contract_type='rs' AND template.status='active'
+          WHERE version.tenant_id=contract.tenant_id AND version.project_id=contract.project_id AND template.contract_type='rs' AND template.variant_key='default' AND template.status='active'
             AND version.approval_status='approved' AND version.effective_from<=CURRENT_DATE ORDER BY version.effective_from DESC,version.created_at DESC LIMIT 1) template_version ON true
-        LEFT JOIN LATERAL(SELECT version.document_id,version.document_version_id,version.version_number FROM contract_versions version
+        LEFT JOIN LATERAL(SELECT version.id,version.document_id,version.document_version_id,version.version_number FROM contract_versions version
           WHERE version.tenant_id=contract.tenant_id AND version.contract_id=contract.id AND version.document_id IS NOT NULL ORDER BY version.version_number DESC LIMIT 1) latest ON true
         LEFT JOIN documents document ON document.tenant_id=contract.tenant_id AND document.id=latest.document_id
         WHERE contract.tenant_id=$1 AND contract.id=$3 AND contract.contract_type='rs' AND contract.current_status NOT IN('signed','cancelled','terminated')
@@ -73,7 +78,8 @@ export class RsGenerationRepository{
         const existing=(await client.query<{id:string;version_number:number}>(`SELECT id,version_number FROM contract_versions WHERE tenant_id=$1 AND generation_operation_id=$2`,[input.tenantId,input.operationId])).rows[0];
         if(existing)return{versionId:existing.id,versionNumber:existing.version_number};
         const contract=(await client.query<{project_id:string;reference:string;current_status:string}>(`SELECT project_id,reference,current_status FROM contracts WHERE tenant_id=$1 AND id=$3 AND contract_type='rs' AND current_status NOT IN('signed','cancelled','terminated')
-          AND app.has_project_permission(tenant_id,$2,project_id,'contract.manage') FOR UPDATE`,[input.tenantId,input.membershipId,input.contractId])).rows[0];
+          AND app.has_project_permission(tenant_id,$2,project_id,'contract.manage')
+          AND EXISTS(SELECT 1 FROM sales_cases s WHERE s.tenant_id=contracts.tenant_id AND s.id=contracts.sales_case_id AND s.status='active' AND s.closed_at IS NULL) FOR UPDATE`,[input.tenantId,input.membershipId,input.contractId])).rows[0];
         if(!contract)throw new Error("contract.manage permission required");
         const previous=(await client.query<{id:string;version_number:number;source_type:string;document_id:string|null}>(`SELECT id,version_number,source_type,document_id FROM contract_versions WHERE tenant_id=$1 AND contract_id=$2 ORDER BY version_number DESC LIMIT 1 FOR UPDATE`,[input.tenantId,input.contractId])).rows[0];
         let versionId:string;let versionNumber:number;
@@ -111,6 +117,7 @@ function mapSource(row:Record<string,unknown>):RsSource{
     unitId:String(row.unit_id),unitCode:String(row.unit_code),layout:row.layout?String(row.layout):null,floorLabel:row.floor_label?String(row.floor_label):null,areaM2:Number(row.area_m2),balconyM2:row.balcony_m2==null?null:Number(row.balcony_m2),gardenM2:row.garden_m2==null?null:Number(row.garden_m2),
     unitPrice:row.unit_price_snapshot==null?null:Number(row.unit_price_snapshot),totalPrice:row.total_price_snapshot==null?null:Number(row.total_price_snapshot),reservationFee:row.reservation_fee_amount==null?null:Number(row.reservation_fee_amount),reservationFeeDueDays:Number(row.reservation_fee_due_days),reservationPeriodDays:Number(row.reservation_period_days),
     settings:settings?{name:settings.name,registrationNumber:settings.registrationNumber,address:settings.address,registryEntry:settings.registryEntry,representative:settings.representative,email:settings.email,dataBox:settings.dataBox,bankAccount:settings.bankAccount,bankName:settings.bankName}:null,
+    caseStatus:row.case_status?String(row.case_status):undefined,terraceM2:row.terrace_m2==null?null:Number(row.terrace_m2),templateName:row.template_name?String(row.template_name):null,templateVersionLabel:row.version_label?String(row.version_label):null,templateEffectiveFrom:row.effective_from?String(row.effective_from):null,contractVersionId:row.contract_version_id?String(row.contract_version_id):null,
     salesCaseId:String(row.sales_case_id),reference:String(row.reference),status:String(row.current_status),buyers:(row.buyers as RsBuyer[])??[],accessories:((row.accessories as Array<Record<string,unknown>>)??[]).map(item=>({code:String(item.code),type:String(item.type),amount:Number(item.amount),floorLabel:item.floorLabel?String(item.floorLabel):null,description:item.description?String(item.description):null})),
     templateVersionId:row.template_version_id?String(row.template_version_id):null,templateHash:row.template_hash?String(row.template_hash):null,documentMimeType:row.document_mime_type?String(row.document_mime_type):null,documentId:row.document_id?String(row.document_id):null,documentVersionId:row.document_version_id?String(row.document_version_id):null,webUrl:row.web_url?String(row.web_url):null,contractVersion:row.contract_version==null?null:Number(row.contract_version)};
 }
