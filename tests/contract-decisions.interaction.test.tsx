@@ -14,7 +14,8 @@ import {SummaryStats,toggledSummaryFilter} from "../app/components/summary-stats
 import {projectSalesAggregation,projectUnitSalesBucket,type ProjectSalesBucket} from "../app/lib/project-sales-performance";
 import {contractSummaryCategory,contractSummaryCounts,type ContractSummaryCategory} from "../app/lib/contract-summary";
 import {PackageOpen,UserRound,Users} from "lucide-react";
-import {Projects,ContractDetail,ClientChangeStatusModal,ComplaintDetailModal,ContractAddendumModal,ContractNoteModal,FormModal,PaymentDetailModal,PaymentRefundForm,paymentRefundAvailability} from "../app/CRMApp";
+import {Projects,ContractDetail,ContractWorkflowModal,ClientChangeStatusModal,ComplaintDetailModal,ContractAddendumModal,ContractNoteModal,FormModal,PaymentDetailModal,PaymentRefundForm,paymentRefundAvailability} from "../app/CRMApp";
+import {paymentRepository} from '../app/repositories/payment-repository';
 import {relatedUnitHref,relatedClientHref} from '../app/lib/entity-navigation';
 import {searchWorkspace} from '../app/lib/workspace-search';
 import {ClientContractLinks} from '../app/components/client-contract-links';
@@ -26,6 +27,23 @@ import {commercialRepository} from '../app/repositories/commercial-repository';
 import {ContractEndResult} from '../app/components/contract-end-result';
 import type {PaymentRecord} from '../app/repositories/payment-repository';
 import {clients as sampleClients,units as sampleUnits,contracts as sampleContracts} from '../app/crm-data';
+
+test('ukončení smlouvy vyžaduje viditelné potvrzení bez systémového dialogu',async()=>{
+ const original=paymentRepository.list;const originalConfirm=window.confirm;
+ paymentRepository.list=async()=>({payments:[],source:'postgresql'});
+ window.confirm=()=>{throw new Error('Native confirm must not be used');};
+ try{
+  const user=userEvent.setup({document});let calls=0;
+  render(<ContractWorkflowModal contract={{...sampleContracts[0],id:'technical-contract',reference:'TECH-RS',type:'RS',statusCode:'signed'}} close={()=>{}} save={async()=>{calls++;}}/>);
+  await user.selectOptions(screen.getByRole('combobox',{name:'Nový stav'}),'cancelled');
+  await user.type(screen.getByRole('textbox',{name:'Důvod'}),'Technický test');
+  await user.click(screen.getByRole('button',{name:'Uložit'}));
+  assert.ok(await screen.findByText('Potvrďte zrušení nebo ukončení smlouvy.'));assert.equal(calls,0);
+  await user.click(screen.getByRole('checkbox',{name:'Potvrzuji zrušení nebo ukončení smlouvy TECH-RS.'}));
+  await user.click(screen.getByRole('button',{name:'Uložit'}));
+  await waitFor(()=>assert.equal(calls,1));
+ }finally{paymentRepository.list=original;window.confirm=originalConfirm;}
+});
 
 test('ukončení smlouvy ukazuje uvolnění nebo konkrétní překážku bez finančního slibu',()=>{
  const view=render(<ContractEndResult outcome={{state:'released',reasons:[],salesCaseId:'case',unitId:'unit'}}/>);
