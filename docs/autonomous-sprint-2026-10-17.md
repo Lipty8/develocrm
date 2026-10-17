@@ -82,6 +82,18 @@ Nasazení a skutečný E2E:
 
 Tyto balíky samy nedokončují RS/SBK business generování ani platební kalendář.
 
+## Balík 3 Přesný návrh platebního kalendáře
+
+Připravený čistý serverový výpočet pro novou originálovou variantu, **zatím nezapojený do runtime předpisů nebo podpisové operace**. Není to nový finanční systém ani tvrzení o dokončené platební integraci.
+
+- Český pracovní kalendář používá kalendářní data, víkendy, pevné svátky a Velký pátek/Velikonoční pondělí. Ověřen proti § 1–3 zákona 245/2000 na MPSV dne 17. 10. 2026: https://ppropo.mpsv.cz/zakon_245_2000. Výslovně omezen na roky 2016–2099, aby nepřepisoval staré svátkové režimy.
+- Skutečný zónovaný podpis se převede na český smluvní den; plánované datum ani systémové dnes nejsou náhradou. RS 3 pracovní dny, SBK první splátka 5 pracovních dnů; počítání až od následujícího dne.
+- Před podpisem vrací návrh `awaiting_signature` a `dueOn:null`. U doplatku SBK `awaiting_delivery`, dokud není doloženo doručení výzvy. Žádné vymyšlené datum ani zápis do DB.
+- SBK počítá 20 % a zbývající cenu minus skutečně zaplacený RS poplatek přesnými celými haléři. Nedostatečná úhrada, nesoulad částky nebo záporný doplatek jsou blokující nesrovnalost. To nemění obecné pravidlo, že evidence podpisu existujícího externího dokumentu není blokovaná platbou.
+- Doplatek má v návrhu 30 kalendářních dnů od doručení podle doslovného textu. Případné právní posunutí konce lhůty na pracovní den není automaticky domyšlené; musí zůstat předmětem kontroly nové parametrizované varianty před aktivací.
+- Další krok: atomické navázání na existující `payment_obligations` a podpisové důkazy. Současný `due_at NOT NULL` a create-contract explicitní datum se nesmějí obejít fiktivní splatností. Historické předpisy beze změny.
+- Celá backend sada po přidání výpočtu: 337 passed, 0 failed, 2 optional native PG skipped. Zahrnuje ověření haléřových výpočtů proti skutečné PostgreSQL `numeric` aritmetice v PGlite. Samostatná nativní concurrency sada byla ověřena u balíku 1; čistý výpočet nezměnil DB zámky ani workflow.
+
 ## Následující prioritní balíky
 
 1. Autorizované scalar mapování RS/SBK se strukturovanou readiness; chybějící údaje doplnit do stávajících projektových nastavení/identit, nikoli z UI posílat libovolná render data.
