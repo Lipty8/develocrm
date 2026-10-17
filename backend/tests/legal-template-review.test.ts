@@ -12,7 +12,7 @@ type Manifest = {
   preserveOnlyParts: Record<string, string>;
   schema: {fields: Record<string, {required: boolean}>}; sampleValues: Record<string, string>;
   slots: {paragraph: number; original: string; replacement: string; key: string | null}[];
-  scope: {staticProjectLegalFactsPinnedToSource: boolean}; knownGates: string[];
+  scope: {staticProjectLegalFactsPinnedToSource: boolean; buyerIdentifier: string; accessoryVariant: string}; knownGates: string[];
 };
 const expectedSources = {
   rs: 'b57cfd799b64e79641c6cc78684cbfd053f14439102447d09e08d83e3af721bd',
@@ -40,6 +40,11 @@ for (const kind of ['rs', 'sbk'] as const) {
     assert.equal(m.activationAllowed, false);
     assert.equal(m.sampleIsSynthetic, true);
     assert.equal(m.scope.staticProjectLegalFactsPinnedToSource, true);
+    assert.equal(m.scope.buyerIdentifier, 'date_of_birth');
+    assert.equal(m.scope.accessoryVariant, 'all_source_accessories_present');
+    assert.ok(!m.knownGates.includes('birth_number_policy'));
+    assert.equal(m.schema.fields['buyer.birthNumber'], undefined);
+    assert.equal(m.schema.fields['buyer.birthDate']?.required, true);
     assert.ok(m.knownGates.includes('runtime_field_mapping'));
     assert.ok(m.knownGates.includes('content_review'));
     const inspection = inspectDocxTemplate(bytes);
@@ -71,8 +76,7 @@ for (const kind of ['rs', 'sbk'] as const) {
       }
       assert.equal(digest(restored), m.sourceParagraphTextSha256[i], `source paragraph ${i}`);
     }
-    assert.equal(m.slots.filter(s => s.key === null).length, kind === 'rs' ? 1 : 0);
-    if (kind === 'rs') assert.deepEqual(m.slots.filter(s => s.key === null).map(s => [s.original, s.replacement]), [['RČ', 'Datum narození']]);
+    assert.deepEqual(m.slots.filter(s => s.key === null).map(s => [s.original, s.replacement]), [['RČ', 'Datum narození']]);
   });
 
   test(`${kind}: existující renderer doplní všechna pole bez změny ostatního textu`, async () => {
@@ -84,6 +88,8 @@ for (const kind of ['rs', 'sbk'] as const) {
     const after = strFromU8(unzipSync(rendered.bytes)['word/document.xml']);
     assert.deepEqual(paragraphs(after), paragraphs(before).map(p => p.replace(/{{([A-Za-z][A-Za-z0-9_.-]*)}}/g, (_, key: string) => m.sampleValues[key])));
     assert.equal(structure(after), structure(before));
+    assert.match(paragraphs(after).join('\n'), /Datum narození1\. 1\. 1990/);
+    assert.doesNotMatch(paragraphs(after).join('\n'), /TEST NENÍ RČ|buyer\.birthNumber/);
   });
 
   test(`${kind}: chybějící hodnota ani nepovolené pole nesmějí projít`, async () => {

@@ -4,13 +4,13 @@
   "activationAllowed": false,
   "sourceSha256": "bc79743f8c9561a51f015a02a8a083416a3b12d32918875f2a974bce2a22c160",
   "sourceFileName": "Dejvice SBK vzor 26-02-05.docx",
-  "templateSha256": "d6e4b6a32d34a6625409fb4817aa87162432171b5164f02e1fd5dee8353ccc2b",
+  "templateSha256": "f33d4228eca7661ed9dc207c3b51f416626b1cc7958819c107a835fb48374012",
   "schema": {
     "fields": {
       "buyer.address": {
         "required": true
       },
-      "buyer.birthNumber": {
+      "buyer.birthDate": {
         "required": true
       },
       "buyer.deliveryAddress": {
@@ -134,7 +134,7 @@
     "buyer.salutation": "Pan",
     "buyer.name": "TESTOVACÍ KUPUJÍCÍ NEPODEPISOVAT",
     "buyer.address": "Testovací 62, 160 00 Praha 6",
-    "buyer.birthNumber": "TEST NENÍ RČ",
+    "buyer.birthDate": "1. 1. 1990",
     "buyer.deliveryAddress": "Doručovací 62, 160 00 Praha 6",
     "buyer.email": "kupujici@example.test",
     "buyer.phone": "+420 777 000 062",
@@ -259,11 +259,19 @@
     },
     {
       "paragraph": 23,
+      "start": 0,
+      "end": 2,
+      "original": "RČ",
+      "replacement": "Datum narození",
+      "key": null
+    },
+    {
+      "paragraph": 23,
       "start": 2,
       "end": 11,
       "original": "…………………….",
-      "replacement": "{{buyer.birthNumber}}",
-      "key": "buyer.birthNumber"
+      "replacement": "{{buyer.birthDate}}",
+      "key": "buyer.birthDate"
     },
     {
       "paragraph": 22,
@@ -790,6 +798,7 @@
     "project": "Rezidence Dejvice",
     "buyerVariant": "one_individual",
     "accessoryVariant": "all_source_accessories_present",
+    "buyerIdentifier": "date_of_birth",
     "staticProjectLegalFactsPinnedToSource": true
   },
   "knownGates": [
@@ -798,7 +807,6 @@
     "appendices",
     "signature_based_due_date",
     "accessory_variants",
-    "repeated_seller_details_and_hyperlink_targets",
-    "birth_number_policy"
+    "repeated_seller_details_and_hyperlink_targets"
   ]
 }

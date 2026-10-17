@@ -101,13 +101,11 @@ def parameterize(kind, source, out):
         pattern(20, r'[.…]{3,}', 'buyer.name', 'TESTOVACÍ KUPUJÍCÍ NEPODEPISOVAT')
         pattern(21, r'[.…]{3,}', 'buyer.address', 'Testovací 62, 160 00 Praha 6')
         birth_i = 22 if kind == 'rs' else 23
-        if kind == 'rs':
-            # Explicitly authorized by Adam: date of birth instead of birth number.
-            slots.append({'paragraph': birth_i, 'start': 0, 'end': 2, 'original': 'RČ',
-                          'replacement': 'Datum narození', 'key': None})
-            pattern(birth_i, r'[.…]{3,}', 'buyer.birthDate', '1. 1. 1990')
-        else:
-            pattern(birth_i, r'[.…]{3,}', 'buyer.birthNumber', 'TEST NENÍ RČ')
+        # Explicitly authorized by Adam for RS and, on 2026-10-17, SBK.
+        slots.append({'paragraph': birth_i, 'start': 0, 'end': 2, 'original': 'RČ',
+                      'replacement': 'Datum narození', 'key': None})
+        pattern(birth_i, r'[.…]{3,}', 'buyer.birthDate', '1. 1. 1990')
+        if kind == 'sbk':
             pattern(22, r'[.…]{3,}', 'buyer.deliveryAddress', 'Doručovací 62, 160 00 Praha 6')
         pattern(birth_i+1, r'[.…]{3,}', 'buyer.email', 'kupujici@example.test')
         pattern(birth_i+2, r'[.…]{3,}', 'buyer.phone', '+420 777 000 062')
@@ -197,11 +195,11 @@ def parameterize(kind, source, out):
                     'sourceParagraphTextSha256': [hashlib.sha256(text.encode()).hexdigest() for text in texts],
                     'scope': {'project': 'Rezidence Dejvice', 'buyerVariant': 'one_individual',
                               'accessoryVariant': 'all_source_accessories_present',
+                              'buyerIdentifier': 'date_of_birth',
                               'staticProjectLegalFactsPinnedToSource': True},
                     'knownGates': ['content_review', 'runtime_field_mapping', 'appendices',
                                    'signature_based_due_date', 'accessory_variants',
-                                   'repeated_seller_details_and_hyperlink_targets',
-                                   *(['birth_number_policy'] if kind == 'sbk' else [])]}
+                                   'repeated_seller_details_and_hyperlink_targets']}
         (out / f'{kind}-review-manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2)+'\n')
         print(f'{kind}: {len(slots)} exact slots, {len(values)} fields; all non-text structure and package parts preserved')
 

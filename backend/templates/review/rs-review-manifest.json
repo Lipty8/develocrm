@@ -610,6 +610,7 @@
     "project": "Rezidence Dejvice",
     "buyerVariant": "one_individual",
     "accessoryVariant": "all_source_accessories_present",
+    "buyerIdentifier": "date_of_birth",
     "staticProjectLegalFactsPinnedToSource": true
   },
   "knownGates": [
