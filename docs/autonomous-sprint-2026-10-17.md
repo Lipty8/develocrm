@@ -51,7 +51,24 @@ Ověření před nasazením:
 - Frontend TypeScript, backend build, lint a produkční frontend build prošly. Existující upozornění na velikost frontendového chunku zůstává, nepředstírá se jeho vyřešení.
 - Cílená sada template/generation/RS/review 49 passed.
 
-Deployment a browser/SharePoint smoke budou zaznamenány až po skutečném ověření. Tento balík sám nedokončuje RS/SBK business generování ani platební kalendář.
+Nasazení balíku 1:
+
+- GitHub commit `e16029a033cc09f320183c533a66022f142f84ca`.
+- ACR build `cg3v`, API digest `sha256:a132370dd11d273920f4ec8cb6b851d846292767d28eb21e3a04ba54d63ed01a`.
+- Backend `ca-develocrm-api-pilot--tplreview-e16029a`: Healthy / Running; `/health` a `/ready` 200.
+- Sites 145, source commit `a79a0edc02d0fba2482f51e1b722d70370f96016`, shodný zdrojový strom `f60da91ea1769aa23cab5cd7c640001a784a25f3` s GitHubem.
+- Autentizovaný browser upload skutečného nového SBK scalar profilu prošel do technického projektu TECH SMOKE 0062. Šablona `TECH65 REVIEW SBK – NEAKTIVOVAT`, verze `tech65-e16029a`, zůstává Koncept, 37 polí, bez akce Schválit. SharePoint odkaz a připnutý readback hash jsou zobrazené. Nová právní šablona nebyla aktivována.
+- Žádná migrace ani změna reálného obchodu.
+
+## Balík 2 Zachování projektového kontextu správy šablon
+
+Skutečný browser test odhalil dvě UX chyby: modal při rychlém přepnutí filtru přebíral první šablonu z předchozího projektu; úspěšný upload pak globální invalidací remountoval pracovní prostor a ztratil projektový filtr. Před testovacím uploadem byl projekt ručně opraven, takže žádná šablona nevznikla v reálném projektu.
+
+- Sdílený výběr kontextu respektuje explicitní projekt, typ a vybranou šablonu; staré odpovědi jiného projektu se nepoužijí jako předvyplnění.
+- Upload a lifecycle akce používají cílené obnovení existujícího seznamu, nikoli globální remount. Backend a autorizace se nemění.
+- Přidáno 6 regresních testů (5 kontextů a skutečná repository cesta bez globální invalidace). Celkem 68 interaction testů prošlo; TypeScript, lint a produkční frontend build prošly.
+
+Tyto balíky samy nedokončují RS/SBK business generování ani platební kalendář.
 
 ## Následující prioritní balíky
 

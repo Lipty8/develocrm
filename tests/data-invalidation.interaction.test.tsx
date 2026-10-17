@@ -1,13 +1,40 @@
 import assert from "node:assert/strict";
-import {before} from "node:test";
+import {before,mock} from "node:test";
 import test from "node:test";
 import {JSDOM} from "jsdom";
 import {createApiFetch} from "../app/lib/api-client";
 import {DATA_MUTATED_EVENT,type DataMutationDetail} from "../app/lib/data-invalidation";
+import {templateRepository} from "../app/repositories/template-repository";
+import {entraAuth} from "../app/lib/entra-auth";
 
 before(()=>{
   const dom=new JSDOM("<!doctype html><html><body></body></html>",{url:"https://develocrm.test"});
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,CustomEvent:dom.window.CustomEvent});
+});
+
+test("správa šablon obnovuje svůj seznam bez resetu projektového kontextu",async()=>{
+  const originalFetch=globalThis.fetch;
+  const token=mock.method(entraAuth,"getAccessToken",async()=>"test-token");
+  let invalidations=0;
+  const requests:string[]=[];
+  const listener=()=>{invalidations+=1;};
+  window.addEventListener(DATA_MUTATED_EVENT,listener);
+  globalThis.fetch=async(input,init)=>{
+    requests.push(String(input));
+    assert.equal(init?.method,"POST");
+    return new Response(JSON.stringify({version:{templateId:"template",templateVersionId:"version"}}),{status:200,headers:{"content-type":"application/json"}});
+  };
+  try{
+    const file=new File(["technical test"],"test.docx",{type:"application/vnd.openxmlformats-officedocument.wordprocessingml.document"});
+    await templateRepository.upload({projectId:"project",code:"code",name:"test",outputTypeCode:"other",variantKey:"default",versionLabel:"1",effectiveFrom:"2026-10-17",file});
+    for(const action of ["validate","approve","retire"] as const)await templateRepository.action("template","version",action);
+    assert.equal(requests.length,4);
+    assert.equal(invalidations,0);
+  }finally{
+    globalThis.fetch=originalFetch;
+    token.mock.restore();
+    window.removeEventListener(DATA_MUTATED_EVENT,listener);
+  }
 });
 
 test("úspěšná mutace oznámí změnu dat bez reloadu stránky",async()=>{
