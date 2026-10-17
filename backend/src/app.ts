@@ -604,7 +604,7 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
         status===503?"SharePoint není pro tento pracovní prostor dostupný.":"Dokument se nepodařilo uložit do SharePointu."});
     }
   });
-  app.post<{Body:{projectId:string;code:string;name:string;outputTypeCode:string;contractType?:"rs"|"sbk"|"ks";versionLabel:string;sourceDocumentId:string;sourceDocumentVersionId:string;schema:PlaceholderSchema;approvalStatus?:"draft"|"approved"|"retired";effectiveFrom?:string}}>("/v1/document-templates",async(request,reply)=>{
+  app.post<{Body:{projectId:string;code:string;name:string;outputTypeCode:string;contractType?:"rs"|"sbk"|"ks";variantKey?:string;versionLabel:string;sourceDocumentId:string;sourceDocumentVersionId:string;schema:PlaceholderSchema;approvalStatus?:"draft"|"approved"|"retired";effectiveFrom?:string}}>("/v1/document-templates",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});
       if(!templateGeneration)return reply.code(503).send({error:"SharePoint integrace není v tomto prostředí nakonfigurovaná"});
       return reply.code(201).send({template:await templateGeneration.register({...context,...request.body})});
@@ -738,7 +738,7 @@ function permissionError(error:unknown){return error instanceof Error&&/permissi
 function templateErrorReply(request:FastifyRequest,reply:FastifyReply,error:unknown){const code=error instanceof TemplateManagementError||error instanceof DocxTemplateError?error.code:undefined;
   request.log.warn({event:"document_template.operation_failed",correlationId:request.id,errorName:error instanceof Error?error.name:"Error",errorCode:code},"document template operation failed");
   const status=permissionError(error)||code==="permission_required"?403:code?.includes("not_found")?404:code?.startsWith("invalid_")||code==="unsupported_template_type"||error instanceof DocxTemplateError?422:409;
-  const message=status===403?"Nemáte oprávnění provést tuto změnu šablony.":status===404?"Šablona nebo její verze nebyla nalezena.":status===422?"Šablona není platná. Zkontrolujte soubor a datová pole.":"Změnu šablony se nepodařilo dokončit.";
+  const message=status===403?"Nemáte oprávnění provést tuto změnu šablony.":status===404?"Šablona nebo její verze nebyla nalezena.":status===422?"Šablona není platná. Zkontrolujte soubor a datová pole.":code==='template_generation_not_ready'?"Tuto šablonu zatím nelze schválit pro generování smluv.":code==='template_content_hash_mismatch'?"Obsah souboru neodpovídá uložené verzi šablony. Kontaktujte správce.":"Změnu šablony se nepodařilo dokončit.";
   return reply.code(status).send({error:message,code,details:error instanceof TemplateManagementError||error instanceof DocxTemplateError?error.details:[],correlationId:request.id});}
 function decodeBase64(value:string):Uint8Array{
   if(typeof value!=="string"||!value.length||value.length>5_600_000||!/^[A-Za-z0-9+/]*={0,2}$/.test(value)||value.length%4!==0)throw new SharePointUploadError("invalid_content");

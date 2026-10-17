@@ -4,7 +4,7 @@ import type { DocumentContext } from "./repository.js";
 
 export type PlaceholderSchema={fields:Record<string,{required:boolean}>};
 export type TemplateSource={templateId:string;templateVersionId:string;projectId:string;templateCode:string;templateName:string;outputTypeCode:string;
-  versionLabel:string;contentHash:string;schema:PlaceholderSchema;approvalStatus:"draft"|"approved"|"retired";effectiveFrom:string;driveId:string;itemId:string;externalVersionId:string|null};
+  versionLabel:string;contentHash:string;schema:PlaceholderSchema;approvalStatus:"draft"|"approved"|"retired";effectiveFrom:string;driveId:string;itemId:string;externalVersionId:string|null;variantKey?:string};
 export type GenerationOperation={id:string;state:"reserved"|"completed";projectId:string;template:TemplateSource;snapshot:Record<string,string>;
   outputDocumentId:string|null;outputDocumentVersionId:string|null;unitId:string|null;partyId:string|null;salesCaseId:string|null;contractId:string|null;createdAt:string};
 
@@ -22,14 +22,16 @@ export class DocumentTemplateGenerationRepository{
     });
   }
 
-  async register(input:DocumentContext&{projectId:string;code:string;name:string;outputTypeCode:string;contractType?:"rs"|"sbk"|"ks";versionLabel:string;sourceDocumentId:string;sourceDocumentVersionId:string;contentHash:string;schema:PlaceholderSchema;approvalStatus?:"draft"|"approved"|"retired";effectiveFrom?:string}):Promise<{templateId:string;templateVersionId:string}>{
+  async register(input:DocumentContext&{projectId:string;code:string;name:string;outputTypeCode:string;contractType?:"rs"|"sbk"|"ks";variantKey?:string;versionLabel:string;sourceDocumentId:string;sourceDocumentVersionId:string;contentHash:string;schema:PlaceholderSchema;approvalStatus?:"draft"|"approved"|"retired";effectiveFrom?:string}):Promise<{templateId:string;templateVersionId:string}>{
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
-      const template=(await client.query<{id:string}>(`INSERT INTO document_templates(tenant_id,project_id,code,name,output_type_code,contract_type,created_by_membership_id)
-        SELECT $1::uuid,$3::uuid,$4::text,$5::text,$6::text,$7::text,$2::uuid
+      const template=(await client.query<{id:string}>(`INSERT INTO document_templates AS existing(tenant_id,project_id,code,name,output_type_code,contract_type,created_by_membership_id,variant_key)
+        SELECT $1::uuid,$3::uuid,$4::text,$5::text,$6::text,$7::text,$2::uuid,$9::text
         WHERE app.has_project_permission($1::uuid,$2::uuid,$3::uuid,'documents.upload')
           AND ($8::text<>'approved' OR app.has_project_permission($1::uuid,$2::uuid,$3::uuid,'contract.approve'))
-        ON CONFLICT(tenant_id,project_id,code) DO UPDATE SET name=EXCLUDED.name,contract_type=COALESCE(document_templates.contract_type,EXCLUDED.contract_type),status='active'
-        RETURNING id`,[input.tenantId,input.membershipId,input.projectId,input.code,input.name,input.outputTypeCode,input.contractType??null,input.approvalStatus??"draft"])).rows[0];
+        ON CONFLICT(tenant_id,project_id,code) DO UPDATE SET name=EXCLUDED.name,status='active'
+          WHERE existing.output_type_code=EXCLUDED.output_type_code AND existing.contract_type IS NOT DISTINCT FROM EXCLUDED.contract_type
+            AND existing.variant_key=EXCLUDED.variant_key
+        RETURNING id`,[input.tenantId,input.membershipId,input.projectId,input.code,input.name,input.outputTypeCode,input.contractType??null,input.approvalStatus??"draft",input.variantKey??'default'])).rows[0];
       if(!template)throw new Error("documents.upload permission required");
       const values=[input.tenantId,input.membershipId,input.projectId,template.id,input.sourceDocumentId,input.sourceDocumentVersionId,input.versionLabel,input.contentHash,input.schema,input.approvalStatus??"draft",input.effectiveFrom??new Date().toISOString().slice(0,10)];
       let version=(await client.query<{id:string}>(`INSERT INTO document_template_versions(tenant_id,project_id,template_id,source_document_id,source_document_version_id,version_label,content_hash,placeholder_schema,approval_status,effective_from,approved_at,approved_by_membership_id,created_by_membership_id)
@@ -51,7 +53,7 @@ export class DocumentTemplateGenerationRepository{
 
   async getTemplate(input:DocumentContext&{templateVersionId:string;projectId:string}):Promise<TemplateSource|null>{
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
-      const row=(await client.query<Record<string,unknown>>(`SELECT t.id template_id,tv.id template_version_id,t.project_id,t.code,t.name,t.output_type_code,
+      const row=(await client.query<Record<string,unknown>>(`SELECT t.id template_id,tv.id template_version_id,t.project_id,t.code,t.name,t.output_type_code,t.variant_key,
           tv.version_label,tv.content_hash,tv.placeholder_schema,tv.approval_status,tv.effective_from,d.external_drive_id,d.external_item_id,v.external_version_id
         FROM document_template_versions tv JOIN document_templates t ON t.tenant_id=tv.tenant_id AND t.id=tv.template_id
         JOIN documents d ON d.tenant_id=tv.tenant_id AND d.project_id=tv.project_id AND d.id=tv.source_document_id
@@ -64,10 +66,10 @@ export class DocumentTemplateGenerationRepository{
 
   async reserve(input:DocumentContext&{projectId:string;template:TemplateSource;idempotencyKey:string;requestHash:string;unitId?:string;partyId?:string;salesCaseId?:string;contractId?:string;documentId?:string;snapshot?:Record<string,string>}):Promise<GenerationOperation>{
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
-      if(input.contractId&&input.template.outputTypeCode==='reservation_contract')await client.query("SELECT app.lock_workflow_unit($1,(SELECT unit_id FROM contracts WHERE tenant_id=$1 AND project_id=$2 AND id=$3))",[input.tenantId,input.projectId,input.contractId]);
+      if(input.contractId&&['reservation_contract','future_purchase_contract'].includes(input.template.outputTypeCode))await client.query("SELECT app.lock_workflow_unit($1,(SELECT unit_id FROM contracts WHERE tenant_id=$1 AND project_id=$2 AND id=$3))",[input.tenantId,input.projectId,input.contractId]);
       const existing=(await client.query<Record<string,unknown>>(`SELECT * FROM document_generation_operations WHERE tenant_id=$1 AND idempotency_key=$2`,[input.tenantId,input.idempotencyKey])).rows[0];
       if(existing){if(existing.request_hash!==input.requestHash)throw new Error("idempotency key payload mismatch");return mapOperation(existing,input.template);}
-      if(input.contractId&&input.template.outputTypeCode==='reservation_contract'){
+      if(input.contractId&&['reservation_contract','future_purchase_contract'].includes(input.template.outputTypeCode)){
         const pending=await client.query(`SELECT 1 FROM document_generation_operations g WHERE g.tenant_id=$1 AND g.contract_id=$2
           AND (g.state='reserved' OR NOT EXISTS(SELECT 1 FROM contract_versions cv WHERE cv.tenant_id=g.tenant_id AND cv.generation_operation_id=g.id))`,[input.tenantId,input.contractId]);
         if(pending.rowCount)throw new Error('document generation in progress');
@@ -112,5 +114,5 @@ export class DocumentTemplateGenerationRepository{
   }
 }
 
-function mapTemplate(r:Record<string,unknown>):TemplateSource{return{templateId:String(r.template_id),templateVersionId:String(r.template_version_id),projectId:String(r.project_id),templateCode:String(r.code),templateName:String(r.name),outputTypeCode:String(r.output_type_code),versionLabel:String(r.version_label),contentHash:String(r.content_hash),schema:r.placeholder_schema as PlaceholderSchema,approvalStatus:String(r.approval_status) as TemplateSource["approvalStatus"],effectiveFrom:String(r.effective_from),driveId:String(r.external_drive_id),itemId:String(r.external_item_id),externalVersionId:r.external_version_id?String(r.external_version_id):null};}
+function mapTemplate(r:Record<string,unknown>):TemplateSource{return{templateId:String(r.template_id),templateVersionId:String(r.template_version_id),projectId:String(r.project_id),templateCode:String(r.code),templateName:String(r.name),outputTypeCode:String(r.output_type_code),variantKey:r.variant_key?String(r.variant_key):'default',versionLabel:String(r.version_label),contentHash:String(r.content_hash),schema:r.placeholder_schema as PlaceholderSchema,approvalStatus:String(r.approval_status) as TemplateSource["approvalStatus"],effectiveFrom:String(r.effective_from),driveId:String(r.external_drive_id),itemId:String(r.external_item_id),externalVersionId:r.external_version_id?String(r.external_version_id):null};}
 function mapOperation(r:Record<string,unknown>,template:TemplateSource):GenerationOperation{return{id:String(r.id),state:String(r.state) as GenerationOperation["state"],projectId:String(r.project_id),template,snapshot:r.generation_snapshot as Record<string,string>,outputDocumentId:r.output_document_id?String(r.output_document_id):null,outputDocumentVersionId:r.output_document_version_id?String(r.output_document_version_id):null,unitId:r.unit_id?String(r.unit_id):null,partyId:r.party_id?String(r.party_id):null,salesCaseId:r.sales_case_id?String(r.sales_case_id):null,contractId:r.contract_id?String(r.contract_id):null,createdAt:String(r.created_at)};}

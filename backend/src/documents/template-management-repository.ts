@@ -10,7 +10,7 @@ export type TemplateVersionView={id:string;versionLabel:string;contentHash:strin
   validation:TemplateValidationReport;createdAt:string;validatedAt:string|null;approvedAt:string|null;retiredAt:string|null;actor:string|null;
   sourceDocumentId:string;sourceDocumentVersionId:string;sourceWebUrl:string|null;sourceFileName:string;externalVersionId:string|null;driveId:string;itemId:string};
 export type TemplateView={id:string;projectId:string;projectName:string;code:string;name:string;outputTypeCode:string;contractType:string|null;variantKey:string;status:string;
-  canManage:boolean;canApprove:boolean;versions:TemplateVersionView[]};
+  canManage:boolean;canApprove:boolean;versions:TemplateVersionView[];profileLabel?:string;generationSupported?:boolean};
 
 type TemplateRow=Record<string,unknown>;
 export class DocumentTemplateManagementRepository{

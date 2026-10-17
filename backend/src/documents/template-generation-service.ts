@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { inspectDocxTemplate, renderDocxTemplate, DocxTemplateError } from "./docx-template.js";
-import {RS_PLACEHOLDERS,TECHNICAL_PLACEHOLDERS,supportedTemplateTokens} from "./template-catalog.js";
+import {RS_PLACEHOLDERS,TECHNICAL_PLACEHOLDERS,supportedTemplateTokens,templateCatalog} from "./template-catalog.js";
 import type { MicrosoftGraphAdapter } from "./graph-adapter.js";
 import type { DocumentContext, DocumentRepository } from "./repository.js";
 import type { SharePointDocumentUploadService } from "./upload-service.js";
@@ -15,9 +15,14 @@ export class DocumentTemplateGenerationService{
     private readonly uploads:SharePointDocumentUploadService,private readonly graph:MicrosoftGraphAdapter){}
 
   async register(input:DocumentContext&{projectId:string;code:string;name:string;outputTypeCode:string;versionLabel:string;
-    sourceDocumentId:string;sourceDocumentVersionId:string;schema:PlaceholderSchema;contractType?:"rs"|"sbk"|"ks";approvalStatus?:"draft"|"approved"|"retired";effectiveFrom?:string}){
+    sourceDocumentId:string;sourceDocumentVersionId:string;schema:PlaceholderSchema;contractType?:"rs"|"sbk"|"ks";variantKey?:string;approvalStatus?:"draft"|"approved"|"retired";effectiveFrom?:string}){
     if(input.approvalStatus&&input.approvalStatus!=="draft")throw new DocumentGenerationError("template_approval_requires_lifecycle");
     validateSchema(input.schema);
+    const catalog=templateCatalog(input.outputTypeCode,input.variantKey);
+    if(!catalog||input.contractType&&input.contractType!==catalog.contractType)throw new DocumentGenerationError('invalid_template_type');
+    const fields=Object.keys(input.schema.fields).sort();const expected=Object.keys(catalog.fields).sort();
+    if(fields.some(field=>!expected.includes(field))||catalog.contractType&&fields.join('\0')!==expected.join('\0'))throw new DocumentGenerationError('invalid_schema');
+    if(catalog.contractType&&fields.some(field=>catalog.fields[field].required&&!input.schema.fields[field].required))throw new DocumentGenerationError('invalid_schema');
     const source=await this.repository.sourceForRegistration(input);if(!source)throw new DocumentGenerationError("source_not_found");
     if(!source.externalVersionId)throw new DocumentGenerationError("template_source_version_unavailable");
     const connection=await this.documents.getConnectionForUpload(input);if(!connection||connection.driveId!==source.driveId)throw new DocumentGenerationError("source_drive_mismatch");
@@ -26,18 +31,21 @@ export class DocumentTemplateGenerationService{
     // immutable template hash to the bytes read back from its exact version,
     // rather than to the pre-upload transport payload stored on the document.
     const contentHash=`sha256:${hash(bytes)}`;
-    const inspection=inspectDocxTemplate(bytes);const fields=Object.keys(input.schema.fields).sort();
+    const inspection=inspectDocxTemplate(bytes);
     const unknown=inspection.tokens.filter(token=>!SUPPORTED_PLACEHOLDERS.has(token));
     if(unknown.length)throw new DocxTemplateError("unknown_template_token","Šablona obsahuje neschválená pole.",unknown);
+    if(inspection.malformedTokens.length||inspection.legacyMarkers.length)throw new DocumentGenerationError('invalid_template_fields');
     if(inspection.tokens.join("\0")!==fields.join("\0"))throw new DocumentGenerationError("schema_token_mismatch");
-    return this.repository.register({...input,contentHash});
+    return this.repository.register({...input,contractType:catalog.contractType??undefined,contentHash});
   }
 
   async generate(input:DocumentContext&{projectId:string;templateVersionId:string;idempotencyKey:string;unitId?:string;partyId?:string;
     salesCaseId?:string;contractId?:string;documentId?:string;documentName?:string;snapshot?:Record<string,string>}){
     if(!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,159}$/.test(input.idempotencyKey))throw new DocumentGenerationError("invalid_idempotency_key");
     const template=await this.repository.getTemplate(input);if(!template)throw new DocumentGenerationError("template_not_found");
-    if(template.outputTypeCode==='reservation_contract'&&(!input.contractId||!input.snapshot))throw new DocumentGenerationError('use_contract_generation');
+    const catalog=templateCatalog(template.outputTypeCode,template.variantKey);
+    if(!catalog||catalog.generationSupported===false)throw new DocumentGenerationError('template_generation_not_ready');
+    if(catalog.contractType&&(!input.contractId||!input.snapshot))throw new DocumentGenerationError('use_contract_generation');
     if(!template.externalVersionId)throw new DocumentGenerationError("template_source_version_unavailable");
     const requestHash=hash(JSON.stringify({projectId:input.projectId,templateVersionId:input.templateVersionId,unitId:input.unitId??null,
       partyId:input.partyId??null,salesCaseId:input.salesCaseId??null,contractId:input.contractId??null,documentId:input.documentId??null,documentName:input.documentName??null,snapshot:input.snapshot??null}));

@@ -6,6 +6,7 @@ import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { DocumentTemplateGenerationService, DocumentGenerationError } from "../src/documents/template-generation-service.js";
 import { DocumentTemplateGenerationRepository } from "../src/documents/template-generation-repository.js";
 import { DocxTemplateError, inspectDocxTemplate } from "../src/documents/docx-template.js";
+import {ORIGINAL_DOB_FULL_VARIANT} from '../src/documents/template-catalog.js';
 
 const context={tenantId:"10000000-0000-4000-8000-000000000001",userId:"20000000-0000-4000-8000-000000000001",membershipId:"30000000-0000-4000-8000-000000000001"};
 const projectId="40000000-0000-4000-8000-000000000001";const templateVersionId="50000000-0000-4000-8000-000000000001";
@@ -26,8 +27,24 @@ function harness(options:{source?:Uint8Array;snapshot?:Record<string,string>;upl
   const uploadsService={upload:async(input:{bytes:Uint8Array})=>{uploads++;if(options.uploadError)throw options.uploadError;assert.deepEqual(inspectDocxTemplate(input.bytes).tokens,[]);
     const xml=strFromU8(unzipSync(input.bytes)["word/document.xml"]);assert.match(xml,/Hrdlička/);assert.match(xml,/417/);assert.match(xml,/Jan Novák/);
     return{documentId:"document",documentVersionId:"version",replayed:false};}};
-  return{service:new DocumentTemplateGenerationService(repository as never,documents as never,uploadsService as never,graph as never),get uploads(){return uploads;},get completions(){return completions;}};
+  return{repository,service:new DocumentTemplateGenerationService(repository as never,documents as never,uploadsService as never,graph as never),get uploads(){return uploads;},get completions(){return completions;}};
 }
+
+test('obecný generation endpoint nemůže obejít review-only profil právní RS/SBK',async()=>{
+  for(const outputTypeCode of ['reservation_contract','future_purchase_contract']){
+    const h=harness();const original=await h.repository.getTemplate();
+    h.repository.getTemplate=async()=>({...original,outputTypeCode,variantKey:ORIGINAL_DOB_FULL_VARIANT});
+    await assert.rejects(h.service.generate({...context,projectId,templateVersionId,idempotencyKey:'review-only-generation',contractId:'contract',snapshot:{}}),
+      (error:unknown)=>error instanceof DocumentGenerationError&&error.code==='template_generation_not_ready');
+    assert.equal(h.uploads,0);
+  }
+});
+
+test('přímá registrace nemůže vydávat SBK schema za jiný typ dokumentu',async()=>{
+  const h=harness();
+  await assert.rejects(h.service.register({...context,projectId,code:'not-sbk',name:'Wrong',outputTypeCode:'other',contractType:'sbk',versionLabel:'v1',sourceDocumentId:'d',sourceDocumentVersionId:'v',schema}),
+    (error:unknown)=>error instanceof DocumentGenerationError&&error.code==='invalid_template_type');
+});
 
 test("registrace pinuje hash skutečných bajtů uložených v SharePointu",async()=>{
   const source=docx("Projekt {{project.name}}, jednotka {{unit.code}}, klient {{buyer.name}}");let storedHash="";

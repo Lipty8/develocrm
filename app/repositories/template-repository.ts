@@ -4,7 +4,7 @@ export type TemplateLifecycle="draft"|"validated"|"approved"|"retired";
 export type TemplateValidation={valid:boolean;tokens:string[];unknownTokens:string[];missingTokens:string[];malformedTokens:string[];legacyMarkers:string[];errors:string[]};
 export type TemplateVersion={id:string;versionLabel:string;contentHash:string;status:TemplateLifecycle;effectiveFrom:string;validation:TemplateValidation;createdAt:string;
   validatedAt:string|null;approvedAt:string|null;retiredAt:string|null;actor:string|null;sourceWebUrl:string|null;sourceFileName:string};
-export type DocumentTemplate={id:string;projectId:string;projectName:string;code:string;name:string;outputTypeCode:string;contractType:string|null;variantKey:string;status:string;canManage:boolean;canApprove:boolean;versions:TemplateVersion[]};
+export type DocumentTemplate={id:string;projectId:string;projectName:string;code:string;name:string;outputTypeCode:string;contractType:string|null;variantKey:string;status:string;canManage:boolean;canApprove:boolean;versions:TemplateVersion[];profileLabel?:string;generationSupported?:boolean};
 export type TemplateUploadInput={projectId:string;code:string;name:string;outputTypeCode:string;variantKey:string;versionLabel:string;effectiveFrom:string;file:File};
 
 class TemplateRepository{

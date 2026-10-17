@@ -5,7 +5,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { PGlite } from "@electric-sql/pglite";
 import { inspectDocxTemplate } from "../src/documents/docx-template.js";
-import { TECHNICAL_PLACEHOLDERS } from "../src/documents/template-catalog.js";
+import { TECHNICAL_PLACEHOLDERS,ORIGINAL_DOB_FULL_VARIANT,templateCatalog } from "../src/documents/template-catalog.js";
 import { DocumentTemplateManagementService, TemplateManagementError } from "../src/documents/template-management-service.js";
 import type { TemplateValidationReport, TemplateView } from "../src/documents/template-management-repository.js";
 
@@ -162,6 +162,33 @@ test("upload bezpečně odmítne poškozený DOCX ještě před zápisem do Shar
   assert.equal(h.uploadCalls, 0);
 });
 
+test("neznámá nebo chybějící pole zastaví upload ještě před zápisem souboru", async () => {
+  for (const tokens of [[...TECHNICAL_PLACEHOLDERS, 'internal.secret'], TECHNICAL_PLACEHOLDERS.filter(t => t !== 'buyer.name'), []]) {
+    const h = harness();
+    await assert.rejects(h.service.upload(uploadInput(docx(tokens))),
+      (error: unknown) => error instanceof TemplateManagementError && error.code === 'invalid_template_fields');
+    assert.equal(h.uploadCalls, 0);
+    assert.equal(h.created.length, 0);
+  }
+});
+
+test("neplatný obsah přečtený zpět ze SharePointu se nestane šablonou", async () => {
+  const h = harness();
+  h.graph.downloadFile = async () => docx(['project.name']);
+  await assert.rejects(h.service.upload(uploadInput()),
+    (error: unknown) => error instanceof TemplateManagementError && error.code === 'invalid_template_fields');
+  assert.equal(h.uploadCalls, 1);
+  assert.equal(h.created.length, 0);
+});
+
+test("testovací náhled odmítne jiný hash i pokud se sada polí nezměnila", async () => {
+  const h = harness();
+  h.graph.downloadFile = async () => docx([...TECHNICAL_PLACEHOLDERS].reverse());
+  await assert.rejects(h.service.preview({...context, templateId, versionId}),
+    (error: unknown) => error instanceof TemplateManagementError && error.code === 'template_content_hash_mismatch');
+  assert.equal(h.uploadCalls, 0);
+});
+
 test("validace vrátí chybějící a neznámá pole a nepovolí schválení přes preview", async () => {
   const source = docx(["project.name", "unknown.value"]);
   const h = harness(source);
@@ -187,6 +214,38 @@ test("syntetický náhled doplní všechna pole bez vzniku business dokumentu", 
   assert.match(xml, /Petr Testovací/);
   assert.equal(h.uploadCalls, 0);
   assert.equal(h.created.length, 0);
+});
+
+for(const [kind,outputTypeCode] of [['rs','reservation_contract'],['sbk','future_purchase_contract']] as const){
+  test(`${kind}: nový profil přijme přesné původní schema, uloží draft a umožní pouze náhled`,async()=>{
+    const bytes=await readFile(new URL(`../templates/review/${kind}-dejvice-original-review.docx`,import.meta.url));
+    const manifest=JSON.parse(await readFile(new URL(`../templates/review/${kind}-review-manifest.json`,import.meta.url),'utf8')) as {schema:{fields:Record<string,{required:boolean}>}};
+    const catalog=templateCatalog(outputTypeCode,ORIGINAL_DOB_FULL_VARIANT)!;
+    assert.deepEqual(Object.keys(catalog.fields).sort(),Object.keys(manifest.schema.fields).sort());
+    const h=harness(bytes);const view=template(bytes);
+    view.outputTypeCode=outputTypeCode;view.contractType=kind;view.variantKey=ORIGINAL_DOB_FULL_VARIANT;view.versions[0].schema=manifest.schema;
+    h.repository.list=async()=>[view];
+    await h.service.upload({...uploadInput(bytes),outputTypeCode,variantKey:ORIGINAL_DOB_FULL_VARIANT});
+    assert.deepEqual(h.created[0].schema,manifest.schema);
+    assert.equal(h.created[0].variantKey,ORIGINAL_DOB_FULL_VARIANT);
+    assert.equal(h.created[0].contractType,kind);
+    const preview=await h.service.preview({...context,templateId,versionId});
+    assert.deepEqual(inspectDocxTemplate(preview).tokens,[]);
+    assert.match(strFromU8(unzipSync(preview)['word/document.xml']),/TESTOVACÍ KUPUJÍCÍ NEPODEPISOVAT/);
+    assert.equal((await h.service.list({...context}))[0].generationSupported,false);
+    let approved=false;h.repository.approve=async()=>{approved=true;};
+    await assert.rejects(h.service.approve({...context,templateId,versionId}),
+      (error:unknown)=>error instanceof TemplateManagementError&&error.code==='template_generation_not_ready');
+    assert.equal(approved,false);
+  });
+}
+
+test('nové RS schema nelze tiše nahrát jako starou výchozí šablonu',async()=>{
+  const bytes=await readFile(new URL('../templates/review/rs-dejvice-original-review.docx',import.meta.url));
+  const h=harness(bytes);
+  await assert.rejects(h.service.upload({...uploadInput(bytes),outputTypeCode:'reservation_contract',variantKey:'default'}),
+    (error:unknown)=>error instanceof TemplateManagementError&&error.code==='invalid_template_fields');
+  assert.equal(h.uploadCalls,0);
 });
 
 test("změna bajtů zdrojové verze je odhalena hashem při nové validaci", async () => {
