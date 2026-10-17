@@ -94,6 +94,14 @@ Připravený čistý serverový výpočet pro novou originálovou variantu, **za
 - Další krok: atomické navázání na existující `payment_obligations` a podpisové důkazy. Současný `due_at NOT NULL` a create-contract explicitní datum se nesmějí obejít fiktivní splatností. Historické předpisy beze změny.
 - Celá backend sada po přidání výpočtu: 337 passed, 0 failed, 2 optional native PG skipped. Zahrnuje ověření haléřových výpočtů proti skutečné PostgreSQL `numeric` aritmetice v PGlite. Samostatná nativní concurrency sada byla ověřena u balíku 1; čistý výpočet nezměnil DB zámky ani workflow.
 
+## Balík 4 Veřejné chyby bez interních kódů
+
+Negativní skutečný browser test nahrál SBK soubor pod RS profilem v technickém projektu. Backend jej správně odmítl (`422`, correlation `req-9j`), ale UI ukázalo `invalid_template_fields` přilepené k české větě. Příčina nebyla formulář: centrální `mapApiError` spojoval message/error/detail/code do jednoho veřejného řetězce. Při opakovaném průchodu handlerem a preSerialization navíc mohl zdvojit text.
+
+- Klasifikace nadále vidí diagnostický kontext; veřejná hláška vybírá právě jedno pole message/error. Interní detail/code se do microcopy nespojuje. SQL redakce, correlation ID, RBAC a stavové kódy zůstávají zachované.
+- Přidáno 6 regresních testů včetně opakovaného mapování, doménové blokace historické smlouvy a zákazu úniku SQL detailu.
+- Celá backend sada: 343 passed, 0 failed, 2 optional native PG skipped; backend build a cílený lint prošly. Nasazení tohoto malého backend balíku bude zaznamenáno po ověření.
+
 ## Následující prioritní balíky
 
 1. Autorizované scalar mapování RS/SBK se strukturovanou readiness; chybějící údaje doplnit do stávajících projektových nastavení/identit, nikoli z UI posílat libovolná render data.

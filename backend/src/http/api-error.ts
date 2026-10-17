@@ -9,6 +9,7 @@ const TECHNICAL_PATTERN = /(?:SQLSTATE|syntax error|relation ["']|constraint ["'
 
 export function mapApiError(input: unknown, statusCode: number, correlationId: string): PublicApiError {
   const source = errorText(input);
+  const publicText = messageText(input);
   let code = statusCode >= 500 ? "INTERNAL_ERROR" : statusCode === 401 ? "UNAUTHENTICATED" : statusCode === 403 ? "FORBIDDEN" : statusCode === 404 ? "NOT_FOUND" : statusCode === 409 ? "CONFLICT" : "INVALID_REQUEST";
   let message = statusCode >= 500
     ? "Požadavek se nepodařilo zpracovat. Zkuste to prosím znovu."
@@ -22,8 +23,8 @@ export function mapApiError(input: unknown, statusCode: number, correlationId: s
             ? "Operaci nelze dokončit kvůli aktuálnímu stavu záznamu."
             : "Zkontrolujte zadané údaje.";
 
-  if (!TECHNICAL_PATTERN.test(source) && /[áčďéěíňóřšťúůýž]/i.test(source) && source.length <= 240) {
-    message = source;
+  if (!TECHNICAL_PATTERN.test(source) && /[áčďéěíňóřšťúůýž]/i.test(publicText) && publicText.length <= 240) {
+    message = publicText;
   }
   if (/CONTRACT_CASE_CLOSED/.test(source)) {
     code = "CONTRACT_CASE_CLOSED";
@@ -53,4 +54,17 @@ function errorText(input: unknown): string {
     return [value.message, value.error, value.detail, value.code].filter(item => typeof item === "string").join(" ");
   }
   return "";
+}
+
+// Diagnostic fields are useful for classification, never for user-facing text.
+// A mapped payload may pass through preSerialization a second time; choosing
+// exactly one message also prevents duplicate messages on that path.
+function messageText(input:unknown):string{
+  if(input instanceof Error)return input.message;
+  if(typeof input==='string')return input;
+  if(input&&typeof input==='object'){
+    const value=input as Record<string,unknown>;
+    for(const item of [value.message,value.error])if(typeof item==='string'&&item.trim())return item;
+  }
+  return '';
 }
