@@ -68,6 +68,18 @@ Skutečný browser test odhalil dvě UX chyby: modal při rychlém přepnutí fi
 - Upload a lifecycle akce používají cílené obnovení existujícího seznamu, nikoli globální remount. Backend a autorizace se nemění.
 - Přidáno 6 regresních testů (5 kontextů a skutečná repository cesta bez globální invalidace). Celkem 68 interaction testů prošlo; TypeScript, lint a produkční frontend build prošly.
 
+Nasazení a skutečný E2E:
+
+- GitHub `fddd210`; Sites 146, source `6a9e5d061ca30758623e8088822e2935d80ae414`, shodný tree `8b67f0e9c59c6af93c1c7b44930dee2efb5ffdb7`; publikace `appgdep_6ad3ebb739c48191a7bf6be0057d5594` succeeded. Backend zůstává matching `tplreview-e16029a`, bez migrace.
+- Adam, skutečné přihlášení: rychlé přepnutí projektu TECH SMOKE 0062 → otevření uploadu předvyplní právě tento projekt, nikoli předchozí Rezidenci Dejvice.
+- Skutečný upload RS `tech65-fddd210` prošel; modal se zavřel, vybraná šablona a projektový filtr zůstaly. RS 32 polí, SBK 37 polí. Obě verze byly znovu validovány proti připnutému SharePoint souboru a zůstaly bez možnosti aktivace.
+- Reload znovu načetl obě validované verze. Persistence ověřena, nikoli pouze lokální preview. Filtr samotný se při plném reloadu vrací na výchozí stav; oprava garantuje zachování kontextu během mutace, ne novou persistenci filtrů.
+- Browser stáhl oba náhledy přes skutečný backend, který načetl přesnou SharePoint verzi. Reprodukovatelná read-only kontrola `backend/scripts/verify-runtime-contract-preview.ts` porovnala všech 148 odstavců RS a 261 SBK s očekávaným renderem lokálního připnutého originálu: shoda všech odstavců, nula unresolved polí. Skript loguje pouze hashe/počty, nikoli právní nebo osobní text.
+- Stažená RS SHA-256 `61512ff7a08fa067c6ca1505e9011e1a35f039f7fab57acab745da2faf28c8d6`; SBK `0abbfb9a499b8622d9cd19169823c80c09150ffe33110a21740aab7a04c2cf63`.
+- Bundled renderer se při přímém čtení macOS Downloads zasekl; byly ukončeny jen naše dvě headless konverze. Po přesunu beze změny bajtů do pracovního temp adresáře úspěšný render 4 stran RS a 11 stran SBK. Každá stránka vizuálně zkontrolována: bez clippingu/překryvu. Nejedná se o potvrzení spuštění v desktopovém Microsoft Wordu ani obsahové právní schválení.
+- Runtime náhledy jsou `outputs/contract-review/rs-runtime-preview-2026-10-17.docx` a `sbk-runtime-preview-2026-10-17.docx`. Jsou syntetické, nejsou skutečnou smlouvou a nesmějí se podepsat.
+- Tail 30 řádků backend logu po smoke: žádné 5xx nebo RLS chyby, readiness/health 200. To není tvrzení o kompletním monitorovacím okně. Zároveň zachycen GET clients přibližně 9 sekund; zůstává výkonový bod backlogu.
+
 Tyto balíky samy nedokončují RS/SBK business generování ani platební kalendář.
 
 ## Následující prioritní balíky
