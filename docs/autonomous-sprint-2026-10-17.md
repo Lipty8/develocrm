@@ -102,6 +102,18 @@ Negativní skutečný browser test nahrál SBK soubor pod RS profilem v technick
 - Přidáno 6 regresních testů včetně opakovaného mapování, doménové blokace historické smlouvy a zákazu úniku SQL detailu.
 - Celá backend sada: 343 passed, 0 failed, 2 optional native PG skipped; backend build a cílený lint prošly. Nasazení tohoto malého backend balíku bude zaznamenáno po ověření.
 
+Ověření dokončené 18. 10. 2026 místního času:
+
+- Commit `162abf562db74c5ca1f27d5f2482f1a0bfae2d73`, GitHub main potvrzen přes remote ref.
+- ACR `cg3w` Succeeded; očištěný context 388.641 KiB, bez právních DOCX, .env nebo lokálních tajemství. Image `develocrm-api:publicerror-162abf5`, digest `sha256:464709644f6a2e5c3d92b306ddde41da4f8ad050a6c0b419d76e1d294334fd85`.
+- Backend `ca-develocrm-api-pilot--publicerror-162abf5`, Healthy/Running, 1 replika, latestReadyRevision a 100 % traffic potvrzeny. `/health` a `/ready` 200. Bez migrace.
+- Frontend zůstává Sites 146: tento poslední balík nemění frontend ani API kontrakt. Kompatibilita ověřena stejným přihlášeným browserem; žádná změna sdílení.
+- Opakovaný stejný negativní upload: `POST /v1/document-templates/upload` HTTP 422. UI zobrazuje pouze českou hlášku a `(req-j)`; interní `invalid_template_fields` je pouze v diagnostickém logu nové revize se stejným correlation ID. Verze `tech65-invalid-schema` nevznikla; validované návrhy zůstaly.
+- Nativní lokální PostgreSQL/PGlite workflow sada znovu spuštěna: 43 passed, 0 skipped. Včetně ukončení RS + draft SBK, obou pořadí souběhu podpis/expirace a podpis/cancel, dvou rezervací a ochrany historického případu.
+- Typecheck, backend build, relevantní lint a frontend production build znovu úspěšné. Finanční výpočet je v obrazu jako nezapojený modul, žádná runtime platební politika se tím nezapnula.
+
+Průběžný verdikt: správa nových neaktivních originálových profilů a jejich skutečná SharePoint persistence/náhled jsou ověřené. Celkový sprint a produkční RS/SBK zůstávají **nedokončené**: zejména autorizované scalar business mapování, doplnění doménových údajů, atomická vazba podpisu na splatnosti, SBK workflow, přílohy a obsahové schválení. Tento checkpoint nepředstírá jejich dokončení.
+
 ## Následující prioritní balíky
 
 1. Autorizované scalar mapování RS/SBK se strukturovanou readiness; chybějící údaje doplnit do stávajících projektových nastavení/identit, nikoli z UI posílat libovolná render data.
