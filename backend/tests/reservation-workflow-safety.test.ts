@@ -15,6 +15,7 @@ import {signatureDocument} from "./helpers/signature-document.js";
 import {InventoryImportService} from "../src/inventory/import-service.js";
 import {SalesRepository} from '../src/sales/repository.js';
 import {InventoryRepository} from '../src/inventory/repository.js';
+import {RsGenerationRepository} from '../src/contracts/rs-generation-repository.js';
 
 async function fixture(postgresUrl?:string){
   const memory=postgresUrl?undefined:new PGlite();
@@ -62,6 +63,34 @@ async function fixture(postgresUrl?:string){
   async function close(){if(pool){await pool.end();await admin!.query(`DROP DATABASE "${databaseName}"`);await admin!.end();}else await memory!.close();}
   return {client,pool,connectionUrl:url?.toString(),ids,start,past,expire,cancel,sign,state,events,close};
 }
+
+for(const usePostgres of [false,true])test(`contract preparation source (${usePostgres?'PostgreSQL':'PGlite'})`,{skip:usePostgres&&!process.env.WORKFLOW_TEST_DATABASE_URL},async()=>{
+  const f=await fixture(usePostgres?process.env.WORKFLOW_TEST_DATABASE_URL:undefined);
+  try{
+    const c=await f.start();await f.sign(c);
+    const sbk=(await f.client.query<{id:string}>("SELECT app.create_contract($1,$2,'sbk',$3,'Technical preparation SBK',$4) id",[f.ids.tenantId,c.caseId,`PREP-${randomUUID()}`,f.ids.membershipId])).rows[0].id;
+    const runtime=f.connectionUrl?new Database(f.connectionUrl):null;
+    const adapter={withContext:async(context:{tenantId:string;userId:string},work:(client:SqlClient)=>Promise<unknown>)=>{
+      if(runtime)return runtime.withContext(context,async client=>{await client.query('SET LOCAL ROLE develocrm_app');return work(client);});
+      await f.client.query('BEGIN');try{await f.client.query("SELECT set_config('app.tenant_id',$1,true),set_config('app.user_id',$2,true)",[context.tenantId,context.userId]);await f.client.query('SET LOCAL ROLE develocrm_app');const value=await work(f.client);await f.client.query('COMMIT');return value;}catch(error){await f.client.query('ROLLBACK');throw error;}
+    }};
+    try{
+      const repository=new RsGenerationRepository(adapter as unknown as Database);
+      const context={tenantId:f.ids.tenantId,userId:f.ids.userId,membershipId:f.ids.membershipId,permission:'contract.read' as const};
+      const result=await repository.load({...context,contractId:sbk});assert.ok(result);
+      assert.equal(result.contractType,'sbk');assert.equal(result.salesCaseId,c.caseId);assert.equal(result.unitId,c.unitId);
+      assert.equal(result.signedRsCount,1);assert.equal(result.reservationFee,250000);assert.equal(result.paidReservationFee,0);
+      assert.equal(result.approvedTemplateCount,0);
+      const obligation=(await f.client.query<{id:string}>("SELECT id FROM payment_obligations WHERE tenant_id=$1 AND contract_id=$2 AND obligation_type='reservation_fee'",[f.ids.tenantId,c.contract_id])).rows[0];assert.ok(obligation);
+      for(const expected of [125000,250000]){
+        await f.client.query("SELECT app.record_payment($1,$2,125000,now(),NULL,NULL,NULL,'Technical preparation receipt',$3,$4)",[f.ids.tenantId,obligation.id,randomUUID(),f.ids.membershipId]);
+        assert.equal((await repository.load({...context,contractId:sbk}))?.paidReservationFee,expected);
+      }
+      assert.equal(await repository.load({...context,membershipId:randomUUID(),contractId:sbk}),null);
+      assert.equal(await repository.load({...context,tenantId:randomUUID(),contractId:sbk}),null);
+    }finally{await runtime?.close();}
+  }finally{await f.close();}
+});
 
 for(const usePostgres of [false,true])test(`contract-end release invariants (${usePostgres?'PostgreSQL':'PGlite'})`,{skip:usePostgres&&!process.env.WORKFLOW_TEST_DATABASE_URL},async t=>{
   const f=await fixture(usePostgres?process.env.WORKFLOW_TEST_DATABASE_URL:undefined);

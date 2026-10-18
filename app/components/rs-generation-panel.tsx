@@ -8,10 +8,10 @@ import {formatPragueDate} from '../lib/date-time';
 
 export function RsPreparationReturn({search}:{search:string}){
   const target=new URLSearchParams(search.replace(/^\?/, '')).get('returnTo');
-  return target&&/^\/contracts\/[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(target)?<div className="unit-breadcrumb"><Link href={target}>← Zpět k přípravě RS</Link></div>:null;
+  return target&&/^\/contracts\/[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(target)?<div className="unit-breadcrumb"><Link href={target}>← Zpět k přípravě smlouvy</Link></div>:null;
 }
 
-export function RsGenerationPanel({contractId,canGenerate,onChanged,onShowVersions}:{contractId:string;canGenerate:boolean;onChanged:()=>void;onShowVersions?:()=>void}){
+export function RsGenerationPanel({contractId,contractType='rs',canGenerate,onChanged,onShowVersions}:{contractId:string;contractType?:'rs'|'sbk';canGenerate:boolean;onChanged:()=>void;onShowVersions?:()=>void}){
   const [readiness,setReadiness]=useState<RsReadiness|null>(null);
   const [error,setError]=useState('');const [working,setWorking]=useState(false);const [checking,setChecking]=useState(true);
   const request=useRef<AbortController|null>(null);const generationKey=useRef<string|null>(null);
@@ -35,8 +35,10 @@ export function RsGenerationPanel({contractId,canGenerate,onChanged,onShowVersio
   }
   const summary=readiness?.summary;const money=(amount:number|null)=>amount==null?'—':formatMoney(amount);
   const returnTo=`returnTo=${encodeURIComponent(`/contracts/${contractId}`)}`;
-  return <section className="card detail-tab-card rs-generation-card" aria-label="Příprava rezervační smlouvy">
-    <div className="tab-card-header"><h2>Příprava rezervační smlouvy</h2>{readiness?.currentDocument?.webUrl&&<a className="secondary-button compact" href={readiness.currentDocument.webUrl} target="_blank" rel="noreferrer"><ExternalLink size={15}/> Otevřít dokument</a>}</div>
+  const type=contractType==='sbk'?'SBK':'RS';
+  const title=contractType==='sbk'?'Příprava smlouvy o budoucí kupní smlouvě':'Příprava rezervační smlouvy';
+  return <section className="card detail-tab-card rs-generation-card" aria-label={title}>
+    <div className="tab-card-header"><h2>{title}</h2>{readiness?.currentDocument?.webUrl&&<a className="secondary-button compact" href={readiness.currentDocument.webUrl} target="_blank" rel="noreferrer"><ExternalLink size={15}/> Otevřít dokument</a>}</div>
     {error&&<div className="form-error" role="alert">{error}</div>}
     {checking&&<div className="empty-next" role="status"><Clock3 size={18}/><strong>Kontroluji připravenost…</strong></div>}
     {readiness&&<div className="rs-generation-status" aria-busy={checking}>
@@ -50,15 +52,15 @@ export function RsGenerationPanel({contractId,canGenerate,onChanged,onShowVersio
         <div><dt>Sjednaná kupní cena celkem</dt><dd>{money(summary.totalPrice)}</dd></div>
         <div><dt>Příslušenství</dt><dd>{summary.accessories.join(', ')||'Bez příslušenství'}</dd></div>
         <div><dt>Rezervační poplatek</dt><dd>{money(summary.reservationFee)}</dd></div>
-        <div><dt>Splatnost podle smlouvy</dt><dd>{summary.reservationFeeDueDays} pracovních dnů od podpisu</dd></div>
-        <div><dt>Rezervační doba</dt><dd>{summary.reservationPeriodDays} dní</dd></div>
-        <div><dt>Schválená šablona</dt><dd>{summary.template?`${summary.template.name} · ${summary.template.version}`:'Není dostupná'}</dd></div>
+        {(summary.paymentTimingLabel||contractType==='rs')&&<div><dt>Splatnost podle smlouvy</dt><dd>{summary.paymentTimingLabel??`${summary.reservationFeeDueDays} pracovních dnů od podpisu`}</dd></div>}
+        {contractType==='rs'&&<div><dt>Rezervační doba</dt><dd>{summary.reservationPeriodDays} dní</dd></div>}
+        <div><dt>{summary.template?.approvalStatus&&summary.template.approvalStatus!=='approved'?'Šablona ke kontrole':'Schválená šablona'}</dt><dd>{summary.template?`${summary.template.name} · ${summary.template.version}`:'Není dostupná'}</dd></div>
         {summary.template?.effectiveFrom&&<div><dt>Šablona účinná od</dt><dd>{formatPragueDate(summary.template.effectiveFrom)}</dd></div>}
       </dl>}
       {readiness.issues.length>0&&<ul>{readiness.issues.map(item=><li key={`${item.code}-${item.field}`}><span>{item.message}</span>{item.action&&<Link href={item.action.href}>{item.action.label}</Link>}</li>)}</ul>}
       <div className="project-detail-actions"><button className="secondary-button compact" onClick={()=>void reload()} disabled={working||checking}>Znovu zkontrolovat</button>
         {readiness.currentDocument&&onShowVersions&&<button className="secondary-button compact" onClick={onShowVersions}><History size={15}/> Historie verzí</button>}
-        {canGenerate&&readiness.ready&&<button className="primary-button" disabled={working||checking} onClick={()=>void generate()}><FileText size={16}/>{working?'Vytvářím…':readiness.currentDocument?'Vytvořit novou verzi RS':'Vygenerovat RS'}</button>}
+        {canGenerate&&readiness.ready&&<button className="primary-button" disabled={working||checking} onClick={()=>void generate()}><FileText size={16}/>{working?'Vytvářím…':readiness.currentDocument?`Vytvořit novou verzi ${type}`:`Vygenerovat ${type}`}</button>}
       </div>
     </div>}
   </section>;

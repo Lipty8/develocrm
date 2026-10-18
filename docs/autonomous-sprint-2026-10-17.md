@@ -137,6 +137,16 @@ Průběžný verdikt: správa nových neaktivních originálových profilů a je
 - Dva nové regresní scénáře renderují jiný syntetický název/sídlo/IČO/účty a ověřují všechna opakování, zároveň zachování právního věřitele. Celá backend sada 348 passed, 0 failed, 2 optional native PG skipped. Oba TypeScript checky a relevantní lint prošly po opravě explicitního typu testovacího slovníku.
 - Existující renderer vytvořil nové syntetické vzory, všechny 4 strany RS a 11 stran SBK vykreslené a vizuálně zkontrolované bez clippingu/překryvů. Žádná aktivace ani změna skutečných smluv. Tato změna je v offline přípravě šablony; runtime aplikace se nemění a nevyžaduje nové ACR/Sites nasazení.
 
+## Balík 7 Společná kontrola přípravy RS a SBK
+
+- Původní repository i panel byly omezené na RS; SBK neměla stejnou kontrolu. Rozšířena stejná existující služba/DTO/panel, nikoli druhý generation engine. Nový společný read-only endpoint `preparation-readiness`; staré RS URL zůstává kompatibilním aliasem.
+- Typ smlouvy, jednotka, kupující a sales case jsou určeny serverově ze stejného kontraktu. SBK čte pouze účinnou podepsanou RS téhož tenantu/projektu/jednotky/obchodu a skutečné alokované úhrady jejího poplatku. Návrh jiné smlouvy ani historický jiný obchod není náhradou.
+- Výběr šablony rozlišuje účinnou schválenou verzi od návrhu ke kontrole. Více účinných kandidátů blokuje generování místo tichého použití posledního. Neaktivní originálová varianta nezíská schválení jen díky tomu, že má všechna fyzická pole.
+- Readiness originálů výslovně ukazuje chybějící podpisový tvar, klientské účty/adresy, skutečné číslo podlaží, doručovací adresu kupujícího, podporovanou kombinaci příslušenství, právní formu garáže, plánovaná data podpisu a platební referenci. Neodvozuje právní formu parkování z názvu/podlaží. Dosud nepodporované právní a datové části zůstávají blokované, nejsou prohlášené hotové.
+- SBK panel nepřebírá RS rezervační dobu a nesprávnou splatnost. Známé originálové lhůty čte ze společné definice existujícího návrhu platebního plánu. Žádné změny platebních povinností nebo podpisové operace. Generování originálů nadále blokované; tento balík sám nedokončuje business render kontext.
+- Obecná backend sada 352 passed / 0 failed / 3 optional native PG skipped. Samostatný skutečný PostgreSQL/PGlite běh 47 passed / 0 skipped, včetně čtení 0 / částečné / úplné úhrady RS při přípravě SBK a izolace pod rolí aplikace. Frontend 143 passed, interaction 72 passed. Typecheck frontend/backend, lint a oba production buildy prošly. Původní source-text test vyžadoval doslovný RS label; aktualizován na společný typový label, zatímco skutečné interaction testy nadále ověřují RS tlačítko i blokovanou SBK.
+- Bez migrace a bez mutací skutečných obchodů. Matching deployment a autentizované ověření budou doplněny po úspěchu.
+
 ## Následující prioritní balíky
 
 1. Autorizované scalar mapování RS/SBK se strukturovanou readiness; chybějící údaje doplnit do stávajících projektových nastavení/identit, nikoli z UI posílat libovolná render data.

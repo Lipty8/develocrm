@@ -6,6 +6,7 @@ import {addCzechWorkingDays,czechSignatureDay} from './czech-working-days.js';
  * Inputs must come from authorized DB records, never arbitrary render values.
  */
 type SignatureAnchor={effectiveSignatureAt?:string|null};
+export const ORIGINAL_CONTRACT_TERMS={rsFeeWorkingDays:3,sbkFirstWorkingDays:5,sbkFinalCalendarDays:30,reservationCalendarDays:30} as const;
 export type OriginalPaymentPlanInput=SignatureAnchor&(
   {type:'rs';reservationFeeAmount:string}|
   {type:'sbk';totalPrice:string;reservationFeeAmount:string;paidReservationFeeAmount:string;finalNoticeDeliveredOn?:string|null}
@@ -40,7 +41,7 @@ function addCalendarDays(day:string,days:number):string{
 export function originalPaymentPlan(input:OriginalPaymentPlanInput):OriginalPaymentPlanRow[]{
   const fee=money(input.reservationFeeAmount);
   if(fee<=ZERO)throw new OriginalPaymentPlanError('reservation_fee_required');
-  if(input.type==='rs')return[signatureRow('rs_fee',fee,3,input.effectiveSignatureAt)];
+  if(input.type==='rs')return[signatureRow('rs_fee',fee,ORIGINAL_CONTRACT_TERMS.rsFeeWorkingDays,input.effectiveSignatureAt)];
   const total=money(input.totalPrice),paid=money(input.paidReservationFeeAmount);
   if(total<=ZERO)throw new OriginalPaymentPlanError('price_required');
   // The original states the RS fee has already been paid, not just prescribed.
@@ -52,9 +53,9 @@ export function originalPaymentPlan(input:OriginalPaymentPlanInput):OriginalPaym
   if(input.finalNoticeDeliveredOn&&!input.effectiveSignatureAt)throw new OriginalPaymentPlanError('delivery_before_effective_contract');
   if(input.finalNoticeDeliveredOn&&input.effectiveSignatureAt&&input.finalNoticeDeliveredOn<czechSignatureDay(input.effectiveSignatureAt))throw new OriginalPaymentPlanError('delivery_before_effective_contract');
   return[
-    signatureRow('sbk_first',first,5,input.effectiveSignatureAt),
-    {key:'sbk_final',amount:decimal(final),anchor:'notice_delivery',days:30,calendar:'calendar_days',
-      dueOn:input.finalNoticeDeliveredOn?addCalendarDays(input.finalNoticeDeliveredOn,30):null,
+    signatureRow('sbk_first',first,ORIGINAL_CONTRACT_TERMS.sbkFirstWorkingDays,input.effectiveSignatureAt),
+    {key:'sbk_final',amount:decimal(final),anchor:'notice_delivery',days:ORIGINAL_CONTRACT_TERMS.sbkFinalCalendarDays,calendar:'calendar_days',
+      dueOn:input.finalNoticeDeliveredOn?addCalendarDays(input.finalNoticeDeliveredOn,ORIGINAL_CONTRACT_TERMS.sbkFinalCalendarDays):null,
       state:input.finalNoticeDeliveredOn?'scheduled':'awaiting_delivery'},
   ];
 }

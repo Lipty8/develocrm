@@ -3,6 +3,7 @@ import {RsGenerationError,RsGenerationService} from "../src/contracts/rs-generat
 import {RsGenerationRepository} from "../src/contracts/rs-generation-repository.js";
 import {inspectDocxTemplate,renderDocxTemplate} from "../src/documents/docx-template.js";
 import {RS_PLACEHOLDERS} from "../src/documents/template-generation-service.js";
+import {ORIGINAL_DOB_FULL_VARIANT} from '../src/documents/template-catalog.js';
 
 const context={tenantId:"10000000-0000-0000-0000-000000000001",userId:"10000000-0000-0000-0000-000000000002",membershipId:"10000000-0000-0000-0000-000000000003"};
 function source(overrides:Record<string,unknown>={}){return{contractId:"20000000-0000-0000-0000-000000000001",projectId:"20000000-0000-0000-0000-000000000002",projectName:"Rezidence Dejvice",projectCode:"DEJ",completionYear:"2027",unitId:"20000000-0000-0000-0000-000000000003",unitCode:"417",layout:"4+kk",floorLabel:"4. NP",areaM2:112.4,balconyM2:10,gardenM2:null,unitPrice:20_000_000,totalPrice:22_000_000,reservationFee:250_000,reservationFeeDueDays:3,reservationPeriodDays:30,settings:{name:"Rezidence Dejvice 2 s.r.o.",registrationNumber:"24106119",address:"Rohanské nábřeží 693/10, 186 00 Praha 8",registryEntry:"Městský soud v Praze, oddíl C, vložka 179591",representative:"Jaroslav Žahourek",email:"info@example.cz",dataBox:"abc123",bankAccount:"123/0100",bankName:"UniCredit Bank Czech Republic and Slovakia a.s."},salesCaseId:"20000000-0000-0000-0000-000000000004",reference:"RS-417",status:"draft",buyers:[{id:"20000000-0000-0000-0000-000000000005",partyType:"individual",displayName:"Jan Novák",salutation:"pan",firstName:"Jan",lastName:"Novák",birthDate:"1980-05-12",registrationNumber:null,address:"Květnová 1, 160 00 Praha 6",email:"jan@example.cz",phone:"+420 777 000 111",dataBox:null}],accessories:[{code:"P9",type:"parking",amount:800_000,floorLabel:"1. NP",description:"Venkovní stání"},{code:"S7",type:"cellar",amount:300_000,floorLabel:"1. PP",description:null}],templateVersionId:"20000000-0000-0000-0000-000000000006",templateHash:"sha256:test",documentId:null,documentVersionId:null,webUrl:null,contractVersion:null,...overrides};}
@@ -36,7 +37,9 @@ test('výběr RS šablony respektuje tenant, projekt, výchozí variantu, schvá
   const repo=new RsGenerationRepository({withContext:async(_ctx:unknown,work:(client:unknown)=>unknown)=>work({query:async(q:string,v:unknown[])=>{sql=q;values=v;return{rows:[]};}})} as never);
   assert.equal(await repo.load({...context,contractId:source().contractId,permission:'contract.read'}),null);
   assert.ok(sql.includes('version.tenant_id=contract.tenant_id'));assert.ok(sql.includes('version.project_id=contract.project_id'));
-  assert.ok(sql.includes("template.variant_key='default'"));assert.ok(sql.includes("version.approval_status='approved'"));assert.ok(sql.includes('version.effective_from<=CURRENT_DATE'));
+  assert.ok(sql.includes("template.variant_key IN ('default','dejvice-original-dob-full-v1')"));assert.ok(sql.includes("version.approval_status='approved'"));assert.ok(sql.includes('version.effective_from<=CURRENT_DATE'));
+  assert.ok(sql.includes('template.contract_type=contract.contract_type'));
+  assert.ok(sql.includes('approved_count'));
   assert.equal(values[0],context.tenantId);assert.equal(values[1],context.membershipId);
 });
 
@@ -60,6 +63,36 @@ test("parametrizovaná právní šablona má přesné schema a render nezanechá
 });
 
 test("nepřipravená RS se nevygeneruje",async()=>{const current=source({templateVersionId:null});const service=new RsGenerationService({load:async()=>current} as never,{generate:async()=>assert.fail("renderer neměl být volán")} as never);await assert.rejects(service.generate({...context,contractId:current.contractId,idempotencyKey:"rs-test-87654321"}),error=>error instanceof RsGenerationError&&error.code==="not_ready");});
+
+test('SBK používá vlastní typ, skutečné CRM vazby a bezpečně popsané mezery originálu',async()=>{
+  const current=source({contractType:'sbk',templateVariant:ORIGINAL_DOB_FULL_VARIANT,templateApprovalStatus:'validated',approvedTemplateCount:0,
+    templateName:'SBK ke kontrole',floorNumber:null,signedRsCount:0,paidReservationFee:0});
+  const service=new RsGenerationService({load:async()=>current} as never,{generate:async()=>assert.fail('neschválená SBK nesmí volat renderer')} as never);
+  const result=await service.readiness({...context,contractId:current.contractId});
+  assert.equal(result.contractType,'sbk');assert.equal(result.ready,false);assert.equal(result.summary?.template?.approvalStatus,'validated');
+  assert.equal(result.summary?.unit.id,current.unitId);assert.equal(result.summary?.buyers[0].id,current.buyers[0].id);
+  for(const code of ['approved_template','original_profile_review','unit_floor_number','buyer_delivery_address','signed_rs','reservation_fee_paid','planned_signing_dates','accessory_classification','accessory_legal_basis'])assert.ok(result.issues.some(i=>i.code===code),code);
+  assert.ok(result.issues.find(i=>i.code==='buyer_delivery_address')?.action?.href.startsWith(`/clients/${current.buyers[0].id}?returnTo=`));
+  await assert.rejects(service.generate({...context,contractId:current.contractId,idempotencyKey:'sbk-blocked-1234'}),e=>e instanceof RsGenerationError&&e.code==='not_ready');
+});
+
+test('původní kompletní varianta rozliší terasu a číselné podlaží bez parsování textu',async()=>{
+  const current=source({templateVariant:ORIGINAL_DOB_FULL_VARIANT,templateApprovalStatus:'approved',approvedTemplateCount:1,
+    floorNumber:3,balconyM2:0,terraceM2:15,gardenM2:12,variableSymbol:'417',settings:{...source().settings,signatureName:'Testovací zástupce'},
+    accessories:[{code:'S1',type:'cellar',amount:100,floorLabel:'1.PP',description:null},{code:'P1',type:'outdoor_parking',amount:100,floorLabel:null,description:null},{code:'G1',type:'garage',amount:100,floorLabel:'1.PP',description:null}]});
+  const result=await new RsGenerationService({load:async()=>current} as never,{} as never).readiness({...context,contractId:current.contractId});
+  assert.equal(result.ready,false);assert.ok(result.issues.some(i=>i.code==='original_profile_review'));
+  for(const code of ['unsupported_terrace','unit_floor_number','outdoor_space_variant','accessory_variant','accessory_classification'])assert.ok(!result.issues.some(i=>i.code===code),code);
+});
+
+test('návrh a nejednoznačný výběr šablon nesmějí ukázat připravenost ani spustit generování',async()=>{
+  for(const extra of [{templateApprovalStatus:'draft',approvedTemplateCount:0},{templateApprovalStatus:'approved',approvedTemplateCount:2}]){
+    const current=source(extra);const service=new RsGenerationService({load:async()=>current} as never,{generate:async()=>assert.fail('nejednoznačná šablona')} as never);
+    const result=await service.readiness({...context,contractId:current.contractId});assert.equal(result.ready,false);
+    assert.ok(result.issues.some(i=>i.code===(extra.approvedTemplateCount===2?'ambiguous_template':'approved_template')));
+    await assert.rejects(service.generate({...context,contractId:current.contractId,idempotencyKey:'template-guard-123'}),e=>e instanceof RsGenerationError&&e.code==='not_ready');
+  }
+});
 
 test("RS bind prepared statements nemají neotypované mezery v parametrech",async()=>{
   const calls:Array<{sql:string;values:unknown[]}>=[];let step=0;

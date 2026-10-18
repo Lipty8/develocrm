@@ -4,6 +4,9 @@ import {RsGenerationRepository,type RsSource,type RsAccessory} from "./rs-genera
 
 import type {RsReadiness,RsReadinessIssue} from '../shared/rs-readiness.js';
 import {sellerSettingFields} from '../shared/project-contract-settings.js';
+import {ORIGINAL_DOB_FULL_VARIANT} from '../documents/template-catalog.js';
+import {originalContractIssues} from './original-contract-readiness.js';
+import {ORIGINAL_CONTRACT_TERMS} from './original-payment-plan.js';
 export type {RsReadiness,RsReadinessIssue} from '../shared/rs-readiness.js';
 export class RsGenerationError extends Error{constructor(readonly code:string,readonly issues:RsReadinessIssue[]=[]){super("Rezervační smlouvu se nepodařilo vytvořit.");this.name="RsGenerationError";}}
 
@@ -11,13 +14,16 @@ export class RsGenerationService{
   constructor(private readonly repository:RsGenerationRepository,private readonly generator:DocumentTemplateGenerationService){}
   async readiness(input:DocumentContext&{contractId:string}):Promise<RsReadiness>{
     const source=await this.repository.load({...input,permission:"contract.read"});
-    if(!source)return{ready:false,contractId:input.contractId,issues:[issue("contract","contract","Rezervační smlouva nebyla nalezena nebo k ní nemáte přístup.")]};
+    if(!source)return{ready:false,contractId:input.contractId,issues:[issue("contract","contract","Smlouva nebyla nalezena nebo k ní nemáte přístup.")]};
     const issues=validate(source).map(item=>({...item,action:issueAction(item,source)}));
-    return{ready:issues.length===0,issues,contractId:source.contractId,projectId:source.projectId,templateVersionId:source.templateVersionId,
+    const original=source.templateVariant===ORIGINAL_DOB_FULL_VARIANT;
+    return{ready:issues.length===0,issues,contractType:source.contractType??'rs',contractId:source.contractId,projectId:source.projectId,templateVersionId:source.templateVersionId,
       summary:{project:{id:source.projectId,label:source.projectName},unit:{id:source.unitId,label:source.unitCode},buyers:source.buyers.map(b=>({id:b.id,label:b.displayName})),
         seller:source.settings?.name??null,unitPrice:source.unitPrice,totalPrice:source.totalPrice,reservationFee:source.reservationFee,
-        reservationFeeDueDays:source.reservationFeeDueDays,reservationPeriodDays:source.reservationPeriodDays,accessories:source.accessories.map(a=>a.code),
-        template:source.templateVersionId?{name:source.templateName??'Rezervační smlouva',version:source.templateVersionLabel??'',effectiveFrom:source.templateEffectiveFrom??null}:null},
+        reservationFeeDueDays:original?ORIGINAL_CONTRACT_TERMS.rsFeeWorkingDays:source.reservationFeeDueDays,
+        reservationPeriodDays:original?ORIGINAL_CONTRACT_TERMS.reservationCalendarDays:source.reservationPeriodDays,accessories:source.accessories.map(a=>a.code),
+        paymentTimingLabel:original?(source.contractType==='sbk'?`První splátka: ${ORIGINAL_CONTRACT_TERMS.sbkFirstWorkingDays} pracovních dnů od účinného podpisu. Doplatek: ${ORIGINAL_CONTRACT_TERMS.sbkFinalCalendarDays} dnů od doručení výzvy.`:`${ORIGINAL_CONTRACT_TERMS.rsFeeWorkingDays} pracovní dny od podpisu poslední smluvní strany`):undefined,
+        template:source.templateVersionId?{name:source.templateName??'Smlouva',version:source.templateVersionLabel??'',effectiveFrom:source.templateEffectiveFrom??null,approvalStatus:source.templateApprovalStatus??'approved'}:null},
       currentDocument:source.documentId&&source.documentVersionId&&source.contractVersion?{documentId:source.documentId,documentVersionId:source.documentVersionId,contractVersionId:source.contractVersionId??undefined,version:source.contractVersion,webUrl:source.webUrl}:null};
   }
   async generate(input:DocumentContext&{contractId:string;idempotencyKey:string}){
@@ -38,10 +44,17 @@ export class RsGenerationService{
 
 function validate(source:RsSource):RsReadinessIssue[]{
   const issues:RsReadinessIssue[]=[];
+  const original=source.templateVariant===ORIGINAL_DOB_FULL_VARIANT||source.contractType==='sbk';
   if(source.caseStatus&&source.caseStatus!=='active')issues.push(issue('closed_case','contract','Obchod již byl ukončen. Historickou smlouvu nelze znovu připravit ani podepsat.'));
   if(!source.settings)issues.push(issue("seller_settings","project.seller","Projekt nemá vyplněné smluvní údaje prodávajícího."));
   else for(const field of sellerSettingFields)if(!source.settings[field.key]?.trim())issues.push(issue("seller_field",`project.seller.${field.key}`,`Prodávající: doplňte ${field.label.toLocaleLowerCase('cs-CZ')}.`));
-  if(!source.templateVersionId)issues.push(issue("approved_template","template","Pro projekt není schválená účinná šablona rezervační smlouvy."));
+  if(!source.templateVersionId||source.templateApprovalStatus&&source.templateApprovalStatus!=='approved'||source.approvedTemplateCount===0)
+    issues.push(issue("approved_template","template","Pro tento typ smlouvy není schválená účinná projektová šablona."));
+  if((source.approvedTemplateCount??1)>1)issues.push(issue('ambiguous_template','template','Pro tento typ smlouvy je dostupných více účinných šablon. Je nutné jednoznačně určit odpovídající variantu.'));
+  if(original){
+    issues.push(...originalContractIssues(source));
+    issues.push(issue('original_profile_review','template','Tato varianta smlouvy ještě není připravena k běžnému použití. Zbývá dokončit kontrolu údajů a obsahové schválení.'));
+  }
   if(source.buyers.length!==1)issues.push(issue("buyer_count","buyers","Tato verze šablony vyžaduje právě jednoho kupujícího."));
   const buyer=source.buyers[0];
   if(buyer){if(buyer.partyType!=="individual")issues.push(issue("buyer_type","buyer.type","Tato verze šablony podporuje pouze fyzickou osobu."));
@@ -52,13 +65,13 @@ function validate(source:RsSource):RsReadinessIssue[]{
     if(!buyer.email)issues.push(issue("buyer_email","buyer.email","Kupující nemá vyplněný e-mail."));
     if(!buyer.phone)issues.push(issue("buyer_phone","buyer.phone","Kupující nemá vyplněný telefon."));}
   if(!source.layout)issues.push(issue("unit_layout","unit.layout","Jednotka nemá vyplněnou dispozici."));
-  if(!source.floorLabel)issues.push(issue("unit_floor","unit.floor","Jednotka nemá vyplněné podlaží."));
+  if(!original&&!source.floorLabel)issues.push(issue("unit_floor","unit.floor","Jednotka nemá vyplněné podlaží."));
   if(!Number.isFinite(source.areaM2)||source.areaM2<=0)issues.push(issue('unit_area','unit.area','Jednotka nemá platnou podlahovou plochu.'));
-  if((source.terraceM2??0)>0)issues.push(issue('unsupported_terrace','unit.terrace','Jednotka má terasu, kterou tato verze mapování šablony neumí bezpečně popsat. Je nutné ověřit odpovídající schválenou šablonu.'));
-  if(!source.completionYear)issues.push(issue("completion_year","project.completionYear","Projekt nemá nastavený rok plánovaného dokončení."));
+  if(!original&&(source.terraceM2??0)>0)issues.push(issue('unsupported_terrace','unit.terrace','Jednotka má terasu, kterou tato verze mapování šablony neumí bezpečně popsat. Je nutné ověřit odpovídající schválenou šablonu.'));
+  if(!original&&!source.completionYear)issues.push(issue("completion_year","project.completionYear","Projekt nemá nastavený rok plánovaného dokončení."));
   if(source.unitPrice==null||source.totalPrice==null)issues.push(issue("price","unit.price","Smlouva nemá uložený cenový snapshot jednotky a příslušenství."));
   if(source.reservationFee==null)issues.push(issue("reservation_fee","contract.reservationFee","Smlouva nemá nastavený rezervační poplatek."));
-  if(!Number.isInteger(source.reservationFeeDueDays)||source.reservationFeeDueDays<1)issues.push(issue("reservation_fee_due","contract.reservationFeeDueDays","Smlouva nemá platnou splatnost rezervačního poplatku."));
+  if(!original&&(!Number.isInteger(source.reservationFeeDueDays)||source.reservationFeeDueDays<1))issues.push(issue("reservation_fee_due","contract.reservationFeeDueDays","Smlouva nemá platnou splatnost rezervačního poplatku."));
   if(source.accessories.some(accessory=>accessory.type==='wallbox'))issues.push(issue("unsupported_wallbox","unit.accessories","Tato verze šablony neumí bezpečně popsat wallbox. Použijte schválenou rozšířenou šablonu."));
   return issues;
 }

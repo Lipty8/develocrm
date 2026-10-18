@@ -29,6 +29,17 @@ test('návrat do tabu obnoví CRM data, konfigurace bez manage nenabízí genero
   render(<RsGenerationPanel contractId={contractId} canGenerate={false} onChanged={()=>{}}/>);await screen.findByText('Původní kupující');
   fireEvent.focus(window);await screen.findByText('Opravený kupující');assert.equal(screen.queryByRole('button',{name:'Vygenerovat RS'}),null);
 });
+test('SBK má společný přehled a konkrétní mezery bez nepravdivé splatnosti nebo nabídky RS',async()=>{
+  mock.method(commercialRepository,'getRsReadiness',async()=>({...ready(),contractType:'sbk' as const,ready:false,
+    summary:{...ready().summary!,template:{name:'SBK originál',version:'review-1',effectiveFrom:'2026-10-01',approvalStatus:'validated'}},
+    issues:[{code:'buyer_delivery_address',field:'buyer.deliveryAddress',message:'Kupující nemá doručovací adresu.',action:{href:'/clients/b',label:'Otevřít kupujícího'}}]}));
+  render(<RsGenerationPanel contractId={contractId} contractType='sbk' canGenerate onChanged={()=>{}}/>);
+  await screen.findByText('Kupující nemá doručovací adresu.');
+  assert.ok(screen.getByRole('heading',{name:'Příprava smlouvy o budoucí kupní smlouvě'}));
+  assert.ok(screen.getByText('Šablona ke kontrole'));assert.ok(screen.getByText('SBK originál · review-1'));
+  assert.equal(screen.queryByText('Rezervační doba'),null);assert.equal(screen.queryByText(/pracovních dnů od podpisu/),null);
+  assert.equal(screen.queryByRole('button',{name:'Vygenerovat RS'}),null);assert.equal(screen.queryByRole('button',{name:'Vygenerovat SBK'}),null);
+});
 test('návrat k existující smlouvě neumožňuje externí URL ani jinou cestu',()=>{
   const view=render(<RsPreparationReturn search={`?returnTo=${encodeURIComponent(`/contracts/${contractId}`)}`}/>);assert.equal(screen.getByRole('link').getAttribute('href'),`/contracts/${contractId}`);
   view.rerender(<RsPreparationReturn search='?returnTo=https%3A%2F%2Fexample.test'/>);assert.equal(screen.queryByRole('link'),null);

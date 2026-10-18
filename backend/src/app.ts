@@ -659,12 +659,13 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
     }catch(error){request.log.warn({event:"document.generation_failed",correlationId:request.id,errorName:error instanceof Error?error.name:"Error",errorCode:error instanceof DocumentGenerationError||error instanceof DocxTemplateError?error.code:undefined},"document generation failed");
       return reply.code(permissionError(error)?403:error instanceof DocumentGenerationError&&error.code==="template_not_found"?404:422).send({error:"Dokument se nepodařilo vytvořit. Zkontrolujte šablonu a povinné údaje."});}
   });
-  app.get<{Params:{contractId:string}}>("/v1/contracts/:contractId/rs-readiness",async(request,reply)=>{
+  // Keep the published RS URL as an alias; one service owns RS/SBK readiness.
+  for(const path of ['/v1/contracts/:contractId/preparation-readiness','/v1/contracts/:contractId/rs-readiness'])app.get<{Params:{contractId:string}}>(path,async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});
       if(!rsGeneration)return reply.code(503).send({error:"Generování smluv není v tomto prostředí dostupné"});
       return{readiness:await rsGeneration.readiness({...context,contractId:request.params.contractId})};
-    }catch(error){request.log.warn({event:"contract.rs_readiness_failed",correlationId:request.id,contractId:request.params.contractId,errorName:error instanceof Error?error.name:"Error"},"RS readiness failed");
-      return reply.code(permissionError(error)?403:409).send({error:permissionError(error)?"Nemáte oprávnění zobrazit připravenost smlouvy.":"Připravenost rezervační smlouvy se nepodařilo ověřit.",correlationId:request.id});}
+    }catch(error){request.log.warn({event:"contract.readiness_failed",correlationId:request.id,contractId:request.params.contractId,errorName:error instanceof Error?error.name:"Error"},"contract readiness failed");
+      return reply.code(permissionError(error)?403:409).send({error:permissionError(error)?"Nemáte oprávnění zobrazit připravenost smlouvy.":"Připravenost smlouvy se nepodařilo ověřit.",correlationId:request.id});}
   });
   app.post<{Params:{contractId:string};Body:{idempotencyKey:string}}>("/v1/contracts/:contractId/generate-rs",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});

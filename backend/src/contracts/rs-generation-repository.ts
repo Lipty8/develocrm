@@ -6,6 +6,8 @@ export type RsBuyer={id:string;partyType:"individual"|"organization";displayName
   birthDate:string|null;registrationNumber:string|null;address:string|null;email:string|null;phone:string|null;dataBox:string|null;deliveryAddress?:string|null};
 export type RsAccessory={code:string;type:string;amount:number;floorLabel:string|null;description:string|null};
 export type RsSource={contractId:string;projectId:string;projectName:string;projectCode:string;completionYear:string|null;unitId:string;unitCode:string;
+  contractType?:'rs'|'sbk';floorNumber?:number|null;templateVariant?:string;templateApprovalStatus?:string;approvedTemplateCount?:number;
+  variableSymbol?:string|null;signedRsCount?:number;paidReservationFee?:number|null;
   layout:string|null;floorLabel:string|null;areaM2:number;balconyM2:number|null;gardenM2:number|null;unitPrice:number|null;totalPrice:number|null;
   reservationFee:number|null;reservationFeeDueDays:number;reservationPeriodDays:number;settings:null|{name:string;registrationNumber:string;address:string;registryEntry:string;
     representative:string;email:string;dataBox:string;bankAccount:string;bankName:string}&Pick<ProjectContractSettings,'signatureName'|'clientChangesBankAccount'|'deliveryAddress'>;salesCaseId:string;reference:string;status:string;buyers:RsBuyer[];accessories:RsAccessory[];
@@ -27,10 +29,15 @@ export class RsGenerationRepository{
   async load(input:DocumentContext&{contractId:string;permission:"contract.read"|"contract.manage"}):Promise<RsSource|null>{
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
       const row=(await client.query<Record<string,unknown>>(`
-        SELECT contract.id contract_id,contract.project_id,project.name project_name,project.code project_code,
+        SELECT contract.id contract_id,contract.contract_type,contract.project_id,project.name project_name,project.code project_code,unit.floor_number,
           extract(year from project.planned_handover_from)::text completion_year,contract.unit_id,unit.code unit_code,unit.layout,unit.floor_label,
           unit.area_m2,unit.balcony_m2,unit.terrace_m2,unit.garden_m2,contract.unit_price_snapshot,contract.total_price_snapshot,
-          contract.reservation_fee_amount,contract.reservation_fee_due_days,COALESCE(settings.reservation_period_days,30) reservation_period_days,
+          CASE WHEN contract.contract_type='sbk' THEN preceding_rs.reservation_fee_amount ELSE contract.reservation_fee_amount END reservation_fee_amount,
+          contract.reservation_fee_due_days,COALESCE(settings.reservation_period_days,30) reservation_period_days,
+          preceding_rs.signed_count,preceding_rs.paid_reservation_fee,
+          (SELECT CASE WHEN count(DISTINCT NULLIF(btrim(obligation.variable_symbol),''))=1 THEN min(NULLIF(btrim(obligation.variable_symbol),'')) END
+             FROM payment_obligations obligation WHERE obligation.tenant_id=contract.tenant_id AND obligation.contract_id=contract.id
+               AND obligation.project_id=contract.project_id AND obligation.sales_case_id=contract.sales_case_id AND obligation.cancelled_at IS NULL) variable_symbol,
           CASE WHEN settings.project_id IS NULL THEN NULL ELSE jsonb_build_object('name',settings.seller_name,'registrationNumber',settings.seller_registration_number,
             'address',settings.seller_address,'registryEntry',settings.seller_registry_entry,'representative',settings.seller_representative,
             'email',settings.seller_email,'dataBox',settings.seller_data_box,'bankAccount',settings.seller_bank_account,'bankName',settings.seller_bank_name,
@@ -60,19 +67,30 @@ export class RsGenerationRepository{
           COALESCE((SELECT jsonb_agg(item||jsonb_build_object('floorLabel',accessory.floor_label,'description',accessory.description) ORDER BY item->>'type',item->>'code')
             FROM jsonb_array_elements(contract.accessory_price_snapshot) item LEFT JOIN accessories accessory ON accessory.tenant_id=contract.tenant_id AND accessory.id=(item->>'accessoryId')::uuid),'[]'::jsonb) accessories,
           template_version.id template_version_id,template_version.content_hash template_hash,template_version.name template_name,template_version.version_label,template_version.effective_from,
+          template_version.variant_key,template_version.approval_status,template_version.approved_count,
           latest.id contract_version_id,latest.document_id,latest.document_version_id,document.mime_type document_mime_type,document.web_url,latest.version_number contract_version
         FROM contracts contract JOIN projects project ON project.tenant_id=contract.tenant_id AND project.id=contract.project_id
         JOIN units unit ON unit.tenant_id=contract.tenant_id AND unit.id=contract.unit_id
         JOIN sales_cases sales_case ON sales_case.tenant_id=contract.tenant_id AND sales_case.id=contract.sales_case_id AND sales_case.unit_id=contract.unit_id AND sales_case.project_id=contract.project_id
         LEFT JOIN project_contract_settings settings ON settings.tenant_id=contract.tenant_id AND settings.project_id=contract.project_id
-        LEFT JOIN LATERAL(SELECT version.id,version.content_hash,template.name,version.version_label,version.effective_from FROM document_template_versions version
+        LEFT JOIN LATERAL(SELECT count(*) signed_count,max(rs.reservation_fee_amount) reservation_fee_amount,
+          sum((SELECT COALESCE(sum(app.payment_obligation_paid(obligation.tenant_id,obligation.id)),0) FROM payment_obligations obligation
+            WHERE obligation.tenant_id=rs.tenant_id AND obligation.contract_id=rs.id AND obligation.obligation_type='reservation_fee' AND obligation.cancelled_at IS NULL)) paid_reservation_fee
+          FROM contracts rs WHERE rs.tenant_id=contract.tenant_id AND rs.project_id=contract.project_id AND rs.unit_id=contract.unit_id
+            AND rs.sales_case_id=contract.sales_case_id AND rs.contract_type='rs' AND rs.current_status='signed') preceding_rs ON true
+        LEFT JOIN LATERAL(SELECT version.id,version.content_hash,template.name,version.version_label,version.effective_from,template.variant_key,version.approval_status,
+          count(*) FILTER(WHERE version.approval_status='approved' AND version.effective_from<=CURRENT_DATE) OVER() approved_count
+          FROM document_template_versions version
           JOIN document_templates template ON template.tenant_id=version.tenant_id AND template.id=version.template_id
-          WHERE version.tenant_id=contract.tenant_id AND version.project_id=contract.project_id AND template.contract_type='rs' AND template.variant_key='default' AND template.status='active'
-            AND version.approval_status='approved' AND version.effective_from<=CURRENT_DATE ORDER BY version.effective_from DESC,version.created_at DESC LIMIT 1) template_version ON true
+          WHERE version.tenant_id=contract.tenant_id AND version.project_id=contract.project_id AND template.contract_type=contract.contract_type
+            AND template.variant_key IN ('default','dejvice-original-dob-full-v1') AND template.status='active'
+            AND version.approval_status IN ('draft','validated','approved')
+          ORDER BY (version.approval_status='approved' AND version.effective_from<=CURRENT_DATE) DESC,
+            version.effective_from DESC,version.created_at DESC,version.id DESC LIMIT 1) template_version ON true
         LEFT JOIN LATERAL(SELECT version.id,version.document_id,version.document_version_id,version.version_number FROM contract_versions version
           WHERE version.tenant_id=contract.tenant_id AND version.contract_id=contract.id AND version.document_id IS NOT NULL ORDER BY version.version_number DESC LIMIT 1) latest ON true
         LEFT JOIN documents document ON document.tenant_id=contract.tenant_id AND document.id=latest.document_id
-        WHERE contract.tenant_id=$1 AND contract.id=$3 AND contract.contract_type='rs' AND contract.current_status NOT IN('signed','cancelled','terminated')
+        WHERE contract.tenant_id=$1 AND contract.id=$3 AND contract.contract_type IN ('rs','sbk') AND contract.current_status NOT IN('signed','cancelled','terminated')
           AND app.has_project_permission(contract.tenant_id,$2,contract.project_id,$4)`,[input.tenantId,input.membershipId,input.contractId,input.permission])).rows[0];
       return row?mapSource(row):null;
     });
@@ -124,6 +142,8 @@ function mapSource(row:Record<string,unknown>):RsSource{
     unitPrice:row.unit_price_snapshot==null?null:Number(row.unit_price_snapshot),totalPrice:row.total_price_snapshot==null?null:Number(row.total_price_snapshot),reservationFee:row.reservation_fee_amount==null?null:Number(row.reservation_fee_amount),reservationFeeDueDays:Number(row.reservation_fee_due_days),reservationPeriodDays:Number(row.reservation_period_days),
     settings:settings?{name:settings.name,registrationNumber:settings.registrationNumber,address:settings.address,registryEntry:settings.registryEntry,representative:settings.representative,email:settings.email,dataBox:settings.dataBox,bankAccount:settings.bankAccount,bankName:settings.bankName,
       signatureName:settings.signatureName??undefined,clientChangesBankAccount:settings.clientChangesBankAccount??undefined,deliveryAddress:settings.deliveryAddress??undefined}:null,
+    contractType:row.contract_type==='sbk'?'sbk':'rs',floorNumber:row.floor_number==null?null:Number(row.floor_number),templateVariant:row.variant_key?String(row.variant_key):'default',templateApprovalStatus:row.approval_status?String(row.approval_status):undefined,approvedTemplateCount:Number(row.approved_count??0),
+    signedRsCount:Number(row.signed_count??0),paidReservationFee:row.paid_reservation_fee==null?null:Number(row.paid_reservation_fee),variableSymbol:row.variable_symbol?String(row.variable_symbol):null,
     caseStatus:row.case_status?String(row.case_status):undefined,terraceM2:row.terrace_m2==null?null:Number(row.terrace_m2),templateName:row.template_name?String(row.template_name):null,templateVersionLabel:row.version_label?String(row.version_label):null,templateEffectiveFrom:row.effective_from?String(row.effective_from):null,contractVersionId:row.contract_version_id?String(row.contract_version_id):null,
     salesCaseId:String(row.sales_case_id),reference:String(row.reference),status:String(row.current_status),buyers:(row.buyers as RsBuyer[])??[],accessories:((row.accessories as Array<Record<string,unknown>>)??[]).map(item=>({code:String(item.code),type:String(item.type),amount:Number(item.amount),floorLabel:item.floorLabel?String(item.floorLabel):null,description:item.description?String(item.description):null})),
     templateVersionId:row.template_version_id?String(row.template_version_id):null,templateHash:row.template_hash?String(row.template_hash):null,documentMimeType:row.document_mime_type?String(row.document_mime_type):null,documentId:row.document_id?String(row.document_id):null,documentVersionId:row.document_version_id?String(row.document_version_id):null,webUrl:row.web_url?String(row.web_url):null,contractVersion:row.contract_version==null?null:Number(row.contract_version)};
