@@ -70,8 +70,10 @@ for (const kind of ['rs', 'sbk'] as const) {
     assert.equal(texts.length, m.sourceParagraphTextSha256.length);
     for (let i = 0; i < texts.length; i++) {
       let restored = texts[i];
+      // A source field may repeat within one paragraph (e.g. seller identity).
+      // Restore occurrences in source order and verify the whole source hash.
       for (const slot of m.slots.filter(s => s.paragraph === i)) {
-        assert.equal(restored.split(slot.replacement).length, 2, `unique review slot ${i}`);
+        assert.ok(restored.includes(slot.replacement), `review slot ${i}`);
         restored = restored.replace(slot.replacement, slot.original);
       }
       assert.equal(digest(restored), m.sourceParagraphTextSha256[i], `source paragraph ${i}`);
@@ -99,6 +101,35 @@ for (const kind of ['rs', 'sbk'] as const) {
       (error: unknown) => error instanceof DocxTemplateError && error.code === 'template_value_missing');
     assert.throws(() => renderDocxTemplate(bytes, m.sampleValues, {allowedTokens: fields.filter(f => f !== 'buyer.name')}),
       (error: unknown) => error instanceof DocxTemplateError && error.code === 'unknown_template_token');
+  });
+
+  test(`${kind}: opakované platební údaje pocházejí ze stejného pole`, async () => {
+    const {manifest: m, bytes} = await load();
+    const values: Record<string, string> = {...m.sampleValues, 'seller.name': 'TECHNICKÝ PRODÁVAJÍCÍ',
+      'seller.address': 'TECHNICKÉ SÍDLO', 'seller.registrationNumber': '00000000',
+      'seller.bankAccount': 'TEST HLAVNÍ ÚČET', 'seller.clientChangesBankAccount': 'TEST ÚČET ZMĚN',
+      'seller.bankName': 'TESTOVACÍ BANKA'};
+    const fields = Object.keys(m.schema.fields);
+    // Pass only schema fields; the strict renderer must not gain extra data.
+    const snapshot = Object.fromEntries(fields.map(key => [key, values[key]]));
+    const rendered = renderDocxTemplate(bytes, snapshot, {allowedTokens: fields, requiredTokens: fields});
+    const texts = paragraphs(strFromU8(unzipSync(rendered.bytes)['word/document.xml']));
+    if (kind === 'rs') {
+      assert.match(texts[74], /TEST HLAVNÍ ÚČET/);
+      assert.match(texts[74], /TESTOVACÍ BANKA/);
+    } else {
+      assert.equal(texts[73].split('TECHNICKÝ PRODÁVAJÍCÍ').length - 1, 2);
+      assert.equal(texts[73].split('TECHNICKÉ SÍDLO').length - 1, 2);
+      assert.equal(texts[73].split('00000000').length - 1, 2);
+      for (const i of [73, 117, 118, 124]) {
+        assert.match(texts[i], /TEST HLAVNÍ ÚČET/);
+        assert.doesNotMatch(texts[i], /178[\s\u00a0]*412/);
+      }
+      assert.match(texts[97], /TEST ÚČET ZMĚN/);
+      // The legal identity of the receivables assignee remains untouched.
+      assert.match(texts[73], /postoupeny na UniCredit Bank Czech Republic and Slovakia, a\.s\./);
+      assert.match(texts[67], /ve prospěch UniCredit Bank Czech Republic and Slovakia a\.s\./);
+    }
   });
 
   test(`${kind}: původní právní lhůty a garážový podíl nejsou nahrazené novým textem`, async () => {

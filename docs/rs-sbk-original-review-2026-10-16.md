@@ -19,8 +19,8 @@ Předchozí technická RS `backend/templates/rs/rezidence-dejvice-rs-v1.docx` ne
 
 ## Výstupy a způsob parametrizace
 
-- `backend/templates/review/rs-dejvice-original-review.docx`: 35 přesných změn textových úseků, 32 různých parametrů.
-- `backend/templates/review/sbk-dejvice-original-review.docx`: 42 přesných změn textových úseků, 37 různých parametrů.
+- `backend/templates/review/rs-dejvice-original-review.docx`: po doplnění opakovaných bankovních údajů dne 18. 10. 2026 celkem 36 přesných změn textových úseků, stále 32 různých parametrů.
+- `backend/templates/review/sbk-dejvice-original-review.docx`: po doplnění opakovaných údajů dne 18. 10. 2026 celkem 59 přesných změn textových úseků, stále 37 různých parametrů.
 - Ke každému souboru patří manifest s hashem zdroje, hashem návrhu, povinnými poli, původním textem každé změny a kontrolními součty původních odstavců i částí balíku.
 - Aktuální vyplněné technické vzorky jsou v `outputs/contract-review/rs-review-filled.docx` a `outputs/contract-review/sbk-review-filled-2026-10-17.docx`. Starší SBK vzorek ze 16. 10. je překonaný a nepoužije se k aktivaci.
 
@@ -33,7 +33,7 @@ Oba vzorky byly vykresleny a všechny strany vizuálně zkontrolovány: RS 4 str
 | Oblast | Co už existuje | Co chybí nebo není bezpečně odvoditelné | Řešení před runtime |
 | --- | --- | --- | --- |
 | Výběr smlouvy | `contracts`, `contract_versions`, `sales_cases`, přesná vazba na dokument | Současná RS služba zná starý soubor celých odstavců, nikoli nové skalární schema; SBK business generátor není zapojen | Rozšířit existující služby o explicitní profil/variantu, nepřidávat paralelní engine |
-| Prodávající | Projektové smluvní nastavení: název, IČO, sídlo, rejstřík, zástupce, kontakty, účet, banka | Samostatný podpisový tvar jména, doručovací adresa a účet klientských změn; opakované údaje v těle SBK a cíle e-mailových hyperlinků zatím zůstávají původní | Rozšířit současné projektové nastavení jen o potřebná pole; stejný údaj mapovat ve všech výskytech, příjemce postoupených pohledávek nezaměňovat automaticky s bankou účtu |
+| Prodávající | Projektové smluvní nastavení: název, IČO, sídlo, rejstřík, zástupce, kontakty, účet, banka; migrace 0063 přidává podpisový tvar, doručovací adresu a účet klientských změn | Opakované identity a platební účty jsou nyní stejná pole. Cíl e-mailového hyperlinku, doručovací adresa v právním textu a právní věřitel/financující banka zůstávají vázané na originál | Dokončit autorizované runtime mapování. Příjemce postoupených pohledávek nezaměňovat automaticky s bankou platebního účtu |
 | Kupující FO | `parties`, person details, oslovení, jméno, datum narození, kontakty, adresy | Doplnění aktuálních hodnot klienta; datum narození je schválené pro RS i SBK | Autorizovaný backend kontext, readiness; žádná libovolná render data z UI |
 | Doručovací adresa | `party_addresses` podporuje korespondenční adresu | Současný RS zdroj načítá pouze bydliště | Převzít existující adresní model, ne nový sloupec s duplicitou |
 | RČ v budoucí jiné variantě | `party_private_identifiers` s ciphertext, hashem a key version | Pro tyto nové varianty není potřebné a není součástí schema | Neimplementovat sběr RČ kvůli těmto šablonám. Případná budoucí právně odůvodněná varianta vyžaduje samostatně ověřené zabezpečení |
@@ -75,7 +75,7 @@ Automaticky ze stávajících autorizovaných entit: prodávající z projektov�
 1. RS čl. VI stanoví účinnost podpisem poslední strany. Přesto je nutné v UI jasně odlišit skutečná data podpisů jednotlivých stran od data evidence v CRM; při neúplné evidenci lhůtu neodhadovat.
 2. Adam potvrdil nejprve kompletní variantu příslušenství. U bytu bez zahrady či parkingu nelze pouze nahradit jejich označení pomlčkou a ponechat tvrzení, že je kupuje. Automatické vypouštění právních odstavců není v tomto balíku zapnuté; další varianty se připraví zvlášť ke kontrole.
 3. Originál SBK má RČ, ale Adam 17. 10. výslovně schválil jeho nahrazení datem narození. Toto již není otevřená otázka; obsahové schválení celého parametrizovaného návrhu nadále chybí.
-4. Pevné právní údaje a opakovaná identita v těle SBK jsou zatím vázané na původní Dejvice. Změnu prodávajícího nelze bezpečně provést pouze změnou úvodního bloku.
+4. Opakovaná identita a platební účty v těle SBK jsou již parametrizované stejně jako úvod. Pevné projektové právní skutečnosti (včetně příjemce postoupených pohledávek a financující banky) nejsou běžným nastavením účtu a zůstávají vázané na originál Dejvice. Cíl e-mailového hyperlinku a doručovací adresa prodávajícího ještě vyžadují dokončení; tato verze není univerzální šablona jiného projektu.
 5. Původní text obsahuje odkazy na přílohy i bankovní/finanční ujednání. Tento balík je neopravuje ani nesjednocuje vlastní právní interpretací.
 
 ## Navazující technické kroky

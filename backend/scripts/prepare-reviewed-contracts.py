@@ -78,6 +78,13 @@ def parameterize(kind, source, out):
                           'original': match[0], 'replacement': '{{'+key+'}}', 'key': key})
             values[key] = sample
 
+        def occurrences(i, expression, key, sample, expected):
+            found = list(re.finditer(expression, texts[i]))
+            if len(found) != expected:
+                raise ValueError(f'{kind} paragraph {i}: unexpected occurrence count: {key}')
+            for occurrence in range(expected):
+                pattern(i, expression, key, sample, occurrence)
+
         seller_start = 4 if kind == 'rs' else 2
         seller = [
             ('seller.name', 'Rezidence Dejvice 2 s.r.o.'),
@@ -122,12 +129,27 @@ def parameterize(kind, source, out):
             slot(74, '250.000', 'payment.reservationFeeAmount', '250 000')
             slot(74, 'dvě stě padesát tisíc', 'payment.reservationFeeWords', 'dvě stě padesát tisíc')
             pattern(74, r'178[\s\u00a0]*412\s*7011\s*/\s*2700', 'seller.bankAccount', '178 412 7011 / 2700')
+            pattern(74, r'UniCredit Bank Czech Republic and Slovakia a\.s\.', 'seller.bankName', 'UniCredit Bank Czech Republic and Slovakia, a.s.')
             pattern(74, r'[.…]{2,}', 'unit.variableSymbol', '62001')
             pattern(87, r'…+', 'contract.totalPriceAmount', '5 000 000', 0)
             pattern(87, r'…+\.?', 'contract.totalPriceWords', 'pět milionů', 1)
             signature_i = 133
         else:
             pattern(14, r'178[\s\u00a0]*412\s*7003\s*/\s*2700', 'seller.clientChangesBankAccount', '178 412 7003 / 2700')
+            # Repeated identity and payment data use the same fields as the
+            # introduction. Do NOT parameterize the named assignee/lender:
+            # assignment of receivables is a pinned legal fact, not bank data.
+            occurrences(73, r'Rezidence Dejvice 2 s\.r\.o\.', 'seller.name', 'Rezidence Dejvice 2 s.r.o.', 2)
+            occurrences(73, r'Rohanské nábřeží 693/\s*10, Karlín, Praha 8, PSČ 186 00', 'seller.address', seller[1][1], 2)
+            occurrences(73, r'241\s*06\s*119', 'seller.registrationNumber', '241 06 119', 2)
+            for i in [73, 117, 118, 124]:
+                pattern(i, r'178[\s\u00a0]*412\s*7011\s*/\s*2700', 'seller.bankAccount', '178 412 7011 / 2700')
+            pattern(97, r'178[\s\u00a0]*412\s*7003\s*/\s*2700', 'seller.clientChangesBankAccount', '178 412 7003 / 2700')
+            for i in [14, 97, 117, 118, 124]:
+                pattern(i, r'UniCredit Bank Czech Republic and Slovakia,? a\.s\.', 'seller.bankName', 'UniCredit Bank Czech Republic and Slovakia, a.s.')
+            # The first occurrence is the legal assignee; only the second
+            # describes the bank holding the payment account.
+            pattern(73, r'UniCredit Bank Czech Republic and Slovakia, a\.s\.', 'seller.bankName', 'UniCredit Bank Czech Republic and Slovakia, a.s.', 1)
             pattern(82, r'…', 'unit.code', 'T-062', 0)
             pattern(82, r'…', 'unit.floorNumber', '3.', 1)
             pattern(83, r'…', 'unit.area', '55,5')
@@ -199,7 +221,8 @@ def parameterize(kind, source, out):
                               'staticProjectLegalFactsPinnedToSource': True},
                     'knownGates': ['content_review', 'runtime_field_mapping', 'appendices',
                                    'signature_based_due_date', 'accessory_variants',
-                                   'repeated_seller_details_and_hyperlink_targets']}
+                                   'source_bound_lender_and_delivery_address',
+                                   'seller_email_hyperlink_target']}
         (out / f'{kind}-review-manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2)+'\n')
         print(f'{kind}: {len(slots)} exact slots, {len(values)} fields; all non-text structure and package parts preserved')
 

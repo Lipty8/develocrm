@@ -4,7 +4,7 @@
   "activationAllowed": false,
   "sourceSha256": "bc79743f8c9561a51f015a02a8a083416a3b12d32918875f2a974bce2a22c160",
   "sourceFileName": "Dejvice SBK vzor 26-02-05.docx",
-  "templateSha256": "f33d4228eca7661ed9dc207c3b51f416626b1cc7958819c107a835fb48374012",
+  "templateSha256": "1bc75744ed2fda234c94fd05d366aeca24f8dbff51c5f00d69cfc882b5b757c4",
   "schema": {
     "fields": {
       "buyer.address": {
@@ -304,6 +304,142 @@
       "original": "178 412 7003 / 2700",
       "replacement": "{{seller.clientChangesBankAccount}}",
       "key": "seller.clientChangesBankAccount"
+    },
+    {
+      "paragraph": 73,
+      "start": 82,
+      "end": 108,
+      "original": "Rezidence Dejvice 2 s.r.o.",
+      "replacement": "{{seller.name}}",
+      "key": "seller.name"
+    },
+    {
+      "paragraph": 73,
+      "start": 363,
+      "end": 389,
+      "original": "Rezidence Dejvice 2 s.r.o.",
+      "replacement": "{{seller.name}}",
+      "key": "seller.name"
+    },
+    {
+      "paragraph": 73,
+      "start": 117,
+      "end": 170,
+      "original": "Rohanské nábřeží 693/ 10, Karlín, Praha 8, PSČ 186 00",
+      "replacement": "{{seller.address}}",
+      "key": "seller.address"
+    },
+    {
+      "paragraph": 73,
+      "start": 398,
+      "end": 451,
+      "original": "Rohanské nábřeží 693/ 10, Karlín, Praha 8, PSČ 186 00",
+      "replacement": "{{seller.address}}",
+      "key": "seller.address"
+    },
+    {
+      "paragraph": 73,
+      "start": 176,
+      "end": 186,
+      "original": "241 06 119",
+      "replacement": "{{seller.registrationNumber}}",
+      "key": "seller.registrationNumber"
+    },
+    {
+      "paragraph": 73,
+      "start": 457,
+      "end": 467,
+      "original": "241 06 119",
+      "replacement": "{{seller.registrationNumber}}",
+      "key": "seller.registrationNumber"
+    },
+    {
+      "paragraph": 73,
+      "start": 489,
+      "end": 508,
+      "original": "178 412 7011 / 2700",
+      "replacement": "{{seller.bankAccount}}",
+      "key": "seller.bankAccount"
+    },
+    {
+      "paragraph": 117,
+      "start": 45,
+      "end": 64,
+      "original": "178 412 7011 / 2700",
+      "replacement": "{{seller.bankAccount}}",
+      "key": "seller.bankAccount"
+    },
+    {
+      "paragraph": 118,
+      "start": 44,
+      "end": 63,
+      "original": "178 412 7011 / 2700",
+      "replacement": "{{seller.bankAccount}}",
+      "key": "seller.bankAccount"
+    },
+    {
+      "paragraph": 124,
+      "start": 182,
+      "end": 201,
+      "original": "178 412 7011 / 2700",
+      "replacement": "{{seller.bankAccount}}",
+      "key": "seller.bankAccount"
+    },
+    {
+      "paragraph": 97,
+      "start": 187,
+      "end": 206,
+      "original": "178 412 7003 / 2700",
+      "replacement": "{{seller.clientChangesBankAccount}}",
+      "key": "seller.clientChangesBankAccount"
+    },
+    {
+      "paragraph": 14,
+      "start": 30,
+      "end": 78,
+      "original": "UniCredit Bank Czech Republic and Slovakia, a.s.",
+      "replacement": "{{seller.bankName}}",
+      "key": "seller.bankName"
+    },
+    {
+      "paragraph": 97,
+      "start": 217,
+      "end": 265,
+      "original": "UniCredit Bank Czech Republic and Slovakia, a.s.",
+      "replacement": "{{seller.bankName}}",
+      "key": "seller.bankName"
+    },
+    {
+      "paragraph": 117,
+      "start": 75,
+      "end": 122,
+      "original": "UniCredit Bank Czech Republic and Slovakia a.s.",
+      "replacement": "{{seller.bankName}}",
+      "key": "seller.bankName"
+    },
+    {
+      "paragraph": 118,
+      "start": 73,
+      "end": 120,
+      "original": "UniCredit Bank Czech Republic and Slovakia a.s.",
+      "replacement": "{{seller.bankName}}",
+      "key": "seller.bankName"
+    },
+    {
+      "paragraph": 124,
+      "start": 212,
+      "end": 260,
+      "original": "UniCredit Bank Czech Republic and Slovakia, a.s.",
+      "replacement": "{{seller.bankName}}",
+      "key": "seller.bankName"
+    },
+    {
+      "paragraph": 73,
+      "start": 519,
+      "end": 567,
+      "original": "UniCredit Bank Czech Republic and Slovakia, a.s.",
+      "replacement": "{{seller.bankName}}",
+      "key": "seller.bankName"
     },
     {
       "paragraph": 82,
@@ -807,6 +943,7 @@
     "appendices",
     "signature_based_due_date",
     "accessory_variants",
-    "repeated_seller_details_and_hyperlink_targets"
+    "source_bound_lender_and_delivery_address",
+    "seller_email_hyperlink_target"
   ]
 }

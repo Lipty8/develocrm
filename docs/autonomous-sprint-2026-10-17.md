@@ -129,6 +129,14 @@ Průběžný verdikt: správa nových neaktivních originálových profilů a je
 - Autentizovaný browser Adam: pouze projekt TECH SMOKE 0062, uloženy tři explicitně technické hodnoty přes existující formulář. Po úplném reloadu a znovuotevření formuláře všechny hodnoty shodné. Historie ukázala „Upraveny smluvní údaje prodávajícího“. Ostatní dosavadní údaje beze změny; skutečné projekty ani jednotka 417 neměněny. Vizuální kontrola formuláře provedena.
 - Runtime tail zachytil GET catalog/commercial/payments/timeline/handovers 200 bez 5xx/RLS. GET clients přibližně 12 sekund je stále konkrétní výkonový bod backlogu, nikoli součást úspěšně dokončené této opravy.
 
+## Balík 6 Opakované údaje v originálových šablonách
+
+- Nalezené pevné opakování prodávajícího a účtů v těle SBK by při odlišné hodnotě v úvodu vytvořilo rozporný dokument. Parametrizace nyní používá stejné již existující scalar pole ve všech těchto místech, bez rozšíření 32/37polového schema.
+- RS 36 exact slots (dříve 35), SBK 59 (dříve 42). Nemění se právní text mimo explicitní datová místa; úplná reverzibilita proti všem odstavcům původního originálu je testovaná. Styly, vztahy, obrázky, číslování a ostatní části balíku mají shodné hashe s originálem.
+- Právní věřitel postoupených pohledávek a financující banka nejsou zaměněny za konfiguraci běžného bankovního účtu. Zůstávají originálovou skutečností. Také e-mailový hyperlink a samostatná adresa doručování zůstávají výslovnou aktivační překážkou, nikoli tiše prohlášenou hotovou funkcí.
+- Dva nové regresní scénáře renderují jiný syntetický název/sídlo/IČO/účty a ověřují všechna opakování, zároveň zachování právního věřitele. Celá backend sada 348 passed, 0 failed, 2 optional native PG skipped. Oba TypeScript checky a relevantní lint prošly po opravě explicitního typu testovacího slovníku.
+- Existující renderer vytvořil nové syntetické vzory, všechny 4 strany RS a 11 stran SBK vykreslené a vizuálně zkontrolované bez clippingu/překryvů. Žádná aktivace ani změna skutečných smluv. Tato změna je v offline přípravě šablony; runtime aplikace se nemění a nevyžaduje nové ACR/Sites nasazení.
+
 ## Následující prioritní balíky
 
 1. Autorizované scalar mapování RS/SBK se strukturovanou readiness; chybějící údaje doplnit do stávajících projektových nastavení/identit, nikoli z UI posílat libovolná render data.

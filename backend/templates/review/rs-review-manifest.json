@@ -4,7 +4,7 @@
   "activationAllowed": false,
   "sourceSha256": "b57cfd799b64e79641c6cc78684cbfd053f14439102447d09e08d83e3af721bd",
   "sourceFileName": "Rezidence Dejvice RS vzor 26-02-02.docx",
-  "templateSha256": "46240bf0d2c6643e7c106df3220fe49e809d07178bdf876aaf11193317e736be",
+  "templateSha256": "6d5265703063e33632450921cfeac1388a7004ec6483bf7149e4ee9f89b50886",
   "schema": {
     "fields": {
       "buyer.address": {
@@ -367,6 +367,14 @@
     },
     {
       "paragraph": 74,
+      "start": 304,
+      "end": 351,
+      "original": "UniCredit Bank Czech Republic and Slovakia a.s.",
+      "replacement": "{{seller.bankName}}",
+      "key": "seller.bankName"
+    },
+    {
+      "paragraph": 74,
       "start": 381,
       "end": 383,
       "original": "….",
@@ -619,6 +627,7 @@
     "appendices",
     "signature_based_due_date",
     "accessory_variants",
-    "repeated_seller_details_and_hyperlink_targets"
+    "source_bound_lender_and_delivery_address",
+    "seller_email_hyperlink_target"
   ]
 }
