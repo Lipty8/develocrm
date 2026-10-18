@@ -91,7 +91,8 @@ export class InventoryRepository {
       const hasContractSettings=(await client.query<{available:boolean}>("SELECT to_regclass('public.project_contract_settings') IS NOT NULL available")).rows[0]?.available;
       const settingsProjection=hasContractSettings?`CASE WHEN app.has_project_permission(project.tenant_id,$2,project.id,'contract.read') THEN
                   (SELECT jsonb_build_object('name',s.seller_name,'registrationNumber',s.seller_registration_number,'address',s.seller_address,'registryEntry',s.seller_registry_entry,
-                    'representative',s.seller_representative,'email',s.seller_email,'dataBox',s.seller_data_box,'bankAccount',s.seller_bank_account,'bankName',s.seller_bank_name,'reservationPeriodDays',s.reservation_period_days)
+                    'representative',s.seller_representative,'email',s.seller_email,'dataBox',s.seller_data_box,'bankAccount',s.seller_bank_account,'bankName',s.seller_bank_name,'reservationPeriodDays',s.reservation_period_days,
+                    'signatureName',COALESCE(to_jsonb(s)->>'seller_signature_name',''),'clientChangesBankAccount',COALESCE(to_jsonb(s)->>'seller_client_changes_bank_account',''),'deliveryAddress',COALESCE(to_jsonb(s)->>'seller_delivery_address',''))
                     FROM project_contract_settings s WHERE s.tenant_id=project.tenant_id AND s.project_id=project.id) ELSE NULL END`:'NULL::jsonb';
       const projects = await client.query<{
         contract_settings:ProjectContractSettings|null;can_manage_contract_settings:boolean;
@@ -286,10 +287,13 @@ export class InventoryRepository {
       }
       const row=(await client.query<{id:string}>("SELECT app.update_project_details($1,$2,$3,$4,$5,$6,$7,$8,$9) id", [input.tenantId,input.projectId,input.name,input.location??null,input.lifecycleStatus,input.managerMembershipId??null,input.plannedHandoverFrom??null,input.plannedHandoverTo??null,input.membershipId])).rows[0];
       if(input.contractSettings){const s=input.contractSettings;
-        await client.query(`INSERT INTO project_contract_settings(tenant_id,project_id,seller_name,seller_registration_number,seller_address,seller_registry_entry,seller_representative,seller_email,seller_data_box,seller_bank_account,seller_bank_name,reservation_period_days,created_by_membership_id)
-          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT(tenant_id,project_id) DO UPDATE SET seller_name=EXCLUDED.seller_name,seller_registration_number=EXCLUDED.seller_registration_number,
+        await client.query(`INSERT INTO project_contract_settings(tenant_id,project_id,seller_name,seller_registration_number,seller_address,seller_registry_entry,seller_representative,seller_email,seller_data_box,seller_bank_account,seller_bank_name,reservation_period_days,created_by_membership_id,seller_signature_name,seller_client_changes_bank_account,seller_delivery_address)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) ON CONFLICT(tenant_id,project_id) DO UPDATE SET seller_name=EXCLUDED.seller_name,seller_registration_number=EXCLUDED.seller_registration_number,
           seller_address=EXCLUDED.seller_address,seller_registry_entry=EXCLUDED.seller_registry_entry,seller_representative=EXCLUDED.seller_representative,seller_email=EXCLUDED.seller_email,seller_data_box=EXCLUDED.seller_data_box,
-          seller_bank_account=EXCLUDED.seller_bank_account,seller_bank_name=EXCLUDED.seller_bank_name,reservation_period_days=EXCLUDED.reservation_period_days`,[input.tenantId,input.projectId,s.name.trim(),s.registrationNumber.trim(),s.address.trim(),s.registryEntry.trim(),s.representative.trim(),s.email.trim(),s.dataBox.trim(),s.bankAccount.trim(),s.bankName.trim(),s.reservationPeriodDays,input.membershipId]);
+          seller_bank_account=EXCLUDED.seller_bank_account,seller_bank_name=EXCLUDED.seller_bank_name,reservation_period_days=EXCLUDED.reservation_period_days,
+          seller_signature_name=COALESCE(EXCLUDED.seller_signature_name,project_contract_settings.seller_signature_name),
+          seller_client_changes_bank_account=COALESCE(EXCLUDED.seller_client_changes_bank_account,project_contract_settings.seller_client_changes_bank_account),
+          seller_delivery_address=COALESCE(EXCLUDED.seller_delivery_address,project_contract_settings.seller_delivery_address)`,[input.tenantId,input.projectId,s.name.trim(),s.registrationNumber.trim(),s.address.trim(),s.registryEntry.trim(),s.representative.trim(),s.email.trim(),s.dataBox.trim(),s.bankAccount.trim(),s.bankName.trim(),s.reservationPeriodDays,input.membershipId,s.signatureName?.trim()??null,s.clientChangesBankAccount?.trim()??null,s.deliveryAddress?.trim()??null]);
         await client.query("INSERT INTO audit_log(tenant_id,actor_user_id,action,entity_type,entity_id,after_data) VALUES($1,$2,'project.contract_settings_updated','project',$3,jsonb_build_object('sellerName',$4::text))",[input.tenantId,input.userId,input.projectId,s.name.trim()]);
         await client.query("INSERT INTO outbox_events(tenant_id,aggregate_type,aggregate_id,event_type,payload) VALUES($1,'project',$2,'project.contract_settings_updated.v1',jsonb_build_object('projectId',$2::uuid))",[input.tenantId,input.projectId]);
       }return row;

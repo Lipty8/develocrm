@@ -18,3 +18,17 @@ test('neúplná konfigurace se odmítne před zápisem a neobsahuje implicitníh
   const f=fixture(true);await assert.rejects(f.repo.updateProject({...input,contractSettings:{...settings,bankAccount:''}}),/bankovní účet/);assert.equal(f.calls.length,0);
   assert.throws(()=>validateProjectContractSettings({...settings,reservationPeriodDays:0}),/1 až 180/);
 });
+test('originálové údaje se ukládají do stejného nastavení a starší klient je nesmaže',async()=>{
+  const f=fixture(true);await f.repo.updateProject({...input,contractSettings:{...settings,signatureName:' Technical signer ',clientChangesBankAccount:' 111/0000 ',deliveryAddress:' Technical delivery '}});
+  const write=f.calls.find(c=>c.sql.includes('INSERT INTO project_contract_settings'))!;
+  assert.deepEqual(write.params.slice(13),['Technical signer','111/0000','Technical delivery']);
+  assert.match(write.sql,/seller_signature_name=COALESCE\(EXCLUDED.seller_signature_name,project_contract_settings.seller_signature_name\)/);
+  const old=fixture(true);await old.repo.updateProject(input);
+  assert.deepEqual(old.calls.find(c=>c.sql.includes('INSERT INTO project_contract_settings'))!.params.slice(13),[null,null,null]);
+});
+test('neplatný typ nebo nadměrná délka nových údajů je odmítnutá před jakýmkoli zápisem',async()=>{
+  for(const invalid of [{signatureName:123},{clientChangesBankAccount:null},{deliveryAddress:'a'.repeat(501)}]){
+    const f=fixture(true);await assert.rejects(f.repo.updateProject({...input,contractSettings:{...settings,...invalid} as ProjectContractSettings}),/zkontrolujte údaj/);assert.equal(f.calls.length,0);
+  }
+  validateProjectContractSettings({...settings,signatureName:'',clientChangesBankAccount:'',deliveryAddress:''});
+});

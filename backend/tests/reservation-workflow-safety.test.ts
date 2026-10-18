@@ -14,6 +14,7 @@ import {expirePreReservations} from "../src/sales/hold-expiry-job.js";
 import {signatureDocument} from "./helpers/signature-document.js";
 import {InventoryImportService} from "../src/inventory/import-service.js";
 import {SalesRepository} from '../src/sales/repository.js';
+import {InventoryRepository} from '../src/inventory/repository.js';
 
 async function fixture(postgresUrl?:string){
   const memory=postgresUrl?undefined:new PGlite();
@@ -76,6 +77,33 @@ for(const usePostgres of [false,true])test(`contract-end release invariants (${u
     await f.sign({contract_id:id,version_id:version!});return id;
   }
   try{
+    await t.test('original seller fields persist through existing project UI repository with runtime role, audit and isolation',async()=>{
+      const project=(await f.client.query<{id:string;name:string;lifecycle_status:string}>('SELECT id,name,lifecycle_status FROM projects WHERE tenant_id=$1 ORDER BY code LIMIT 1',[f.ids.tenantId])).rows[0];
+      const runtime=f.connectionUrl?new Database(f.connectionUrl):null;
+      const inRole=async(client:SqlClient,work:(client:SqlClient)=>Promise<unknown>)=>{await client.query('SET LOCAL ROLE develocrm_app');return work(client);};
+      const adapter={withContext:async(context:{tenantId:string;userId:string},work:(client:SqlClient)=>Promise<unknown>)=>{
+        if(runtime)return runtime.withContext(context,client=>inRole(client,work));
+        await f.client.query('BEGIN');try{await f.client.query("SELECT set_config('app.tenant_id',$1,true),set_config('app.user_id',$2,true)",[context.tenantId,context.userId]);const result=await inRole(f.client,work);await f.client.query('COMMIT');return result;}catch(error){await f.client.query('ROLLBACK');throw error;}
+      }};
+      const repo=new InventoryRepository(adapter as Database),context={tenantId:f.ids.tenantId,userId:f.ids.userId,membershipId:f.ids.membershipId};
+      const seller={name:'Technical seller',registrationNumber:'00000000',address:'Technical address',registryEntry:'Technical registry',representative:'Technical representative',email:'seller@example.test',dataBox:'TECH',bankAccount:'000/0000',bankName:'Technical bank',reservationPeriodDays:30};
+      const update={...context,projectId:project.id,name:project.name,lifecycleStatus:project.lifecycle_status};
+      try{
+        await repo.updateProject({...update,contractSettings:{...seller,signatureName:'Technical signer',clientChangesBankAccount:'111/0000',deliveryAddress:'Technical delivery'}});
+        await repo.updateProject({...update,contractSettings:seller}); // Older client must preserve new fields.
+        const listed=(await repo.getCatalog({...context,projectId:project.id})).projects.find(p=>p.id===project.id);
+        assert.equal(listed?.contractSettings?.signatureName,'Technical signer');
+        assert.equal(listed?.contractSettings?.clientChangesBankAccount,'111/0000');
+        assert.equal(listed?.contractSettings?.deliveryAddress,'Technical delivery');
+        await assert.rejects(repo.updateProject({...update,membershipId:randomUUID(),contractSettings:seller}),/permission/);
+        await assert.rejects(repo.updateProject({...update,tenantId:randomUUID(),contractSettings:seller}),/permission/);
+        await repo.updateProject({...update,contractSettings:{...seller,signatureName:''}});
+        const stored=(await f.client.query<{seller_signature_name:string;seller_client_changes_bank_account:string}>('SELECT seller_signature_name,seller_client_changes_bank_account FROM project_contract_settings WHERE tenant_id=$1 AND project_id=$2',[f.ids.tenantId,project.id])).rows[0];
+        assert.equal(stored.seller_signature_name,'');assert.equal(stored.seller_client_changes_bank_account,'111/0000');
+        assert.equal((await f.client.query<{n:number}>("SELECT count(*)::int n FROM audit_log WHERE tenant_id=$1 AND entity_id=$2 AND action='project.contract_settings_updated'",[f.ids.tenantId,project.id])).rows[0].n,3);
+        assert.equal((await f.client.query<{n:number}>("SELECT count(*)::int n FROM outbox_events WHERE tenant_id=$1 AND aggregate_id=$2 AND event_type='project.contract_settings_updated.v1'",[f.ids.tenantId,project.id])).rows[0].n,3);
+      }finally{await runtime?.close();}
+    });
     await t.test('existing client editor persists salutation and birth date with party scope and minimal audit',async()=>{
       const c=await f.start();
       const party=(await f.client.query<{id:string;first_name:string;last_name:string}>("SELECT p.party_id id,d.first_name,d.last_name FROM contract_parties p JOIN party_individual_details d ON d.tenant_id=p.tenant_id AND d.party_id=p.party_id WHERE p.contract_id=$1 LIMIT 1",[c.contract_id])).rows[0];

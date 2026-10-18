@@ -114,6 +114,15 @@ Ověření dokončené 18. 10. 2026 místního času:
 
 Průběžný verdikt: správa nových neaktivních originálových profilů a jejich skutečná SharePoint persistence/náhled jsou ověřené. Celkový sprint a produkční RS/SBK zůstávají **nedokončené**: zejména autorizované scalar business mapování, doplnění doménových údajů, atomická vazba podpisu na splatnosti, SBK workflow, přílohy a obsahové schválení. Tento checkpoint nepředstírá jejich dokončení.
 
+## Balík 5 Doplnění autoritativních údajů prodávajícího
+
+- Aditivní migrace 0063 rozšiřuje existující `project_contract_settings` o jméno/funkci u podpisu, účet klientských změn a doručovací adresu. Žádná nová tabulka a žádný backfill hodnot. Stávající FORCE RLS se zachovává.
+- Stejný existující projektový formulář a repository ukládají tyto hodnoty pod projektovým `contract.manage`, transakčně s úpravou projektu, auditem a outboxem. Starší klient při vynechání nových polí jejich uložené hodnoty zachová; explicitní prázdný řetězec je dovolí vymazat. Potřebnost hodnoty rozhodne až konkrétní template readiness.
+- Stávající RS source DTO čte nové údaje z projektového nastavení a doručovací adresu kupujícího z existujícího `party_addresses` typu `correspondence`. Žádný automatický fallback doručovací adresy na bydliště ani odvozování podpisového jména z gramaticky jiného údaje zastoupení.
+- 346 backendových testů prošlo, 2 volitelné native PG sady v obecném běhu přeskočené; samostatný skutečný lokální PostgreSQL/PGlite běh 45 passed / 0 skipped. Nový test ukládá/čte pod rolí `develocrm_app`, kontroluje zachování hodnot při starším payloadu, explicitní vymazání, tenantovou a permission izolaci a přesné počty audit/outbox událostí.
+- 3 nové frontend interaction testy stávajícího formuláře, celý interaction běh úspěšný; frontend 143 passed. Frontend/backend TypeScript, lint a produkční frontend build prošly. Žádný právní profil se tím neaktivuje.
+- Matching migrace/backend/frontend budou nasazeny koordinovaně; stav DB se nejprve ověřuje read-only přes existující migration/admin job bez čtení hodnoty secretu.
+
 ## Následující prioritní balíky
 
 1. Autorizované scalar mapování RS/SBK se strukturovanou readiness; chybějící údaje doplnit do stávajících projektových nastavení/identit, nikoli z UI posílat libovolná render data.

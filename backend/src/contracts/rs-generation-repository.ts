@@ -1,13 +1,14 @@
 import type {Database} from "../database.js";
 import type {DocumentContext} from "../documents/repository.js";
+import type {ProjectContractSettings} from '../shared/project-contract-settings.js';
 
 export type RsBuyer={id:string;partyType:"individual"|"organization";displayName:string;salutation:string|null;firstName:string|null;lastName:string|null;
-  birthDate:string|null;registrationNumber:string|null;address:string|null;email:string|null;phone:string|null;dataBox:string|null};
+  birthDate:string|null;registrationNumber:string|null;address:string|null;email:string|null;phone:string|null;dataBox:string|null;deliveryAddress?:string|null};
 export type RsAccessory={code:string;type:string;amount:number;floorLabel:string|null;description:string|null};
 export type RsSource={contractId:string;projectId:string;projectName:string;projectCode:string;completionYear:string|null;unitId:string;unitCode:string;
   layout:string|null;floorLabel:string|null;areaM2:number;balconyM2:number|null;gardenM2:number|null;unitPrice:number|null;totalPrice:number|null;
   reservationFee:number|null;reservationFeeDueDays:number;reservationPeriodDays:number;settings:null|{name:string;registrationNumber:string;address:string;registryEntry:string;
-    representative:string;email:string;dataBox:string;bankAccount:string;bankName:string};salesCaseId:string;reference:string;status:string;buyers:RsBuyer[];accessories:RsAccessory[];
+    representative:string;email:string;dataBox:string;bankAccount:string;bankName:string}&Pick<ProjectContractSettings,'signatureName'|'clientChangesBankAccount'|'deliveryAddress'>;salesCaseId:string;reference:string;status:string;buyers:RsBuyer[];accessories:RsAccessory[];
   caseStatus?:string;terraceM2?:number|null;templateName?:string|null;templateVersionLabel?:string|null;templateEffectiveFrom?:string|null;contractVersionId?:string|null;
   templateVersionId:string|null;templateHash:string|null;documentId:string|null;documentVersionId:string|null;documentMimeType?:string|null;webUrl:string|null;contractVersion:number|null};
 
@@ -32,7 +33,8 @@ export class RsGenerationRepository{
           contract.reservation_fee_amount,contract.reservation_fee_due_days,COALESCE(settings.reservation_period_days,30) reservation_period_days,
           CASE WHEN settings.project_id IS NULL THEN NULL ELSE jsonb_build_object('name',settings.seller_name,'registrationNumber',settings.seller_registration_number,
             'address',settings.seller_address,'registryEntry',settings.seller_registry_entry,'representative',settings.seller_representative,
-            'email',settings.seller_email,'dataBox',settings.seller_data_box,'bankAccount',settings.seller_bank_account,'bankName',settings.seller_bank_name) END settings,
+            'email',settings.seller_email,'dataBox',settings.seller_data_box,'bankAccount',settings.seller_bank_account,'bankName',settings.seller_bank_name,
+            'signatureName',to_jsonb(settings)->>'seller_signature_name','clientChangesBankAccount',to_jsonb(settings)->>'seller_client_changes_bank_account','deliveryAddress',to_jsonb(settings)->>'seller_delivery_address') END settings,
           contract.sales_case_id,sales_case.status case_status,contract.reference,contract.current_status,
           COALESCE((SELECT jsonb_agg(jsonb_build_object('id',party.id,'partyType',party.party_type,'displayName',party.display_name,
             'salutation',detail.salutation,'firstName',detail.first_name,'lastName',detail.last_name,'birthDate',detail.date_of_birth,
@@ -40,6 +42,10 @@ export class RsGenerationRepository{
             'address',(SELECT concat_ws(', ',address.line1,NULLIF(address.line2,''),concat_ws(' ',address.postal_code,address.city)) FROM party_addresses address
               WHERE address.tenant_id=party.tenant_id AND address.party_id=party.id AND address.valid_to IS NULL
                 AND address.address_type=CASE WHEN party.party_type='individual' THEN 'residence' ELSE 'registered_office' END
+                AND length(btrim(address.line1))>0 AND length(btrim(address.city))>0
+                ORDER BY address.is_primary DESC,address.created_at DESC LIMIT 1),
+            'deliveryAddress',(SELECT concat_ws(', ',address.line1,NULLIF(address.line2,''),concat_ws(' ',address.postal_code,address.city)) FROM party_addresses address
+              WHERE address.tenant_id=party.tenant_id AND address.party_id=party.id AND address.valid_to IS NULL AND address.address_type='correspondence'
                 AND length(btrim(address.line1))>0 AND length(btrim(address.city))>0
                 ORDER BY address.is_primary DESC,address.created_at DESC LIMIT 1),
             'email',(SELECT contact.value FROM party_contacts contact WHERE contact.tenant_id=party.tenant_id AND contact.party_id=party.id AND contact.contact_type='email' AND contact.archived_at IS NULL ORDER BY contact.is_primary DESC,contact.created_at LIMIT 1),
@@ -116,7 +122,8 @@ function mapSource(row:Record<string,unknown>):RsSource{
   return{contractId:String(row.contract_id),projectId:String(row.project_id),projectName:String(row.project_name),projectCode:String(row.project_code),completionYear:row.completion_year?String(row.completion_year):null,
     unitId:String(row.unit_id),unitCode:String(row.unit_code),layout:row.layout?String(row.layout):null,floorLabel:row.floor_label?String(row.floor_label):null,areaM2:Number(row.area_m2),balconyM2:row.balcony_m2==null?null:Number(row.balcony_m2),gardenM2:row.garden_m2==null?null:Number(row.garden_m2),
     unitPrice:row.unit_price_snapshot==null?null:Number(row.unit_price_snapshot),totalPrice:row.total_price_snapshot==null?null:Number(row.total_price_snapshot),reservationFee:row.reservation_fee_amount==null?null:Number(row.reservation_fee_amount),reservationFeeDueDays:Number(row.reservation_fee_due_days),reservationPeriodDays:Number(row.reservation_period_days),
-    settings:settings?{name:settings.name,registrationNumber:settings.registrationNumber,address:settings.address,registryEntry:settings.registryEntry,representative:settings.representative,email:settings.email,dataBox:settings.dataBox,bankAccount:settings.bankAccount,bankName:settings.bankName}:null,
+    settings:settings?{name:settings.name,registrationNumber:settings.registrationNumber,address:settings.address,registryEntry:settings.registryEntry,representative:settings.representative,email:settings.email,dataBox:settings.dataBox,bankAccount:settings.bankAccount,bankName:settings.bankName,
+      signatureName:settings.signatureName??undefined,clientChangesBankAccount:settings.clientChangesBankAccount??undefined,deliveryAddress:settings.deliveryAddress??undefined}:null,
     caseStatus:row.case_status?String(row.case_status):undefined,terraceM2:row.terrace_m2==null?null:Number(row.terrace_m2),templateName:row.template_name?String(row.template_name):null,templateVersionLabel:row.version_label?String(row.version_label):null,templateEffectiveFrom:row.effective_from?String(row.effective_from):null,contractVersionId:row.contract_version_id?String(row.contract_version_id):null,
     salesCaseId:String(row.sales_case_id),reference:String(row.reference),status:String(row.current_status),buyers:(row.buyers as RsBuyer[])??[],accessories:((row.accessories as Array<Record<string,unknown>>)??[]).map(item=>({code:String(item.code),type:String(item.type),amount:Number(item.amount),floorLabel:item.floorLabel?String(item.floorLabel):null,description:item.description?String(item.description):null})),
     templateVersionId:row.template_version_id?String(row.template_version_id):null,templateHash:row.template_hash?String(row.template_hash):null,documentMimeType:row.document_mime_type?String(row.document_mime_type):null,documentId:row.document_id?String(row.document_id):null,documentVersionId:row.document_version_id?String(row.document_version_id):null,webUrl:row.web_url?String(row.web_url):null,contractVersion:row.contract_version==null?null:Number(row.contract_version)};
