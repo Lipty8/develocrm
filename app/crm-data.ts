@@ -68,7 +68,8 @@ export type ClientRecord = {
   interestHistory?: InterestHistoryRecord[];
   activityHistory?: ClientActivityRecord[];
   canReadContractIdentity?:boolean;salutation?:string|null;birthDate?:string|null;firstName?:string; lastName?:string; legalName?:string; registrationNumber?:string; vatNumber?:string; contactPerson?:string;
-  address?:{line1:string;line2?:string;city:string;postalCode?:string;countryCode:string;addressType:string}|null;
+  address?:import('../backend/src/shared/party-address').PartyAddressValue|null;
+  deliveryAddress?:import('../backend/src/shared/party-address').PartyAddressValue|null;
   updatedAt?:string;
   lifecycleStatus?:"active"|"inactive"|"merged"|"archived";
   projectRelationships?:Array<{projectId:string;project:string;status:"Aktivní klient"|"Zájemce"|"Archiv"}>;

@@ -88,6 +88,40 @@ for(const usePostgres of [false,true])test(`contract preparation source (${usePo
       }
       assert.equal(await repository.load({...context,membershipId:randomUUID(),contractId:sbk}),null);
       assert.equal(await repository.load({...context,tenantId:randomUUID(),contractId:sbk}),null);
+      const party=(await f.client.query<{id:string}>('SELECT party_id id FROM sales_case_parties WHERE tenant_id=$1 AND sales_case_id=$2 AND is_primary',[f.ids.tenantId,c.caseId])).rows[0];assert.ok(party);
+      const sales=new SalesRepository(adapter as unknown as Database);
+      const addressContext={tenantId:f.ids.tenantId,userId:f.ids.userId,membershipId:f.ids.membershipId,partyId:party.id};
+      const primary={...addressContext,addressType:'residence',line1:'Technická ulice 1',city:'Praha',countryCode:'CZ'};
+      const delivery={...addressContext,addressType:'correspondence',line1:'Technické doručování 2',city:'Brno',countryCode:'CZ'};
+      const primaryId=(await sales.upsertAddress(primary)).id,deliveryId=(await sales.upsertAddress(delivery)).id;
+      assert.equal((await sales.upsertAddress({...primary,line1:' Technická ulice 1 ',countryCode:'cz'})).id,primaryId);
+      assert.equal((await sales.upsertAddress(delivery)).id,deliveryId);
+      const current=(await sales.getDirectory({...context,projectId:result.projectId})).clients.find(item=>item.id===party.id);assert.ok(current);
+      assert.equal(current.address?.line1,primary.line1);assert.equal(current.deliveryAddress?.line1,delivery.line1);
+      assert.match((await repository.load({...context,contractId:sbk}))!.buyers[0].deliveryAddress!,/Technické doručování 2/);
+      const replacement=(await sales.upsertAddress({...delivery,line1:'Technické doručování 3'})).id;assert.notEqual(replacement,deliveryId);
+      const history=await f.client.query<{id:string;is_primary:boolean;line1:string}>('SELECT id,is_primary,line1 FROM party_addresses WHERE tenant_id=$1 AND party_id=$2 AND address_type=\'correspondence\' ORDER BY created_at,id',[f.ids.tenantId,party.id]);
+      assert.equal(history.rows.length,2);assert.equal(history.rows.find(row=>row.id===deliveryId)?.is_primary,false);
+      assert.equal(history.rows.find(row=>row.id===deliveryId)?.line1,delivery.line1);
+      if(usePostgres){const retried=await Promise.all([sales.upsertAddress({...delivery,line1:'Technické doručování 3'}),sales.upsertAddress({...delivery,line1:'Technické doručování 3'})]);assert.ok(retried.every(row=>row.id===replacement));}
+      const events=(await f.client.query<{audit:number;outbox:number}>(`SELECT (SELECT count(*)::int FROM audit_log WHERE tenant_id=$1 AND action='party.address_updated' AND after_data->>'partyId'=$2) audit,
+        (SELECT count(*)::int FROM outbox_events WHERE tenant_id=$1 AND aggregate_id=$2::uuid AND event_type='party.address_updated.v1') outbox`,[f.ids.tenantId,party.id])).rows[0];
+      assert.deepEqual(events,{audit:3,outbox:3});
+      await sales.upsertAddress({...delivery,line1:'Technische Teststrasse 4',city:'Berlin',countryCode:'DE'});
+      assert.match((await repository.load({...context,contractId:sbk}))!.buyers[0].deliveryAddress!,/Berlin, DE$/);
+      await assert.rejects(sales.upsertAddress({...delivery,membershipId:randomUUID()}),/permission/i);
+      await assert.rejects(sales.upsertAddress({...delivery,tenantId:randomUUID()}),/permission/i);
+      // Exercise identity switching and contact redaction against native PostgreSQL.
+      // PGlite shares one session with the fixture's privileged setup connection.
+      if(usePostgres){
+      const readerUser=randomUUID(),readerMember=randomUUID();
+      await f.client.query("INSERT INTO users(id,entra_issuer,entra_subject,email,display_name) VALUES($1::uuid,'technical-address-test',($1::uuid)::text,'reader@example.test','Technical address reader')",[readerUser]);
+      await f.client.query("INSERT INTO tenant_memberships(id,tenant_id,user_id,status,accepted_at) VALUES($1,$2,$3,'active',now())",[readerMember,f.ids.tenantId,readerUser]);
+      await f.client.query("INSERT INTO project_custom_access(tenant_id,project_id,membership_id,area,access_level,permission_overrides,assigned_by_user_id) VALUES($1,$2,$3,'clients','none',ARRAY['clients.read_all'],$4)",[f.ids.tenantId,result.projectId,readerMember,f.ids.userId]);
+      const restricted=(await sales.getDirectory({tenantId:f.ids.tenantId,userId:readerUser,membershipId:readerMember,projectId:result.projectId})).clients.find(item=>item.id===party.id);assert.ok(restricted);
+      assert.equal(restricted.canReadContractIdentity,false);assert.equal(restricted.address,null);assert.equal(restricted.deliveryAddress,null);
+      await assert.rejects(sales.upsertAddress({...delivery,userId:readerUser,membershipId:readerMember}),/permission/i);
+      }
     }finally{await runtime?.close();}
   }finally{await f.close();}
 });

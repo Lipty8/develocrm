@@ -14,11 +14,12 @@ import {SummaryStats,toggledSummaryFilter} from "../app/components/summary-stats
 import {projectSalesAggregation,projectUnitSalesBucket,type ProjectSalesBucket} from "../app/lib/project-sales-performance";
 import {contractSummaryCategory,contractSummaryCounts,type ContractSummaryCategory} from "../app/lib/contract-summary";
 import {PackageOpen,UserRound,Users} from "lucide-react";
-import {Projects,UnitContracts,ContractDetail,ContractWorkflowModal,ClientChangeStatusModal,ComplaintDetailModal,ContractAddendumModal,ContractNoteModal,FormModal,PaymentDetailModal,PaymentRefundForm,paymentRefundAvailability} from "../app/CRMApp";
+import {Projects,UnitContracts,ContractDetail,ContractWorkflowModal,ClientChangeStatusModal,ComplaintDetailModal,ContractAddendumModal,ContractNoteModal,FormModal,PaymentDetailModal,PaymentRefundForm,paymentRefundAvailability,EditClientModal} from "../app/CRMApp";
 import {paymentRepository} from '../app/repositories/payment-repository';
 import {relatedUnitHref,relatedClientHref} from '../app/lib/entity-navigation';
 import {searchWorkspace} from '../app/lib/workspace-search';
 import {ClientContractLinks} from '../app/components/client-contract-links';
+import {ClientAddressSummary} from '../app/components/client-address-fields';
 import {RelatedUnitLink} from '../app/components/entity-links';
 import {useWorkspaceSearch} from '../app/components/workspace-search';
 import {catalogRepository} from '../app/repositories/catalog-repository';
@@ -27,6 +28,50 @@ import {commercialRepository} from '../app/repositories/commercial-repository';
 import {ContractEndResult} from '../app/components/contract-end-result';
 import type {PaymentRecord} from '../app/repositories/payment-repository';
 import {clients as sampleClients,units as sampleUnits,contracts as sampleContracts} from '../app/crm-data';
+
+test('přehled klienta rozliší bydliště a doručování a respektuje kontaktní oprávnění',()=>{
+ const client={kind:'FO' as const,address:{addressType:'residence',line1:'Bydliště TEST',city:'Praha',countryCode:'CZ'},deliveryAddress:null,canReadContractIdentity:true};
+ const view=render(<dl><ClientAddressSummary client={client}/></dl>);
+ assert.ok(screen.getByText('Bydliště TEST, Praha, CZ'));assert.ok(screen.getByText('Doručovací adresa'));assert.ok(screen.getByText('—'));
+ view.rerender(<dl><ClientAddressSummary client={{...client,canReadContractIdentity:false}}/></dl>);
+ assert.equal(screen.queryByText('Bydliště TEST, Praha, CZ'),null);assert.equal(screen.queryByText('Doručovací adresa'),null);
+});
+test('doručovací adresa není automatický fallback bydliště a kopíruje se jen explicitně',async()=>{
+ const client={...sampleClients[0],kind:'FO' as const,canReadContractIdentity:true,
+   address:{addressType:'residence',line1:'Testovací bydliště 1',city:'Testovací město',countryCode:'CZ'},deliveryAddress:null};
+ let saved:Parameters<React.ComponentProps<typeof EditClientModal>['save']>[0]|undefined;
+ render(<EditClientModal client={client} close={()=>{}} save={async value=>{saved=value;}}/>);
+ const user=userEvent.setup({document});
+ const residence=screen.getByRole('group',{name:'Adresa bydliště'}),delivery=screen.getByRole('group',{name:'Doručovací adresa'});
+ assert.equal(within(delivery).getByRole<HTMLInputElement>('textbox',{name:'Ulice a číslo'}).value,'');
+ await user.click(screen.getByRole('button',{name:'Použít stejnou adresu pro doručování'}));
+ assert.equal(within(delivery).getByRole<HTMLInputElement>('textbox',{name:'Ulice a číslo'}).value,'Testovací bydliště 1');
+ await user.clear(within(delivery).getByRole('textbox',{name:'Ulice a číslo'}));await user.type(within(delivery).getByRole('textbox',{name:'Ulice a číslo'}),'Jiná testovací adresa 2');
+ assert.equal(within(residence).getByRole<HTMLInputElement>('textbox',{name:'Ulice a číslo'}).value,'Testovací bydliště 1');
+ await user.click(screen.getByRole('button',{name:/^Uložit$/}));await waitFor(()=>assert.ok(saved));
+ assert.equal(saved!.address?.addressType,'residence');assert.equal(saved!.deliveryAddress?.addressType,'correspondence');
+ assert.equal(saved!.deliveryAddress?.line1,'Jiná testovací adresa 2');
+});
+
+test('neúplná doručovací adresa zastaví celý submit ještě před změnou profilu',async()=>{
+ let saves=0;render(<EditClientModal client={{...sampleClients[0],canReadContractIdentity:true,address:null,deliveryAddress:null}} close={()=>{}} save={async()=>{saves++;}}/>);
+ assert.equal(screen.getByRole('button',{name:'Použít stejnou adresu pro doručování'}).hasAttribute('disabled'),true);
+ const user=userEvent.setup({document});const delivery=screen.getByRole('group',{name:'Doručovací adresa'});
+ await user.type(within(delivery).getByRole('textbox',{name:'Ulice a číslo'}),'Technická ulice 3');
+ await user.click(screen.getByRole('button',{name:/^Uložit$/}));await screen.findByText('Doplňte město.');assert.equal(saves,0);
+});
+
+test('uložená doručovací adresa se předvyplní, bez kontaktního oprávnění se skrytá adresa neposílá',async()=>{
+ const deliveryAddress={addressType:'correspondence',line1:'Technická adresa 4',line2:null,city:'Praha',postalCode:null,countryCode:'CZ'};
+ const client={...sampleClients[0],canReadContractIdentity:true,address:null,deliveryAddress};
+ let saved:Parameters<React.ComponentProps<typeof EditClientModal>['save']>[0]|undefined;
+ const view=render(<EditClientModal client={client} close={()=>{}} save={async value=>{saved=value;}}/>);
+ assert.equal(within(screen.getByRole('group',{name:'Doručovací adresa'})).getByRole<HTMLInputElement>('textbox',{name:'Ulice a číslo'}).value,deliveryAddress.line1);
+ view.rerender(<EditClientModal client={{...client,canReadContractIdentity:false}} close={()=>{}} save={async value=>{saved=value;}}/>);
+ assert.equal(screen.queryByRole('group',{name:'Doručovací adresa'}),null);
+ await userEvent.setup({document}).click(screen.getByRole('button',{name:/^Uložit$/}));await waitFor(()=>assert.ok(saved));
+ assert.equal(saved!.address,undefined);assert.equal(saved!.deliveryAddress,undefined);
+});
 
 test('ukončení smlouvy vyžaduje viditelné potvrzení bez systémového dialogu',async()=>{
  const original=paymentRepository.list;const originalConfirm=window.confirm;
@@ -131,6 +176,7 @@ test('globální hledání načítá neomezený autorizovaný snapshot bez přep
 let cleanup:()=>void;
 let render:typeof import("@testing-library/react").render;
 let screen:typeof import("@testing-library/react").screen;
+let within:typeof import("@testing-library/react").within;
 let fireEvent:typeof import("@testing-library/react").fireEvent;
 let waitFor:typeof import("@testing-library/react").waitFor;
 let act:typeof import("@testing-library/react").act;
@@ -194,7 +240,7 @@ before(async()=>{
   Object.assign(globalThis,{self:dom.window,window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,Node:dom.window.Node,MouseEvent:dom.window.MouseEvent,KeyboardEvent:dom.window.KeyboardEvent,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:(callback:FrameRequestCallback)=>setTimeout(()=>callback(Date.now()),0),cancelAnimationFrame:clearTimeout});
   Object.defineProperty(globalThis,"navigator",{value:dom.window.navigator,configurable:true});
   const library=await import("@testing-library/react");
-  ({cleanup,render,screen,fireEvent,waitFor,act}=library);
+  ({cleanup,render,screen,fireEvent,waitFor,act,within}=library);
   userEvent=(await import("@testing-library/user-event")).default;
 });
 

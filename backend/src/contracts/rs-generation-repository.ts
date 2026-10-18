@@ -46,12 +46,12 @@ export class RsGenerationRepository{
           COALESCE((SELECT jsonb_agg(jsonb_build_object('id',party.id,'partyType',party.party_type,'displayName',party.display_name,
             'salutation',detail.salutation,'firstName',detail.first_name,'lastName',detail.last_name,'birthDate',detail.date_of_birth,
             'registrationNumber',organization.registration_number,
-            'address',(SELECT concat_ws(', ',address.line1,NULLIF(address.line2,''),concat_ws(' ',address.postal_code,address.city)) FROM party_addresses address
+            'address',(SELECT concat_ws(', ',address.line1,NULLIF(address.line2,''),concat_ws(' ',address.postal_code,address.city),address.country_code) FROM party_addresses address
               WHERE address.tenant_id=party.tenant_id AND address.party_id=party.id AND address.valid_to IS NULL
                 AND address.address_type=CASE WHEN party.party_type='individual' THEN 'residence' ELSE 'registered_office' END
                 AND length(btrim(address.line1))>0 AND length(btrim(address.city))>0
                 ORDER BY address.is_primary DESC,address.created_at DESC LIMIT 1),
-            'deliveryAddress',(SELECT concat_ws(', ',address.line1,NULLIF(address.line2,''),concat_ws(' ',address.postal_code,address.city)) FROM party_addresses address
+            'deliveryAddress',(SELECT concat_ws(', ',address.line1,NULLIF(address.line2,''),concat_ws(' ',address.postal_code,address.city),address.country_code) FROM party_addresses address
               WHERE address.tenant_id=party.tenant_id AND address.party_id=party.id AND address.valid_to IS NULL AND address.address_type='correspondence'
                 AND length(btrim(address.line1))>0 AND length(btrim(address.city))>0
                 ORDER BY address.is_primary DESC,address.created_at DESC LIMIT 1),

@@ -32,6 +32,7 @@ import { ComplaintRepository } from "./complaints/repository.js";
 import { MediaAccessError, MediaRepository, type MediaEntityType, type MediaKind } from "./media/repository.js";
 import { mapApiError } from "./http/api-error.js";
 import {ConsistencyChecker} from './diagnostics/consistency-checker.js';
+import {PartyAddressValidationError} from './shared/party-address.js';
 
 const verifiedIdentities = new WeakMap<FastifyRequest, EntraIdentity>();
 
@@ -331,7 +332,7 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.send(await sales.updateProfile({...request.body,...context,partyId:request.params.partyId}));}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Profil klienta nelze uložit"});}
   });
   app.post<{Params:{partyId:string};Body:{addressType:string;line1:string;line2?:string;city:string;postalCode?:string;countryCode:string}}>("/v1/parties/:partyId/addresses",async(request,reply)=>{
-    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await sales.upsertAddress({...request.body,...context,partyId:request.params.partyId}));}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Adresu klienta nelze uložit"});}
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await sales.upsertAddress({...request.body,...context,partyId:request.params.partyId}));}catch(error){request.log.warn({event:'party.address_failed',correlationId:request.id,errorName:error instanceof Error?error.name:'Error'},'party address failed');return reply.code(permissionError(error)?403:error instanceof PartyAddressValidationError?422:409).send({error:permissionError(error)?'Nemáte oprávnění upravit adresu klienta.':error instanceof PartyAddressValidationError?error.message:'Adresu klienta se nepodařilo uložit.',correlationId:request.id});}
   });
   app.post<{Params:{unitId:string};Body:{partyId:string;eventType:string;note:string}}>("/v1/units/:unitId/interests",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await sales.addInterest({...context,unitId:request.params.unitId,...request.body}));}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Zájem nelze uložit"});}

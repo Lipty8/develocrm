@@ -1,6 +1,7 @@
 import type { Database, SqlClient } from "../database.js";
 import {archiveReadSql} from '../inventory/project-visibility.js';
 import { deriveClientRelationshipStatus, type ClientRelationshipStatus } from "../shared/client-relationship.js";
+import {normalizePartyAddress,type PartyAddressValue} from '../shared/party-address.js';
 
 export type ClientDirectoryItem = {
   id: string; name: string; type: string; kind: "FO" | "PO"; email: string; phone: string;
@@ -9,7 +10,7 @@ export type ClientDirectoryItem = {
   interestHistory: Array<{ date: string; project: string; unit: string; type: string; result: string }>;
   activityHistory:Array<{id:string;type:string;note:string;occurredAt:string;author:string}>;
   canReadContractIdentity?:boolean;salutation?:string|null;birthDate?:string|null;firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;vatNumber?:string;contactPerson?:string;
-  address?:{line1:string;line2?:string;city:string;postalCode?:string;countryCode:string;addressType:string}|null;
+  address?:PartyAddressValue|null;deliveryAddress?:PartyAddressValue|null;
   updatedAt?:string;
   lifecycleStatus?:"active"|"inactive"|"merged"|"archived";
   projectRelationships:Array<{projectId:string;project:string;status:ClientRelationshipStatus}>;
@@ -57,7 +58,27 @@ export class SalesRepository {
       }return row;
     });
   }
-  async upsertAddress(input:{tenantId:string;userId:string;partyId:string;membershipId:string;addressType:string;line1:string;line2?:string;city:string;postalCode?:string;countryCode:string}){return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{id:string}>("SELECT app.upsert_party_primary_address($1,$2,$3,$4,$5,$6,$7,$8,$9) id",[input.tenantId,input.partyId,input.addressType,input.line1,input.line2??null,input.city,input.postalCode??null,input.countryCode,input.membershipId])).rows[0]);}
+  async upsertAddress(input:{tenantId:string;userId:string;partyId:string;membershipId:string}&PartyAddressValue){
+    const value=normalizePartyAddress(input);
+    return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
+      // Serialize existing address commands on the canonical party. A retry of
+      // identical values returns its current row without duplicate history/events.
+      const allowed=(await client.query<{id:string}>(`SELECT party.id FROM parties party WHERE party.tenant_id=$1 AND party.id=$2
+        AND app.can_access_party($1,$3,party.id,true) AND EXISTS(SELECT 1 FROM party_project_links link
+          WHERE link.tenant_id=party.tenant_id AND link.party_id=party.id AND link.valid_to IS NULL
+            AND app.has_project_permission($1,$3,link.project_id,'clients.manage')) FOR UPDATE`,[input.tenantId,input.partyId,input.membershipId])).rows[0];
+      if(!allowed)throw new Error('clients.update permission and party scope required');
+      const parameters=[input.tenantId,input.partyId,value.addressType,value.line1,value.line2||null,value.city,value.postalCode||null,value.countryCode];
+      const unchanged=(await client.query<{id:string}>(`SELECT id FROM party_addresses WHERE tenant_id=$1 AND party_id=$2 AND address_type=$3
+        AND is_primary AND valid_to IS NULL AND line1=$4 AND line2 IS NOT DISTINCT FROM $5::text AND city=$6
+        AND postal_code IS NOT DISTINCT FROM $7::text AND country_code=$8::char(2)`,parameters)).rows[0];
+      if(unchanged)return unchanged;
+      const row=(await client.query<{id:string}>('SELECT app.upsert_party_primary_address($1,$2,$3,$4,$5,$6,$7,$8,$9) id',[...parameters,input.membershipId])).rows[0];
+      await client.query(`INSERT INTO outbox_events(tenant_id,aggregate_type,aggregate_id,event_type,payload)
+        VALUES($1,'party',$2,'party.address_updated.v1',jsonb_build_object('partyId',$2::uuid,'addressId',$3::uuid,'addressType',$4::text))`,[input.tenantId,input.partyId,row.id,value.addressType]);
+      return row;
+    });
+  }
   async addInterest(input:{tenantId:string;userId:string;unitId:string;partyId:string;eventType:string;note:string;membershipId:string}){return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{id:string}>("SELECT app.add_unit_interest($1,$2,$3,$4,$5,$6) id",[input.tenantId,input.unitId,input.partyId,input.eventType,input.note,input.membershipId])).rows[0]);}
   async findDuplicates(input:{tenantId:string;userId:string;membershipId:string;projectId:string;kind:string;firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;email?:string;phone?:string}):Promise<PartyDuplicateMatch[]>{
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},client=>this.findDuplicatesWithClient(client,input));
@@ -110,11 +131,11 @@ export class SalesRepository {
       const partyContactAccess=hasPartyScope?`(app.can_access_party(party.tenant_id,$2,party.id,true) OR ${archivedAccess})`:"true";
       const partyRows = await client.query<{
         salutation:string|null;birth_date:string|null;can_read_contract_identity:boolean;
-        id: string; display_name: string; party_type: string; lifecycle_status:ClientDirectoryItem["lifecycleStatus"]; email: string | null; phone: string | null;first_name:string|null;last_name:string|null;legal_name:string|null;registration_number:string|null;vat_number:string|null;contact_person:string|null;address:ClientDirectoryItem["address"];updated_at:string;
+        id: string; display_name: string; party_type: string; lifecycle_status:ClientDirectoryItem["lifecycleStatus"]; email: string | null; phone: string | null;first_name:string|null;last_name:string|null;legal_name:string|null;registration_number:string|null;vat_number:string|null;contact_person:string|null;address:ClientDirectoryItem["address"];delivery_address:ClientDirectoryItem['deliveryAddress'];updated_at:string;
         projects: Array<{ id: string; name: string; activeBuyerRelationship:boolean }>; units: string[];
         interest_history: ClientDirectoryItem["interestHistory"];
       }>(
-        `SELECT party.id,party.display_name,party.party_type,party.lifecycle_status,email.value AS email,phone.value AS phone,individual.first_name,individual.last_name,organization.legal_name,organization.registration_number,organization.vat_number,organization.contact_person,address.item address,party.updated_at,
+        `SELECT party.id,party.display_name,party.party_type,party.lifecycle_status,email.value AS email,phone.value AS phone,individual.first_name,individual.last_name,organization.legal_name,organization.registration_number,organization.vat_number,organization.contact_person,address.item address,delivery_address.item delivery_address,party.updated_at,
           (${partyContactAccess}) can_read_contract_identity,to_jsonb(individual)->>'salutation' salutation,CASE WHEN ${partyContactAccess} THEN to_jsonb(individual)->>'date_of_birth' ELSE NULL END birth_date,
           COALESCE(projects.items,'[]'::jsonb) projects,COALESCE(unit_rows.items,'[]'::jsonb) units,
           COALESCE(history.items,'[]'::jsonb) interest_history
@@ -124,6 +145,8 @@ export class SalesRepository {
          LEFT JOIN LATERAL (SELECT jsonb_build_object('line1',line1,'line2',line2,'city',city,'postalCode',postal_code,'countryCode',country_code,'addressType',address_type) item FROM party_addresses WHERE tenant_id=party.tenant_id AND party_id=party.id AND is_primary AND valid_to IS NULL
            AND address_type=CASE WHEN party.party_type='individual' THEN 'residence' ELSE 'registered_office' END
            AND ${partyContactAccess} ORDER BY created_at DESC LIMIT 1) address ON true
+         LEFT JOIN LATERAL (SELECT jsonb_build_object('line1',line1,'line2',line2,'city',city,'postalCode',postal_code,'countryCode',country_code,'addressType',address_type) item FROM party_addresses WHERE tenant_id=party.tenant_id AND party_id=party.id AND is_primary AND valid_to IS NULL
+           AND address_type='correspondence' AND ${partyContactAccess} ORDER BY created_at DESC LIMIT 1) delivery_address ON true
          LEFT JOIN LATERAL (SELECT value FROM party_contacts WHERE tenant_id=party.tenant_id AND party_id=party.id
            AND contact_type='email' AND archived_at IS NULL AND ${partyContactAccess} ORDER BY is_primary DESC,created_at LIMIT 1) email ON true
          LEFT JOIN LATERAL (SELECT value FROM party_contacts WHERE tenant_id=party.tenant_id AND party_id=party.id
@@ -281,7 +304,7 @@ export class SalesRepository {
           return { id: row.id,name: row.display_name,type: row.party_type === "individual" ? "Fyzická osoba" : "Právnická osoba",
             kind: row.party_type === "individual" ? "FO" : "PO",email,phone,contact: [email,phone].filter(Boolean).join(" · "),
             units: unitRelations.map(item=>item.code),unitRelations,projects: projectNames.join(", "),projectIds,projectNames,state,projectRelationships,
-            contractStatus: bestContract?.contractType ? `${bestContract.contractType}${bestContract.contractStatus?` · ${contractStatusLabel(bestContract.contractStatus)}`:""}` : "Bez smlouvy",initials: initials(row.display_name),interestHistory: row.interest_history,activityHistory:activitiesByParty.get(row.id)??[],canReadContractIdentity:row.can_read_contract_identity,salutation:row.salutation,birthDate:row.birth_date,firstName:row.first_name??undefined,lastName:row.last_name??undefined,legalName:row.legal_name??undefined,registrationNumber:row.registration_number??undefined,vatNumber:row.vat_number??undefined,contactPerson:row.contact_person??undefined,address:row.address,updatedAt:row.updated_at,lifecycleStatus:row.lifecycle_status };
+            contractStatus: bestContract?.contractType ? `${bestContract.contractType}${bestContract.contractStatus?` · ${contractStatusLabel(bestContract.contractStatus)}`:""}` : "Bez smlouvy",initials: initials(row.display_name),interestHistory: row.interest_history,activityHistory:activitiesByParty.get(row.id)??[],canReadContractIdentity:row.can_read_contract_identity,salutation:row.salutation,birthDate:row.birth_date,firstName:row.first_name??undefined,lastName:row.last_name??undefined,legalName:row.legal_name??undefined,registrationNumber:row.registration_number??undefined,vatNumber:row.vat_number??undefined,contactPerson:row.contact_person??undefined,address:row.address,deliveryAddress:row.delivery_address,updatedAt:row.updated_at,lifecycleStatus:row.lifecycle_status };
         }),
         unitContexts: Object.fromEntries(contextRows.rows.map((row) => [row.unit_id,{ unitId:row.unit_id,projectId:row.project_id,salesCaseId:row.sales_case_id,buyers: row.buyers,buyerHistory:row.buyer_history,interests: row.interests,stage: row.stage,hold: row.hold }])),
       };
