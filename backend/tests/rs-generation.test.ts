@@ -85,6 +85,23 @@ test('původní kompletní varianta rozliší terasu a číselné podlaží bez 
   for(const code of ['unsupported_terrace','unit_floor_number','outdoor_space_variant','accessory_variant','accessory_classification'])assert.ok(!result.issues.some(i=>i.code===code),code);
 });
 
+test('plánovaná data jsou vstupem konkrétní verze, nikoli důkazem podpisu nebo schválení šablony',async()=>{
+  let current=source({contractType:'sbk',templateVariant:ORIGINAL_DOB_FULL_VARIANT,templateApprovalStatus:'draft',approvedTemplateCount:0});
+  const service=new RsGenerationService({load:async()=>current} as never,{} as never);
+  assert.ok((await service.readiness({...context,contractId:current.contractId})).issues.some(item=>item.code==='planned_signing_dates'));
+  const signingPlan={versionId:'plan-version',sellerPlannedOn:'2026-11-02',buyerPlannedOn:'2026-11-03',editable:true};
+  current=source({...current,signingPlan});const result=await service.readiness({...context,contractId:current.contractId});
+  assert.deepEqual(result.summary?.signingPlan,signingPlan);assert.equal(result.ready,false);
+  assert.ok(!result.issues.some(item=>item.code==='planned_signing_dates'));
+  for(const code of ['approved_template','original_profile_review','signed_rs'])assert.ok(result.issues.some(item=>item.code===code));
+});
+test('dokument předchozí verze se po založení nové pracovní verze nevydává za aktuální',async()=>{
+  const current=source({documentId:'old-document',documentVersionId:'old-document-version',contractVersionId:'old-contract-version',contractVersion:1,webUrl:'https://sharepoint.example.test/old',signingPlan:{versionId:'new-contract-version',sellerPlannedOn:null,buyerPlannedOn:null,editable:true}});
+  const service=new RsGenerationService({load:async()=>current} as never,{} as never);
+  assert.equal((await service.readiness({...context,contractId:current.contractId})).currentDocument,null);
+  // The old document remains an internal upload/version target, not a current UI document.
+  assert.equal(current.documentId,'old-document');
+});
 test('návrh a nejednoznačný výběr šablon nesmějí ukázat připravenost ani spustit generování',async()=>{
   for(const extra of [{templateApprovalStatus:'draft',approvedTemplateCount:0},{templateApprovalStatus:'approved',approvedTemplateCount:2}]){
     const current=source(extra);const service=new RsGenerationService({load:async()=>current} as never,{generate:async()=>assert.fail('nejednoznačná šablona')} as never);

@@ -20,6 +20,7 @@ import {relatedUnitHref,relatedClientHref} from '../app/lib/entity-navigation';
 import {searchWorkspace} from '../app/lib/workspace-search';
 import {ClientContractLinks} from '../app/components/client-contract-links';
 import {ClientAddressSummary} from '../app/components/client-address-fields';
+import {ContractSigningPlanForm} from '../app/components/rs-generation-panel';
 import {RelatedUnitLink} from '../app/components/entity-links';
 import {useWorkspaceSearch} from '../app/components/workspace-search';
 import {catalogRepository} from '../app/repositories/catalog-repository';
@@ -29,6 +30,26 @@ import {ContractEndResult} from '../app/components/contract-end-result';
 import type {PaymentRecord} from '../app/repositories/payment-repository';
 import {clients as sampleClients,units as sampleUnits,contracts as sampleContracts} from '../app/crm-data';
 
+test('plánovaná data podpisu se uloží k přesné verzi a neprezentují se jako skutečný podpis',async()=>{
+ const original=commercialRepository.setSigningPlan;let sent:unknown;let refreshes=0;
+ commercialRepository.setSigningPlan=async(contractId,value)=>{sent={contractId,...value};};
+ try{
+  render(<ContractSigningPlanForm contractId="contract-test" plan={{versionId:'version-test',sellerPlannedOn:'2026-11-02',buyerPlannedOn:'2026-11-03',editable:true}} disabled={false} onSaved={async()=>{refreshes++;}}/>);
+  assert.ok(screen.getByText(/Nejde o evidenci skutečného podpisu/));
+  const buyer=screen.getByLabelText<HTMLInputElement>('Kupující – plánované datum podpisu');
+  fireEvent.change(buyer,{target:{value:'2026-11-04'}});
+  await userEvent.setup({document}).click(screen.getByRole('button',{name:'Uložit plánovaná data'}));
+  await waitFor(()=>assert.equal(refreshes,1));assert.deepEqual(sent,{contractId:'contract-test',versionId:'version-test',sellerPlannedOn:'2026-11-02',buyerPlannedOn:'2026-11-04'});
+ }finally{commercialRepository.setSigningPlan=original;}
+});
+test('selhání uložení plánovaných dat zachová formulář a zobrazí českou chybu',async()=>{
+ const original=commercialRepository.setSigningPlan;commercialRepository.setSigningPlan=async()=>{throw new Error('Vytvořte novou verzi smlouvy.');};
+ try{render(<ContractSigningPlanForm contractId="contract-test" plan={{versionId:'version-test',sellerPlannedOn:null,buyerPlannedOn:null,editable:true}} disabled={false} onSaved={async()=>assert.fail('nesmí obnovit úspěch')}/>);
+  await userEvent.setup({document}).click(screen.getByRole('button',{name:'Uložit plánovaná data'}));
+  assert.equal((await screen.findByRole('alert')).textContent,'Vytvořte novou verzi smlouvy.');
+  assert.equal(screen.getByRole('button',{name:'Uložit plánovaná data'}).hasAttribute('disabled'),false);
+ }finally{commercialRepository.setSigningPlan=original;}
+});
 test('přehled klienta rozliší bydliště a doručování a respektuje kontaktní oprávnění',()=>{
  const client={kind:'FO' as const,address:{addressType:'residence',line1:'Bydliště TEST',city:'Praha',countryCode:'CZ'},deliveryAddress:null,canReadContractIdentity:true};
  const view=render(<dl><ClientAddressSummary client={client}/></dl>);

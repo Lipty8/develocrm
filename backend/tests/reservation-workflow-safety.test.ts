@@ -81,6 +81,22 @@ for(const usePostgres of [false,true])test(`contract preparation source (${usePo
       assert.equal(result.contractType,'sbk');assert.equal(result.salesCaseId,c.caseId);assert.equal(result.unitId,c.unitId);
       assert.equal(result.signedRsCount,1);assert.equal(result.reservationFee,250000);assert.equal(result.paidReservationFee,0);
       assert.equal(result.approvedTemplateCount,0);
+      assert.ok(result.signingPlan?.versionId);assert.equal(result.signingPlan.sellerPlannedOn,null);assert.equal(result.signingPlan.buyerPlannedOn,null);assert.equal(result.signingPlan.editable,true);
+      const signingPlan={...context,contractId:sbk,versionId:result.signingPlan.versionId,sellerPlannedOn:'2026-11-02',buyerPlannedOn:'2026-11-03'};
+      assert.deepEqual(await repository.setSigningPlan(signingPlan),{changed:true});
+      assert.deepEqual(await repository.setSigningPlan(signingPlan),{changed:false});
+      if(usePostgres){const retry=await Promise.all([repository.setSigningPlan(signingPlan),repository.setSigningPlan(signingPlan)]);assert.ok(retry.every(value=>!value.changed));}
+      const savedPlan=(await repository.load({...context,contractId:sbk}))!.signingPlan!;
+      assert.deepEqual(savedPlan,{versionId:signingPlan.versionId,sellerPlannedOn:'2026-11-02',buyerPlannedOn:'2026-11-03',editable:true});
+      const unchangedContract=(await f.client.query<{signed_at:string|null;current_status:string}>('SELECT signed_at,current_status FROM contracts WHERE tenant_id=$1 AND id=$2',[f.ids.tenantId,sbk])).rows[0];
+      assert.equal(unchangedContract.signed_at,null);assert.equal(unchangedContract.current_status,'draft');
+      assert.equal((await f.client.query<{count:number}>("SELECT count(*)::int count FROM audit_log WHERE tenant_id=$1 AND entity_id=$2 AND action='contract.signing_plan_updated'",[f.ids.tenantId,signingPlan.versionId])).rows[0].count,1);
+      assert.equal((await f.client.query<{count:number}>("SELECT count(*)::int count FROM outbox_events WHERE tenant_id=$1 AND aggregate_id=$2 AND event_type='contract.signing_plan_updated.v1'",[f.ids.tenantId,sbk])).rows[0].count,1);
+      await assert.rejects(repository.setSigningPlan({...signingPlan,versionId:randomUUID()}),/SIGNING_PLAN_NEW_VERSION_REQUIRED/);
+      await assert.rejects(repository.setSigningPlan({...signingPlan,tenantId:randomUUID()}),/permission|tenant|unit/i);
+      await assert.rejects(repository.setSigningPlan({...signingPlan,membershipId:randomUUID()}),/permission/i);
+      await assert.rejects(repository.setSigningPlan({...signingPlan,contractId:c.contract_id,versionId:c.version_id}),/SIGNING_PLAN_CONTRACT_NOT_EDITABLE/);
+      await assert.rejects(f.client.query("UPDATE contract_versions SET seller_planned_signing_on='2026-12-01' WHERE tenant_id=$1 AND id=$2",[f.ids.tenantId,signingPlan.versionId]),/SIGNING_PLAN_COMMAND_REQUIRED/);
       const obligation=(await f.client.query<{id:string}>("SELECT id FROM payment_obligations WHERE tenant_id=$1 AND contract_id=$2 AND obligation_type='reservation_fee'",[f.ids.tenantId,c.contract_id])).rows[0];assert.ok(obligation);
       for(const expected of [125000,250000]){
         await f.client.query("SELECT app.record_payment($1,$2,125000,now(),NULL,NULL,NULL,'Technical preparation receipt',$3,$4)",[f.ids.tenantId,obligation.id,randomUUID(),f.ids.membershipId]);
@@ -121,7 +137,20 @@ for(const usePostgres of [false,true])test(`contract preparation source (${usePo
       const restricted=(await sales.getDirectory({tenantId:f.ids.tenantId,userId:readerUser,membershipId:readerMember,projectId:result.projectId})).clients.find(item=>item.id===party.id);assert.ok(restricted);
       assert.equal(restricted.canReadContractIdentity,false);assert.equal(restricted.address,null);assert.equal(restricted.deliveryAddress,null);
       await assert.rejects(sales.upsertAddress({...delivery,userId:readerUser,membershipId:readerMember}),/permission/i);
+      await assert.rejects(repository.setSigningPlan({...signingPlan,userId:readerUser,membershipId:readerMember}),/permission/i);
       }
+      await adapter.withContext(context,async client=>{await signatureDocument(client,f.ids.tenantId,f.ids.membershipId,sbk);});
+      assert.equal((await repository.load({...context,contractId:sbk}))!.signingPlan!.editable,false);
+      await assert.rejects(repository.setSigningPlan({...signingPlan,buyerPlannedOn:'2026-11-04'}),/SIGNING_PLAN_NEW_VERSION_REQUIRED/);
+      await assert.rejects(f.client.query("UPDATE contract_versions SET seller_planned_signing_on='2026-12-01' WHERE tenant_id=$1 AND id=$2",[f.ids.tenantId,signingPlan.versionId]),/SIGNING_PLAN_VERSION_IMMUTABLE/);
+      await adapter.withContext(context,async client=>{await client.query("SELECT app.create_contract_version($1,$2,'Technical new working version','manual',$3)",[f.ids.tenantId,sbk,f.ids.membershipId]);});
+      const nextPlan=(await repository.load({...context,contractId:sbk}))!.signingPlan!;assert.notEqual(nextPlan.versionId,signingPlan.versionId);assert.equal(nextPlan.sellerPlannedOn,null);assert.equal(nextPlan.buyerPlannedOn,null);assert.equal(nextPlan.editable,true);
+      const nextInput={...signingPlan,versionId:nextPlan.versionId,buyerPlannedOn:'2026-11-04'};
+      const changes=usePostgres?await Promise.all([repository.setSigningPlan(nextInput),repository.setSigningPlan(nextInput)]):[await repository.setSigningPlan(nextInput)];
+      assert.equal(changes.filter(value=>value.changed).length,1);
+      assert.equal((await f.client.query<{seller:string;buyer:string}>("SELECT seller_planned_signing_on::text seller,buyer_planned_signing_on::text buyer FROM contract_versions WHERE tenant_id=$1 AND id=$2",[f.ids.tenantId,signingPlan.versionId])).rows[0].buyer,'2026-11-03');
+      await f.client.query("SELECT app.transition_contract_status_with_refund_decisions($1,$2,'terminated','Technical plan test',$5::jsonb,$3,$4)",[f.ids.tenantId,c.contract_id,`plan-end:${c.contract_id}`,f.ids.membershipId,JSON.stringify([{obligationId:obligation.id,decision:'none'}])]);
+      await assert.rejects(repository.setSigningPlan({...nextInput,buyerPlannedOn:'2026-11-05'}),/SIGNING_PLAN_CONTRACT_NOT_EDITABLE/);
     }finally{await runtime?.close();}
   }finally{await f.close();}
 });

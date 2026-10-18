@@ -5,6 +5,23 @@ import {Clock3,ExternalLink,FileText,History} from 'lucide-react';
 import {commercialRepository,type RsReadiness} from '../repositories/commercial-repository';
 import {formatMoney} from '../crm-data';
 import {formatPragueDate} from '../lib/date-time';
+import {signingPlanDay,type ContractSigningPlan} from '../../backend/src/shared/contract-signing-plan';
+
+export function ContractSigningPlanForm({plan,contractId,disabled,onSaved}:{plan:ContractSigningPlan;contractId:string;disabled:boolean;onSaved:()=>Promise<void>}){
+  const [seller,setSeller]=useState(plan.sellerPlannedOn??'');const [buyer,setBuyer]=useState(plan.buyerPlannedOn??'');
+  const [saving,setSaving]=useState(false);const [error,setError]=useState('');
+  return <form className="contract-payment-terms" onSubmit={async event=>{
+    event.preventDefault();if(saving||disabled)return;setError('');setSaving(true);
+    try{await commercialRepository.setSigningPlan(contractId,{versionId:plan.versionId,sellerPlannedOn:signingPlanDay(seller||null),buyerPlannedOn:signingPlanDay(buyer||null)});await onSaved();}
+    catch(value){setError(value instanceof Error?value.message:'Plánovaná data se nepodařilo uložit.');}finally{setSaving(false);}
+  }}>
+    <h3>Plánovaná data podpisu</h3><p>Data budou uvedena v připravovaném dokumentu. Nejde o evidenci skutečného podpisu a neurčují splatnost platby.</p>
+    <div className="form-row"><label><span>Prodávající – plánované datum podpisu</span><input type="date" min="2000-01-01" max="2199-12-31" value={seller} disabled={disabled||saving} onChange={event=>setSeller(event.target.value)}/></label>
+      <label><span>Kupující – plánované datum podpisu</span><input type="date" min="2000-01-01" max="2199-12-31" value={buyer} disabled={disabled||saving} onChange={event=>setBuyer(event.target.value)}/></label></div>
+    {error&&<p className="form-error" role="alert">{error}</p>}
+    <button className="secondary-button compact" type="submit" disabled={disabled||saving}>{saving?'Ukládám…':'Uložit plánovaná data'}</button>
+  </form>;
+}
 
 export function RsPreparationReturn({search}:{search:string}){
   const target=new URLSearchParams(search.replace(/^\?/, '')).get('returnTo');
@@ -57,6 +74,7 @@ export function RsGenerationPanel({contractId,contractType='rs',canGenerate,onCh
         <div><dt>{summary.template?.approvalStatus&&summary.template.approvalStatus!=='approved'?'Šablona ke kontrole':'Schválená šablona'}</dt><dd>{summary.template?`${summary.template.name} · ${summary.template.version}`:'Není dostupná'}</dd></div>
         {summary.template?.effectiveFrom&&<div><dt>Šablona účinná od</dt><dd>{formatPragueDate(summary.template.effectiveFrom)}</dd></div>}
       </dl>}
+      {summary?.signingPlan&&(canGenerate&&summary.signingPlan.editable?<ContractSigningPlanForm key={`${summary.signingPlan.versionId}:${summary.signingPlan.sellerPlannedOn}:${summary.signingPlan.buyerPlannedOn}`} plan={summary.signingPlan} contractId={contractId} disabled={working||checking} onSaved={reload}/>:<div className="contract-payment-terms"><h3>Plánovaná data podpisu</h3><p>Prodávající: {formatPragueDate(summary.signingPlan.sellerPlannedOn)} · Kupující: {formatPragueDate(summary.signingPlan.buyerPlannedOn)}</p>{!summary.signingPlan.editable&&<p>Pro změnu dat v dokumentu vytvořte novou verzi smlouvy.</p>}</div>)}
       {readiness.issues.length>0&&<ul>{readiness.issues.map(item=><li key={`${item.code}-${item.field}`}><span>{item.message}</span>{item.action&&<Link href={item.action.href}>{item.action.label}</Link>}</li>)}</ul>}
       <div className="project-detail-actions"><button className="secondary-button compact" onClick={()=>void reload()} disabled={working||checking}>Znovu zkontrolovat</button>
         {readiness.currentDocument&&onShowVersions&&<button className="secondary-button compact" onClick={onShowVersions}><History size={15}/> Historie verzí</button>}

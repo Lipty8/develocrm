@@ -22,6 +22,7 @@ import { DocxTemplateError } from "./documents/docx-template.js";
 import {DocumentTemplateManagementRepository} from "./documents/template-management-repository.js";
 import {DocumentTemplateManagementService,TemplateManagementError} from "./documents/template-management-service.js";
 import {RsGenerationRepository} from "./contracts/rs-generation-repository.js";
+import {ContractSigningPlanValidationError} from './shared/contract-signing-plan.js';
 import {RsGenerationError,RsGenerationService} from "./contracts/rs-generation-service.js";
 import {ContractDocumentEvidenceService,ContractDocumentError} from "./contracts/document-evidence-service.js";
 import { HandoverRepository } from "./handovers/repository.js";
@@ -667,6 +668,14 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
       return{readiness:await rsGeneration.readiness({...context,contractId:request.params.contractId})};
     }catch(error){request.log.warn({event:"contract.readiness_failed",correlationId:request.id,contractId:request.params.contractId,errorName:error instanceof Error?error.name:"Error"},"contract readiness failed");
       return reply.code(permissionError(error)?403:409).send({error:permissionError(error)?"Nemáte oprávnění zobrazit připravenost smlouvy.":"Připravenost smlouvy se nepodařilo ověřit.",correlationId:request.id});}
+  });
+  app.post<{Params:{contractId:string};Body:{versionId:string;sellerPlannedOn:string|null;buyerPlannedOn:string|null}}>("/v1/contracts/:contractId/signing-plan",async(request,reply)=>{
+    try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:'Workspace není uživateli přístupný'});
+      if(!rsGeneration)return reply.code(503).send({error:'Příprava smluv není v tomto prostředí dostupná.'});
+      const {versionId,sellerPlannedOn,buyerPlannedOn}=request.body;
+      return await rsGeneration.setSigningPlan({...context,contractId:request.params.contractId,versionId,sellerPlannedOn,buyerPlannedOn});
+    }catch(error){request.log.warn({event:'contract.signing_plan_failed',correlationId:request.id,errorName:error instanceof Error?error.name:'Error'},'contract signing plan failed');
+      return reply.code(permissionError(error)?403:error instanceof ContractSigningPlanValidationError?422:409).send({error:permissionError(error)?'Nemáte oprávnění upravit přípravu smlouvy.':error instanceof ContractSigningPlanValidationError?error.message:'Plánovaná data nelze změnit. Ověřte, že upravujete aktuální rozpracovanou verzi bez dokumentu; jinak vytvořte novou verzi.',correlationId:request.id});}
   });
   app.post<{Params:{contractId:string};Body:{idempotencyKey:string}}>("/v1/contracts/:contractId/generate-rs",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});

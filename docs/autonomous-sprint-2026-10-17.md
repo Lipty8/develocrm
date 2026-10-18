@@ -158,6 +158,16 @@ Průběžný verdikt: správa nových neaktivních originálových profilů a je
 - Frontend 143 passed, interaction 76 passed, oba TypeScript checky, lint a oba produkční buildy prošly. Interakce pokrývají explicitní kopírování, nezávislé adresy, českou validaci před uložením, nullable DB hodnoty, skrytí bez oprávnění a chybějící adresu bez fallbacku.
 - Tento balík je oddělený od nasazeného `fc98196`; browser/pilot persistence pro nový formulář zatím nebyla provedena. Nové právní varianty zůstávají neaktivní a celý RS/SBK sprint nedokončený.
 
+## Balík 9 Plánovaná data podpisu podle konkrétní verze
+
+- Audit odlišil skutečné `signed_at` od plánovaných dat vytištěných v originálových RS/SBK. Existující `contract_versions` rozšířena migrací 0064 o dvě nullable date pole. Bez nové tabulky, bez backfillu, bez změny skutečných podpisů nebo splatností.
+- Jedna řízená operace pod existujícím unit zámkem ověřuje tenant, skutečného aktéra/membership, projektové `contract.manage`, aktivní sales case, RS/SBK a přesné ID poslední pracovní verze. Shodný retry nemění historii ani audit/outbox. Neplatné kalendářní datum se odmítá před SQL.
+- Plán nelze změnit u verze s navázaným dokumentem, u podepsané/uzamčené verze ani v ukončeném obchodě. Databázový trigger chrání i přímou změnu; nové datum po vytvoření dokumentu vyžaduje explicitní novou pracovní verzi. Staré plánované hodnoty zůstávají zachované u staré verze.
+- Společný RS/SBK panel obsahuje malý formulář dvou dat, explicitně odlišený od skutečné evidence podpisu. Serverové readiness již nevydává plánovací gap, pokud má aktuální verze obě data; ostatní originálové a schvalovací překážky tím nezmizí. Předchozí dokument se po založení nové prázdné verze nevydává za aktuální, ale zůstává interním cílem pro řádné verzování uploadu.
+- Bind generovaného dokumentu nyní využije poslední prázdnou manuální pracovní verzi i s číslem vyšším než v01; nedělá zbytečnou další verzi a neztrácí její plánovací údaje. Nezapíná se dosud nepodporované originálové generování.
+- Průběžná úplná backend sada 356 passed, 3 volitelné native PG skipped; finální cílený běh skutečný PostgreSQL/PGlite + RS readiness + datumové testy 63 passed / 0 skipped. Pokrývá také dvě souběžná stejná uložení, přesné audit/outbox počty, odmítnutí po navázání dokumentu a po uzavření obchodu, novou verzi s původní historií a čtenáře bez contract oprávnění. Při doplnění testu uzavření byla správně odmítnuta testovací uhrazená RS bez explicitního finančního rozhodnutí; fixture nyní předává výslovné syntetické rozhodnutí, produkční finanční pravidla nezměněna.
+- Interaction 78 passed, frontend 143 passed, produkční frontend build úspěšný. Závěrečný frontend/backend typecheck, backend build a lint prošly. Tento balík ani migrace 0064 zatím nejsou v pilotu; poslední zdravé matching nasazení zůstává Sites 148 / `readiness-fc98196`. Před pilotní aktivací je nutné matching nasazení a technický browser E2E. Skutečná obchodní data nezměněna.
+
 ## Následující prioritní balíky
 
 1. Autorizované scalar mapování RS/SBK se strukturovanou readiness; chybějící údaje doplnit do stávajících projektových nastavení/identit, nikoli z UI posílat libovolná render data.

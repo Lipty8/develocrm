@@ -33,7 +33,8 @@ export function originalContractIssues(source:RsSource):RsReadinessIssue[]{
   // No canonical legal-right metadata currently proves the source's garage
   // co-ownership. Keep the gate explicit, even if all physical items exist.
   add('accessory_legal_basis','unit.accessories','Je nutné ověřit právní formu příslušenství a spoluvlastnický podíl garáže podle smluvní varianty.');
-  add('planned_signing_dates','contract.signingDates','Doplňte plánovaná data podpisu prodávajícího a kupujícího. Datum vytvoření dokumentu je nenahrazuje.');
+  if(!source.signingPlan?.sellerPlannedOn||!source.signingPlan.buyerPlannedOn)
+    add('planned_signing_dates','contract.signingDates','Doplňte plánovaná data podpisu prodávajícího a kupujícího. Datum vytvoření dokumentu je nenahrazuje.');
   if(!source.variableSymbol)add('payment_reference','contract.payment','Platební povinnost nemá jednoznačný variabilní symbol pro tuto smlouvu.');
   if(sbk){
     if(!source.buyers[0]?.deliveryAddress?.trim())add('buyer_delivery_address','buyer.deliveryAddress','Kupující nemá vyplněnou doručovací adresu.');
