@@ -7,6 +7,8 @@ import {sellerSettingFields} from '../shared/project-contract-settings.js';
 import {ORIGINAL_DOB_FULL_VARIANT} from '../documents/template-catalog.js';
 import {originalContractIssues} from './original-contract-readiness.js';
 import {ORIGINAL_CONTRACT_TERMS} from './original-payment-plan.js';
+import {buildOriginalContractSnapshot} from './original-contract-snapshot.js';
+import {originalMoney} from './original-money.js';
 export type {RsReadiness,RsReadinessIssue} from '../shared/rs-readiness.js';
 export class RsGenerationError extends Error{constructor(readonly code:string,readonly issues:RsReadinessIssue[]=[]){super("Rezervační smlouvu se nepodařilo vytvořit.");this.name="RsGenerationError";}}
 
@@ -84,7 +86,9 @@ function issueAction(item:RsReadinessIssue,source:RsSource):RsReadinessIssue['ac
   if(item.field.startsWith('project'))return{href:`/projects/${source.projectId}?${back}`,label:'Otevřít projekt'};
   return undefined;
 }
-export function buildSnapshot(source:RsSource):Record<string,string>{const buyer=source.buyers[0],seller=source.settings!;const underground=(a:RsAccessory)=>a.type==='garage'||a.type==='parking'&&(/\bPP\b/i.test(a.floorLabel??'')||/garáž/i.test(a.description??''));const parking=source.accessories.filter(a=>a.type==='parking'&&!underground(a)),garage=source.accessories.filter(underground),cellars=source.accessories.filter(a=>a.type==='cellar');
+export function buildSnapshot(source:RsSource):Record<string,string>{
+  if(source.templateVariant===ORIGINAL_DOB_FULL_VARIANT)return buildOriginalContractSnapshot(source);
+  const buyer=source.buyers[0],seller=source.settings!;const underground=(a:RsAccessory)=>a.type==='garage'||a.type==='parking'&&(/\bPP\b/i.test(a.floorLabel??'')||/garáž/i.test(a.description??''));const parking=source.accessories.filter(a=>a.type==='parking'&&!underground(a)),garage=source.accessories.filter(underground),cellars=source.accessories.filter(a=>a.type==='cellar');
   return{"seller.name":seller.name,"seller.address":seller.address,"seller.registryEntry":seller.registryEntry,"seller.registrationNumber":seller.registrationNumber,"seller.representative":seller.representative,"seller.email":seller.email,"seller.dataBox":seller.dataBox,"seller.bankAccount":seller.bankAccount,
     "buyer.salutation":buyer.salutation==='paní'?'Paní':'Pan',"buyer.name":`${buyer.firstName} ${buyer.lastName}`,"buyer.address":buyer.address!,"buyer.birthDate":formatDate(buyer.birthDate!),"buyer.email":buyer.email!,"buyer.phone":buyer.phone!,"buyer.dataBoxLine":buyer.dataBox?`Datová schránka: ${buyer.dataBox}`:"Datová schránka neuvedena",
     "project.name":source.projectName,"project.completionYear":source.completionYear!,"contract.reservationPeriodDays":String(source.reservationPeriodDays),"contract.date":formatDate(new Date().toISOString()),
@@ -99,6 +103,5 @@ function cellarClause(items:RsAccessory[]){if(!items.length)return"Sklep k Bytu 
 function issue(code:string,field:string,message:string):RsReadinessIssue{return{code,field,message};}
 function formatDate(value:string){return new Intl.DateTimeFormat("cs-CZ",{dateStyle:"long",timeZone:"Europe/Prague"}).format(new Date(value));}
 function formatArea(value:number){return new Intl.NumberFormat("cs-CZ",{maximumFractionDigits:2}).format(value);}
-function formatMoney(value:number){return new Intl.NumberFormat("cs-CZ",{style:"currency",currency:"CZK",maximumFractionDigits:0}).format(value);}
-function czechMoneyWords(value:number){const amount=Math.round(value);if(amount===0)return"nula korun českých";const groups:[[number,string,string,string],number][]=[[[1_000_000_000,"miliarda","miliardy","miliard"],Math.floor(amount/1_000_000_000)],[[1_000_000,"milion","miliony","milionů"],Math.floor(amount/1_000_000)%1000],[[1_000,"tisíc","tisíce","tisíc"],Math.floor(amount/1_000)%1000]];const parts:string[]=[];for(const [[,one,few,many],count] of groups)if(count){const last=count%100,unit=count%10;parts.push(chunkWords(count),unit===1&&last!==11?one:unit>=2&&unit<=4&&(last<12||last>14)?few:many);}const remainder=amount%1000;if(remainder)parts.push(chunkWords(remainder));return`${parts.join(" ")} korun českých`;}
-function chunkWords(value:number){const units=["","jeden","dva","tři","čtyři","pět","šest","sedm","osm","devět","deset","jedenáct","dvanáct","třináct","čtrnáct","patnáct","šestnáct","sedmnáct","osmnáct","devatenáct"],tens=["","","dvacet","třicet","čtyřicet","padesát","šedesát","sedmdesát","osmdesát","devadesát"],hundreds=["","sto","dvě stě","tři sta","čtyři sta","pět set","šest set","sedm set","osm set","devět set"];const result:string[]=[];if(value>=100){result.push(hundreds[Math.floor(value/100)]);value%=100;}if(value>=20){result.push(tens[Math.floor(value/10)]);value%=10;}if(value)result.push(units[value]);return result.join(" ");}
+function formatMoney(value:number){return`${originalMoney(value).display}\u00a0Kč`;}
+function czechMoneyWords(value:number){return`${originalMoney(value).words} korun českých`;}

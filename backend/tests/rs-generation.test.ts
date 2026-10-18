@@ -1,5 +1,5 @@
 import test from "node:test";import assert from "node:assert/strict";import {readFile} from "node:fs/promises";
-import {RsGenerationError,RsGenerationService} from "../src/contracts/rs-generation-service.js";
+import {RsGenerationError,RsGenerationService,buildSnapshot} from "../src/contracts/rs-generation-service.js";
 import {RsGenerationRepository} from "../src/contracts/rs-generation-repository.js";
 import {inspectDocxTemplate,renderDocxTemplate} from "../src/documents/docx-template.js";
 import {RS_PLACEHOLDERS} from "../src/documents/template-generation-service.js";
@@ -8,6 +8,13 @@ import {ORIGINAL_DOB_FULL_VARIANT} from '../src/documents/template-catalog.js';
 const context={tenantId:"10000000-0000-0000-0000-000000000001",userId:"10000000-0000-0000-0000-000000000002",membershipId:"10000000-0000-0000-0000-000000000003"};
 function source(overrides:Record<string,unknown>={}){return{contractId:"20000000-0000-0000-0000-000000000001",projectId:"20000000-0000-0000-0000-000000000002",projectName:"Rezidence Dejvice",projectCode:"DEJ",completionYear:"2027",unitId:"20000000-0000-0000-0000-000000000003",unitCode:"417",layout:"4+kk",floorLabel:"4. NP",areaM2:112.4,balconyM2:10,gardenM2:null,unitPrice:20_000_000,totalPrice:22_000_000,reservationFee:250_000,reservationFeeDueDays:3,reservationPeriodDays:30,settings:{name:"Rezidence Dejvice 2 s.r.o.",registrationNumber:"24106119",address:"Rohanské nábřeží 693/10, 186 00 Praha 8",registryEntry:"Městský soud v Praze, oddíl C, vložka 179591",representative:"Jaroslav Žahourek",email:"info@example.cz",dataBox:"abc123",bankAccount:"123/0100",bankName:"UniCredit Bank Czech Republic and Slovakia a.s."},salesCaseId:"20000000-0000-0000-0000-000000000004",reference:"RS-417",status:"draft",buyers:[{id:"20000000-0000-0000-0000-000000000005",partyType:"individual",displayName:"Jan Novák",salutation:"pan",firstName:"Jan",lastName:"Novák",birthDate:"1980-05-12",registrationNumber:null,address:"Květnová 1, 160 00 Praha 6",email:"jan@example.cz",phone:"+420 777 000 111",dataBox:null}],accessories:[{code:"P9",type:"parking",amount:800_000,floorLabel:"1. NP",description:"Venkovní stání"},{code:"S7",type:"cellar",amount:300_000,floorLabel:"1. PP",description:null}],templateVersionId:"20000000-0000-0000-0000-000000000006",templateHash:"sha256:test",documentId:null,documentVersionId:null,webUrl:null,contractVersion:null,...overrides};}
 
+test('starší RS mapování rovněž neztrácí haléře v číselné ani slovní ceně',()=>{
+  const current=source({totalPrice:22000000.03,reservationFee:250000.01});
+  const snapshot=buildSnapshot({...current,buyers:current.buyers.map(buyer=>({...buyer,partyType:'individual' as const}))});
+  assert.match(snapshot['contract.totalPriceClause'].replace(/\u00a0/g,' '),/22 000 000,03 Kč/);
+  assert.match(snapshot['contract.totalPriceClause'],/celých tři setiny/);
+  assert.match(snapshot['payment.reservationFeeClause'].replace(/\u00a0/g,' '),/250 000,01 Kč/);
+});
 test("RS připravenost rozlišuje kompletní a chybějící business údaje",async()=>{
   let current=source();const repository={load:async()=>current,bind:async()=>({versionId:"v1",versionNumber:1})};const generator={generate:async()=>({operationId:"op",documentId:"doc",documentVersionId:"docv",replayed:false})};
   const service=new RsGenerationService(repository as never,generator as never);assert.equal((await service.readiness({...context,contractId:current.contractId})).ready,true);
