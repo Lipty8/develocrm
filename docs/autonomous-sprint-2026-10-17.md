@@ -197,6 +197,15 @@ Průběžný verdikt: správa nových neaktivních originálových profilů a je
 
 ## Následující prioritní balíky
 
+### Checkpoint 19. 10. 2026 – smluvní vymezení příslušenství
+
+- Dokončen stávající inventář o explicitní právní formu sklepa/parkingu a podíl na garáži; bez odvozování z označení, podlaží, počtu parkingů nebo podílu kupujícího. Sdílená validace a původní scalar mapper hlídají kompatibilitu se skutečnou variantou. Nové právní profily nadále review-only.
+- Commity `3234bc1` a `cc5f0dd` na GitHubu; matching Sites source `02ee95520583ca188f4f0c6c614c61b0d92dcade`, shodný tree `8e295cf3a3127dc48ab16081fa8869f47fdb165f`. Sites 151 succeeded, backend `accessory-legal-cc5f0dd` Healthy/Running/latest ready, health/ready 200.
+- Aditivní migrace 0065 aplikována přes oddělený job a read-only checksum ověřen, bez backfillu. Příslušný API digest `sha256:b1c91a0bc52393d309d337f2522b1a16111ba0782b15cba87980db9411822871`.
+- Finální backend 374 passed / 4 optional skipped, cílený skutečný PostgreSQL/PGlite 23 passed / 0 skipped včetně 8 paralelních zápisů, frontend 143 passed, interaction 82 passed. Typecheck, lint a production buildy prošly.
+- Browser vytvořil pouze nové technické `TECH65-LEGAL-P` a `TECH65-LEGAL-S`; uložená právní forma/podíl přežily reload. Neúplný podíl se odmítl. Read-only DB ověřila právě jeden legal audit/outbox, jednu cenovou verzi a žádné přiřazení. Reálné položky a šablony beze změny. Detail v `docs/accessory-legal-facts-2026-10-19.md`.
+- Zbývá zejména persistence splatností podle skutečného podpisu/doručení, doplňování podlaží příslušenství, úplná technická Word kontrola právních originálů a samostatné obsahové schválení. Celý hlavní cíl není dokončen.
+
 1. Autorizované scalar mapování RS/SBK se strukturovanou readiness; chybějící údaje doplnit do stávajících projektových nastavení/identit, nikoli z UI posílat libovolná render data.
 2. Politika splatnosti podle skutečného podpisu a českých pracovních dnů, izolovaný technický platební kalendář a prevence duplicit RS → SBK; bez změn historických předpisů.
 3. Integrované contract/version/document evidence a stávající frontend přípravy pro oba typy, se zachováním sales case kontextu.
