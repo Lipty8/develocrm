@@ -2,6 +2,7 @@ import type {Database} from "../database.js";
 import type {DocumentContext} from "../documents/repository.js";
 import type {ProjectContractSettings} from '../shared/project-contract-settings.js';
 import {signingPlanDay,type ContractSigningPlan} from '../shared/contract-signing-plan.js';
+import {originalContractDate} from './original-contract-snapshot.js';
 
 export type RsBuyer={id:string;partyType:"individual"|"organization";displayName:string;salutation:string|null;firstName:string|null;lastName:string|null;
   birthDate:string|null;registrationNumber:string|null;address:string|null;email:string|null;phone:string|null;dataBox:string|null;deliveryAddress?:string|null};
@@ -27,10 +28,11 @@ export class RsGenerationRepository{
   }
 
   async completedGeneration(input:DocumentContext&{contractId:string;idempotencyKey:string}){
-    return this.database.withContext(input,async client=>(await client.query<{operationId:string;documentId:string;documentVersionId:string;templateVersionId:string;snapshot:Record<string,string>}>(`
-      SELECT g.id "operationId",g.output_document_id "documentId",g.output_document_version_id "documentVersionId",g.template_version_id "templateVersionId",g.generation_snapshot snapshot
+    return this.database.withContext(input,async client=>(await client.query<{operationId:string;documentId:string;documentVersionId:string;templateVersionId:string;snapshot:Record<string,string>;contractType:'rs'|'sbk'}>(`
+      SELECT g.id "operationId",g.output_document_id "documentId",g.output_document_version_id "documentVersionId",g.template_version_id "templateVersionId",g.generation_snapshot snapshot,c.contract_type "contractType"
       FROM document_generation_operations g JOIN contracts c ON c.tenant_id=g.tenant_id AND c.id=g.contract_id
       WHERE g.tenant_id=$1 AND g.contract_id=$3 AND g.idempotency_key=$4 AND g.state='completed'
+        AND g.project_id=c.project_id AND g.unit_id=c.unit_id AND g.sales_case_id=c.sales_case_id AND c.contract_type IN ('rs','sbk')
         AND app.has_project_permission(c.tenant_id,$2,c.project_id,'contract.manage')`,
       [input.tenantId,input.membershipId,input.contractId,input.idempotencyKey])).rows[0]??null);
   }
@@ -111,13 +113,30 @@ export class RsGenerationRepository{
   async bind(input:DocumentContext&{contractId:string;operationId:string;documentId:string;documentVersionId:string;templateVersionId:string;snapshot:Record<string,string>}):Promise<{versionId:string;versionNumber:number}>{
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
         await client.query("SELECT app.lock_workflow_unit($1,(SELECT unit_id FROM contracts WHERE tenant_id=$1 AND id=$2))",[input.tenantId,input.contractId]);
-        const existing=(await client.query<{id:string;version_number:number}>(`SELECT id,version_number FROM contract_versions WHERE tenant_id=$1 AND generation_operation_id=$2`,[input.tenantId,input.operationId])).rows[0];
+        const existing=(await client.query<{id:string;version_number:number}>(`SELECT id,version_number FROM contract_versions WHERE tenant_id=$1 AND generation_operation_id=$2
+          AND contract_id=$3 AND document_id=$4 AND document_version_id=$5 AND template_version_id=$6 AND generation_payload=$7::jsonb
+          AND EXISTS(SELECT 1 FROM contracts c WHERE c.tenant_id=$1 AND c.id=$3 AND app.has_project_permission(c.tenant_id,$8,c.project_id,'contract.manage'))`,[input.tenantId,input.operationId,input.contractId,input.documentId,input.documentVersionId,input.templateVersionId,input.snapshot,input.membershipId])).rows[0];
         if(existing)return{versionId:existing.id,versionNumber:existing.version_number};
-        const contract=(await client.query<{project_id:string;reference:string;current_status:string}>(`SELECT project_id,reference,current_status FROM contracts WHERE tenant_id=$1 AND id=$3 AND contract_type='rs' AND current_status NOT IN('signed','cancelled','terminated')
+        const contract=(await client.query<{project_id:string;reference:string;current_status:string;contract_type:'rs'|'sbk'}>(`SELECT project_id,reference,current_status,contract_type FROM contracts WHERE tenant_id=$1 AND id=$3 AND contract_type IN ('rs','sbk') AND current_status NOT IN('signed','cancelled','terminated')
           AND app.has_project_permission(tenant_id,$2,project_id,'contract.manage')
           AND EXISTS(SELECT 1 FROM sales_cases s WHERE s.tenant_id=contracts.tenant_id AND s.id=contracts.sales_case_id AND s.status='active' AND s.closed_at IS NULL) FOR UPDATE`,[input.tenantId,input.membershipId,input.contractId])).rows[0];
         if(!contract)throw new Error("contract.manage permission required");
-        const previous=(await client.query<{id:string;version_number:number;source_type:string;document_id:string|null}>(`SELECT id,version_number,source_type,document_id FROM contract_versions WHERE tenant_id=$1 AND contract_id=$2 ORDER BY version_number DESC LIMIT 1 FOR UPDATE`,[input.tenantId,input.contractId])).rows[0];
+        const operation=(await client.query<{id:string}>(`SELECT g.id FROM document_generation_operations g
+          JOIN contracts c ON c.tenant_id=g.tenant_id AND c.project_id=g.project_id AND c.id=g.contract_id
+          JOIN document_template_versions tv ON tv.tenant_id=g.tenant_id AND tv.project_id=g.project_id AND tv.id=g.template_version_id
+          JOIN document_templates template ON template.tenant_id=tv.tenant_id AND template.id=tv.template_id AND template.contract_type=c.contract_type
+          WHERE g.tenant_id=$1 AND g.project_id=$2 AND g.contract_id=$3 AND g.id=$4 AND g.state='completed'
+            AND g.unit_id=c.unit_id AND g.sales_case_id=c.sales_case_id AND g.output_document_id=$5
+            AND g.output_document_version_id=$6 AND g.template_version_id=$7 AND g.generation_snapshot=$8::jsonb`,
+          [input.tenantId,contract.project_id,input.contractId,input.operationId,input.documentId,input.documentVersionId,input.templateVersionId,input.snapshot])).rows[0];
+        if(!operation)throw new Error('CONTRACT_GENERATION_BINDING_MISMATCH');
+        const previous=(await client.query<{id:string;version_number:number;source_type:string;document_id:string|null;seller_planned_on:string|null;buyer_planned_on:string|null}>(`SELECT id,version_number,source_type,document_id,seller_planned_signing_on::text seller_planned_on,buyer_planned_signing_on::text buyer_planned_on FROM contract_versions WHERE tenant_id=$1 AND contract_id=$2 ORDER BY version_number DESC LIMIT 1 FOR UPDATE`,[input.tenantId,input.contractId])).rows[0];
+        if('contract.sellerPlannedDate' in input.snapshot||'contract.buyerPlannedDate' in input.snapshot){
+          if(!previous?.seller_planned_on||!previous.buyer_planned_on
+            ||input.snapshot['contract.sellerPlannedDate']!==originalContractDate(previous.seller_planned_on,'contract.sellerPlannedDate')
+            ||input.snapshot['contract.buyerPlannedDate']!==originalContractDate(previous.buyer_planned_on,'contract.buyerPlannedDate'))
+            throw new Error('CONTRACT_SIGNING_PLAN_CHANGED');
+        }
         let versionId:string;let versionNumber:number;
         if(previous&&previous.source_type==='manual'&&!previous.document_id){
           const updated=(await client.query<{id:string;version_number:number}>(`UPDATE contract_versions SET source_type='generated',display_name=$3,generation_payload=$4,
@@ -128,10 +147,13 @@ export class RsGenerationRepository{
           await client.query(`UPDATE contract_versions SET version_status='superseded' WHERE tenant_id=$1 AND contract_id=$2 AND version_status IN('working','approved_for_signing')`,[input.tenantId,input.contractId]);
           versionNumber=(previous?.version_number??0)+1;
           const created=(await client.query<{id:string}>(`INSERT INTO contract_versions(tenant_id,project_id,contract_id,version_number,based_on_version_id,source_type,display_name,generation_payload,created_by_membership_id,
-            document_id,document_version_id,template_version_id,generation_operation_id) VALUES($1,$3,$4,$5,$6,'generated',$7,$8,$2,$9,$10,$11,$12) RETURNING id`,
-            [input.tenantId,input.membershipId,contract.project_id,input.contractId,versionNumber,previous?.id??null,`${contract.reference}_v${String(versionNumber).padStart(2,'0')}`,input.snapshot,input.documentId,input.documentVersionId,input.templateVersionId,input.operationId])).rows[0];
+            document_id,document_version_id,template_version_id,generation_operation_id,seller_planned_signing_on,buyer_planned_signing_on) VALUES($1,$3,$4,$5,$6,'generated',$7,$8,$2,$9,$10,$11,$12,$13::date,$14::date) RETURNING id`,
+            [input.tenantId,input.membershipId,contract.project_id,input.contractId,versionNumber,previous?.id??null,`${contract.reference}_v${String(versionNumber).padStart(2,'0')}`,input.snapshot,input.documentId,input.documentVersionId,input.templateVersionId,input.operationId,previous?.seller_planned_on??null,previous?.buyer_planned_on??null])).rows[0];
           versionId=created.id;
         }
+        // The shared evidence check also requires the completed generation to be
+        // bound. Run it after binding, within this same rollback-safe transaction.
+        await client.query('SELECT app.assert_contract_document($1,$2,$3,$4)',[input.tenantId,input.contractId,input.documentId,input.documentVersionId]);
         if(['approved','signing'].includes(contract.current_status)){
           await client.query("SELECT set_config('app.contract_status_command','on',true)");
           await client.query("UPDATE contracts SET current_status='draft' WHERE tenant_id=$1 AND id=$2",[input.tenantId,input.contractId]);
@@ -139,9 +161,9 @@ export class RsGenerationRepository{
             VALUES($1,$2,$3,$4,'draft','documentRegenerated','Nová verze dokumentu vyžaduje schválení',$5,'automation')`,[input.tenantId,contract.project_id,input.contractId,contract.current_status,input.membershipId]);
         }
         await client.query(`INSERT INTO audit_log(tenant_id,actor_user_id,action,entity_type,entity_id,after_data)
-          SELECT $1,m.user_id,'contract.rs_generated','contract_version',$3,jsonb_build_object('contractId',$4::uuid,'documentId',$5::uuid,'documentVersionId',$6::uuid,'templateVersionId',$7::uuid,'versionNumber',$8::integer)
-          FROM tenant_memberships m WHERE m.tenant_id=$1 AND m.id=$2`,[input.tenantId,input.membershipId,versionId,input.contractId,input.documentId,input.documentVersionId,input.templateVersionId,versionNumber]);
-        await client.query(`INSERT INTO outbox_events(tenant_id,aggregate_type,aggregate_id,event_type,payload) VALUES($1,'contract',$2,'contract.rs_generated.v1',jsonb_build_object('contractId',$2::uuid,'contractVersionId',$3::uuid,'documentId',$4::uuid))`,[input.tenantId,input.contractId,versionId,input.documentId]);
+          SELECT $1,m.user_id,$9,'contract_version',$3,jsonb_build_object('contractId',$4::uuid,'documentId',$5::uuid,'documentVersionId',$6::uuid,'templateVersionId',$7::uuid,'versionNumber',$8::integer)
+          FROM tenant_memberships m WHERE m.tenant_id=$1 AND m.id=$2`,[input.tenantId,input.membershipId,versionId,input.contractId,input.documentId,input.documentVersionId,input.templateVersionId,versionNumber,`contract.${contract.contract_type}_generated`]);
+        await client.query(`INSERT INTO outbox_events(tenant_id,aggregate_type,aggregate_id,event_type,payload) VALUES($1,'contract',$2,$5,jsonb_build_object('contractId',$2::uuid,'contractVersionId',$3::uuid,'documentId',$4::uuid))`,[input.tenantId,input.contractId,versionId,input.documentId,`contract.${contract.contract_type}_generated.v1`]);
         return{versionId,versionNumber};
     });
   }

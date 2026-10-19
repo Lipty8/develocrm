@@ -7,7 +7,7 @@ const panel=await readFile(new URL("../app/components/rs-generation-panel.tsx",i
 const repository=await readFile(new URL("../app/repositories/commercial-repository.ts",import.meta.url),"utf8");
 const readinessRoute=await readFile(new URL("../app/api/commercial/contracts/[contractId]/rs-readiness/route.ts",import.meta.url),"utf8");
 const preparationRoute=await readFile(new URL("../app/api/commercial/contracts/[contractId]/preparation-readiness/route.ts",import.meta.url),"utf8");
-const generationRoute=await readFile(new URL("../app/api/commercial/contracts/[contractId]/generate-rs/route.ts",import.meta.url),"utf8");
+const generationRoute=await readFile(new URL("../app/api/commercial/contracts/[contractId]/generate/route.ts",import.meta.url),"utf8");
 
 test("detail RS ukazuje připravenost, chyby a jedinou generovací akci",()=>{
   assert.match(panel,/function RsGenerationPanel/);
@@ -22,11 +22,11 @@ test("detail RS ukazuje připravenost, chyby a jedinou generovací akci",()=>{
 
 test("frontend používá BFF a neposílá vlastní placeholder hodnoty",()=>{
   assert.match(repository,/getRsReadiness\(contractId/);
-  assert.match(repository,/generateRs\(contractId:string,idempotencyKey:string\)/);
-  assert.match(repository,/generate-rs[^\n]+body:JSON\.stringify\(\{idempotencyKey\}\)/);
+  assert.match(repository,/generateContract\(contractId:string,idempotencyKey:string\)/);
+  assert.match(repository,/\/generate[^\n]+body:JSON\.stringify\(\{idempotencyKey\}\)/);
   assert.match(readinessRoute,/\/v1\/contracts\/\$\{encodeURIComponent\(contractId\)\}\/rs-readiness/);
   assert.match(preparationRoute,/\/v1\/contracts\/\$\{encodeURIComponent\(contractId\)\}\/preparation-readiness/);
   assert.match(repository,/\/preparation-readiness/);
-  assert.match(generationRoute,/generate-rs/);
+  assert.match(generationRoute,/\/v1\/contracts\/\$\{encodeURIComponent\(contractId\)\}\/generate/);
   assert.match(generationRoute,/forwardBackendMutation/);
 });

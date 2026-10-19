@@ -12,7 +12,7 @@ function text(value:unknown,field:string):string{
   if(typeof value!=='string'||!value.trim()||value.length>4000||/[\u0000-\u001f\u007f]/.test(value)||/[{}]/.test(value))return fail(field);
   return value.trim();
 }
-function date(value:unknown,field:string){
+export function originalContractDate(value:unknown,field:string){
   if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(value))return fail(field);
   const parsed=new Date(`${value}T12:00:00Z`);
   if(!Number.isFinite(parsed.getTime())||parsed.toISOString().slice(0,10)!==value)return fail(field);
@@ -58,7 +58,7 @@ export function buildOriginalContractSnapshot(source:RsSource):Record<string,str
     'seller.dataBox':text(seller.dataBox,'seller.dataBox'),'seller.bankAccount':text(seller.bankAccount,'seller.bankAccount'),
     'seller.bankName':text(seller.bankName,'seller.bankName'),'seller.signatureName':text(seller.signatureName,'seller.signatureName'),
     'buyer.salutation':buyer.salutation==='paní'?'Paní':'Pan','buyer.name':`${text(buyer.firstName,'buyer.firstName')} ${text(buyer.lastName,'buyer.lastName')}`,
-    'buyer.address':text(buyer.address,'buyer.address'),'buyer.birthDate':date(buyer.birthDate,'buyer.birthDate'),
+    'buyer.address':text(buyer.address,'buyer.address'),'buyer.birthDate':originalContractDate(buyer.birthDate,'buyer.birthDate'),
     'buyer.email':text(buyer.email,'buyer.email'),'buyer.phone':text(buyer.phone,'buyer.phone'),
     'unit.code':text(source.unitCode,'unit.code'),'unit.floorNumber':`${source.floorNumber}.`,
     'unit.outdoorSpaceCase':sbk?(balcony?'Balkonu':'Terasy'):(balcony?'balkonu':'terasy'),
@@ -66,8 +66,8 @@ export function buildOriginalContractSnapshot(source:RsSource):Record<string,str
     'unit.cellarFloor':text(cellar.floorLabel,'unit.cellarFloor'),'unit.garageCode':text(garage.code,'unit.garageCode'),
     'unit.garageFloor':text(garage.floorLabel,'unit.garageFloor'),'unit.variableSymbol':text(source.variableSymbol,'unit.variableSymbol'),
     'contract.totalPriceAmount':total.display,'contract.totalPriceWords':total.words,
-    'contract.sellerPlannedDate':date(plan.sellerPlannedOn,'contract.sellerPlannedDate'),
-    'contract.buyerPlannedDate':date(plan.buyerPlannedOn,'contract.buyerPlannedDate'),
+    'contract.sellerPlannedDate':originalContractDate(plan.sellerPlannedOn,'contract.sellerPlannedDate'),
+    'contract.buyerPlannedDate':originalContractDate(plan.buyerPlannedOn,'contract.buyerPlannedDate'),
   };
   if(sbk){
     if(source.signedRsCount!==1)return fail('contract.predecessor');

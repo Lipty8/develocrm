@@ -118,16 +118,26 @@ test('návrh a nejednoznačný výběr šablon nesmějí ukázat připravenost a
   }
 });
 
-test("RS bind prepared statements nemají neotypované mezery v parametrech",async()=>{
-  const calls:Array<{sql:string;values:unknown[]}>=[];let step=0;
-  const client={query:async(sql:string,values:unknown[]=[])=>{calls.push({sql,values});if(sql.includes('lock_workflow_unit'))return{rows:[]};step++;
-    if(step===1)return{rows:[]};
-    if(step===2)return{rows:[{project_id:"20000000-0000-0000-0000-000000000002",reference:"RS-417"}]};
-    if(step===3)return{rows:[{id:"30000000-0000-0000-0000-000000000001",version_number:1,source_type:"manual",document_id:null}]};
-    if(step===4)return{rows:[{id:"30000000-0000-0000-0000-000000000001",version_number:1}]};
+for(const type of ['rs','sbk'] as const)test(`${type.toUpperCase()} bind ověřuje přesnou operaci a prepared statements bez mezer v parametrech`,async()=>{
+  const calls:Array<{sql:string;values:unknown[]}>=[];
+  const client={query:async(sql:string,values:unknown[]=[])=>{calls.push({sql,values});
+    if(sql.includes('SELECT project_id,reference,current_status,contract_type'))return{rows:[{project_id:"20000000-0000-0000-0000-000000000002",reference:"TEST-417",contract_type:type}]};
+    if(sql.includes('SELECT g.id FROM document_generation_operations'))return{rows:[{id:'operation'}]};
+    if(sql.includes('SELECT id,version_number,source_type,document_id'))return{rows:[{id:"30000000-0000-0000-0000-000000000001",version_number:3,source_type:"manual",document_id:null}]};
+    if(sql.includes('UPDATE contract_versions SET source_type='))return{rows:[{id:"30000000-0000-0000-0000-000000000001",version_number:3}]};
     return{rows:[]};}};
   const database={withContext:async(_context:unknown,work:(input:typeof client)=>Promise<unknown>)=>work(client)};
   const repository=new RsGenerationRepository(database as never);
   await repository.bind({...context,contractId:source().contractId,operationId:"40000000-0000-0000-0000-000000000001",documentId:"40000000-0000-0000-0000-000000000002",documentVersionId:"40000000-0000-0000-0000-000000000003",templateVersionId:"40000000-0000-0000-0000-000000000004",snapshot:{"project.name":"Rezidence Dejvice"}});
   for(const call of calls){const indexes=[...call.sql.matchAll(/\$(\d+)/g)].map(match=>Number(match[1]));const max=Math.max(0,...indexes);assert.equal(max,call.values.length);for(let index=1;index<=max;index++)assert.ok(indexes.includes(index),`SQL chybí parametr $${index}`);}
+  assert.ok(calls.some(call=>call.sql.includes('app.assert_contract_document')));
+  assert.ok(calls.some(call=>call.values.includes(`contract.${type}_generated`)));
+  assert.ok(calls.some(call=>call.values.includes('TEST-417_v03')));
+});
+test('staré RS URL nesmí generovat ani dokončit retry SBK',async()=>{
+ const contractId=source().contractId;
+ for(const completed of [false,true]){
+  const service=new RsGenerationService({load:async()=>source({contractType:'sbk'}),completedGeneration:async()=>completed?{contractType:'sbk'}:null,bind:async()=>assert.fail('nesmí připojit SBK přes RS alias')} as never,{generate:async()=>assert.fail('nesmí generovat')} as never);
+  await assert.rejects(service.generate({...context,contractId,idempotencyKey:'technical-legacy-alias',expectedContractType:'rs'}),error=>error instanceof RsGenerationError&&error.code==='contract_type_mismatch');
+ }
 });

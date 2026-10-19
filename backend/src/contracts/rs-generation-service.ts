@@ -29,16 +29,18 @@ export class RsGenerationService{
         template:source.templateVersionId?{name:source.templateName??'Smlouva',version:source.templateVersionLabel??'',effectiveFrom:source.templateEffectiveFrom??null,approvalStatus:source.templateApprovalStatus??'approved'}:null},
       currentDocument:source.documentId&&source.documentVersionId&&source.contractVersion&&(!source.signingPlan||source.signingPlan.versionId===source.contractVersionId)?{documentId:source.documentId,documentVersionId:source.documentVersionId,contractVersionId:source.contractVersionId??undefined,version:source.contractVersion,webUrl:source.webUrl}:null};
   }
-  async generate(input:DocumentContext&{contractId:string;idempotencyKey:string}){
+  async generate(input:DocumentContext&{contractId:string;idempotencyKey:string;expectedContractType?:'rs'}){
     const completed=await this.repository.completedGeneration?.(input);
     if(completed){
+      if(input.expectedContractType&&(completed.contractType??'rs')!==input.expectedContractType)throw new RsGenerationError('contract_type_mismatch');
       const version=await this.repository.bind({...input,...completed});
       return {operationId:completed.operationId,documentId:completed.documentId,documentVersionId:completed.documentVersionId,contractVersionId:version.versionId,contractVersion:version.versionNumber,replayed:true};
     }
     const source=await this.repository.load({...input,permission:"contract.manage"});if(!source)throw new RsGenerationError("contract_not_found");
+    if(input.expectedContractType&&(source.contractType??'rs')!==input.expectedContractType)throw new RsGenerationError('contract_type_mismatch');
     const issues=validate(source);if(issues.length)throw new RsGenerationError("not_ready",issues);
     const snapshot=buildSnapshot(source);const generated=await this.generator.generate({...input,projectId:source.projectId,templateVersionId:source.templateVersionId!,idempotencyKey:input.idempotencyKey,
-      unitId:source.unitId,partyId:source.buyers[0].id,salesCaseId:source.salesCaseId,contractId:source.contractId,documentId:source.documentMimeType==='application/pdf'?undefined:source.documentId??undefined,documentName:`Rezervační smlouva ${source.reference}`,snapshot});
+      unitId:source.unitId,partyId:source.buyers[0].id,salesCaseId:source.salesCaseId,contractId:source.contractId,documentId:source.documentMimeType==='application/pdf'?undefined:source.documentId??undefined,documentName:`${source.contractType==='sbk'?'Smlouva o budoucí kupní smlouvě':'Rezervační smlouva'} ${source.reference}`,snapshot});
     if(!generated.documentId||!generated.documentVersionId)throw new RsGenerationError("generation_incomplete");
     const version=await this.repository.bind({...input,contractId:source.contractId,operationId:generated.operationId,documentId:generated.documentId,documentVersionId:generated.documentVersionId,templateVersionId:source.templateVersionId!,snapshot});
     return{...generated,contractVersionId:version.versionId,contractVersion:version.versionNumber};

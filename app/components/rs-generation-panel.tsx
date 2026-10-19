@@ -46,8 +46,8 @@ export function RsGenerationPanel({contractId,contractType='rs',canGenerate,onCh
   async function generate(){
     if(working||checking||!readiness?.ready)return;
     setWorking(true);setError('');generationKey.current??=crypto.randomUUID();
-    try{await commercialRepository.generateRs(contractId,generationKey.current);generationKey.current=null;await reload();onChanged();}
-    catch(value){setError(value instanceof Error?value.message:'Rezervační smlouvu nelze vytvořit.');}
+    try{await commercialRepository.generateContract(contractId,generationKey.current);generationKey.current=null;await reload();onChanged();}
+    catch(value){setError(value instanceof Error?value.message:'Smlouvu nelze vytvořit.');}
     finally{setWorking(false);}
   }
   const summary=readiness?.summary;const money=(amount:number|null)=>amount==null?'—':formatMoney(amount);

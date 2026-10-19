@@ -18,7 +18,7 @@ test('přehled a konkrétní odkazy, chybějící údaj blokuje generování',as
 });
 test('retry po síťové chybě zachová stejný klíč a nevytváří nový požadavek',async()=>{
   mock.method(commercialRepository,'getRsReadiness',async()=>ready());const keys:string[]=[];let changes=0;
-  mock.method(commercialRepository,'generateRs',async(_id:string,key:string)=>{keys.push(key);if(keys.length===1)throw new Error('Dočasná chyba');return{operationId:'o',documentId:'d',documentVersionId:'dv',contractVersionId:'cv',contractVersion:1,replayed:true};});
+  mock.method(commercialRepository,'generateContract',async(_id:string,key:string)=>{keys.push(key);if(keys.length===1)throw new Error('Dočasná chyba');return{operationId:'o',documentId:'d',documentVersionId:'dv',contractVersionId:'cv',contractVersion:1,replayed:true};});
   render(<RsGenerationPanel contractId={contractId} canGenerate onChanged={()=>{changes++;}}/>);
   fireEvent.click(await screen.findByRole('button',{name:'Vygenerovat RS'}));await screen.findByText('Dočasná chyba');
   fireEvent.click(screen.getByRole('button',{name:'Vygenerovat RS'}));await waitFor(()=>assert.equal(changes,1));
@@ -28,6 +28,13 @@ test('návrat do tabu obnoví CRM data, konfigurace bez manage nenabízí genero
   let count=0;mock.method(commercialRepository,'getRsReadiness',async()=>{const result=ready();result.summary!.buyers[0].label=++count===1?'Původní kupující':'Opravený kupující';return result;});
   render(<RsGenerationPanel contractId={contractId} canGenerate={false} onChanged={()=>{}}/>);await screen.findByText('Původní kupující');
   fireEvent.focus(window);await screen.findByText('Opravený kupující');assert.equal(screen.queryByRole('button',{name:'Vygenerovat RS'}),null);
+});
+test('připravená SBK používá stejnou generovací operaci a správný vlastní název akce',async()=>{
+ mock.method(commercialRepository,'getRsReadiness',async()=>({...ready(),contractType:'sbk' as const}));let sent:string|undefined;
+ mock.method(commercialRepository,'generateContract',async(id:string)=>{sent=id;return{operationId:'o',documentId:'d',documentVersionId:'dv',contractVersionId:'cv',contractVersion:1,replayed:false};});
+ render(<RsGenerationPanel contractId={contractId} contractType='sbk' canGenerate onChanged={()=>{}}/>);
+ fireEvent.click(await screen.findByRole('button',{name:'Vygenerovat SBK'}));await waitFor(()=>assert.equal(sent,contractId));
+ assert.equal(screen.queryByRole('button',{name:'Vygenerovat RS'}),null);
 });
 test('SBK má společný přehled a konkrétní mezery bez nepravdivé splatnosti nebo nabídky RS',async()=>{
   mock.method(commercialRepository,'getRsReadiness',async()=>({...ready(),contractType:'sbk' as const,ready:false,

@@ -3,6 +3,7 @@ import test from "node:test";
 import {readFile,readdir} from "node:fs/promises";
 import {randomUUID} from "node:crypto";
 import {PGlite} from "@electric-sql/pglite";
+import {Pool} from 'pg';
 import {bootstrapIds,bootstrapPilotWorkspace,normalizeBootstrapInput} from "../src/iam/pilot-bootstrap.js";
 import {importDejvice} from "../src/imports/dejvice.js";
 import {InventoryImportService} from "../src/inventory/import-service.js";
@@ -20,9 +21,25 @@ import {RsGenerationService} from "../src/contracts/rs-generation-service.js";
 import {InventoryRepository} from "../src/inventory/repository.js";
 import {CommercialRepository} from "../src/commercial/repository.js";
 import {ConsistencyChecker} from '../src/diagnostics/consistency-checker.js';
+import {ORIGINAL_DOB_FULL_VARIANT,templateCatalog} from '../src/documents/template-catalog.js';
+import {createHash} from 'node:crypto';
 
-async function fixture(){
-  const db=new PGlite();const directory=new URL("../migrations/",import.meta.url);
+async function fixture(postgresUrl?:string){
+  const memory=postgresUrl?undefined:new PGlite();
+  const databaseName=`document_integrity_${randomUUID().replaceAll('-','')}`;
+  const admin=postgresUrl?new Pool({connectionString:postgresUrl}):undefined;
+  if(admin)await admin.query(`CREATE DATABASE "${databaseName}"`);
+  const url=postgresUrl?new URL(postgresUrl):undefined;if(url)url.pathname=`/${databaseName}`;
+  const pool=url?new Pool({connectionString:url.toString(),max:1}):undefined;
+  const db={
+    query:async<T=Record<string,unknown>>(sql:string,values?:unknown[]):Promise<{rows:T[];affectedRows?:number}>=>{
+      if(memory)return memory.query<T>(sql,values);
+      const result=await pool!.query(sql,values);return{rows:result.rows as T[],affectedRows:result.rowCount??undefined};
+    },
+    exec:async(sql:string)=>{if(memory)await memory.exec(sql);else await pool!.query(sql);},
+    close:async()=>{if(memory)await memory.close();if(pool)await pool.end();if(admin){await admin.query(`DROP DATABASE "${databaseName}"`);await admin.end();}},
+  };
+  const directory=new URL("../migrations/",import.meta.url);
   for(const name of (await readdir(directory)).filter(n=>/^\d+.*\.sql$/.test(n)&&!n.startsWith('0057')).sort())await db.exec(await readFile(new URL(name,directory),'utf8'));
   const normalized=normalizeBootstrapInput({entraTenantId:randomUUID(),adminOid:randomUUID(),adminEmail:"evidence@example.test",adminName:"Evidence Test",workspaceName:"Evidence Test",workspaceId:randomUUID()});
   const ids=bootstrapIds(normalized);const client={query:async(sql:string,values?:unknown[])=>{if(!values&&sql.includes(';')){await db.exec(sql);return{rows:[],rowCount:null};}const r=await db.query(sql,values);return{rows:r.rows,rowCount:r.affectedRows??null};}} as SqlClient;
@@ -54,8 +71,8 @@ async function fixture(){
   return{db,database,context,projectId,inventory,start,approve,sign,evidence,external,uploads,files,fileBytes,templates,management,rs};
 }
 
-test('price creation and signed document integrity against all migrations',async t=>{
-  const f=await fixture();try{
+for(const usePostgres of [false,true])test(`price creation and signed document integrity (${usePostgres?'PostgreSQL':'PGlite'})`,{skip:usePostgres&&!process.env.WORKFLOW_TEST_DATABASE_URL},async t=>{
+  const f=await fixture(usePostgres?process.env.WORKFLOW_TEST_DATABASE_URL:undefined);try{
     await t.test('initial zero and nonzero prices, retry, and price changes',async()=>{
       for(const price of [0,1234567]){const code=`PRICE-${price}`;const key=randomUUID();const input={...f.context,projectId:f.projectId,row:{rowNumber:1,code,areaM2:30,price},idempotencyKey:key};
         await f.inventory.createUnit(input);await f.inventory.createUnit(input);
@@ -86,13 +103,56 @@ test('price creation and signed document integrity against all migrations',async
       const template=await f.management.upload({...f.context,projectId:f.projectId,code:'rs-integrity',name:'Technical RS',outputTypeCode:'reservation_contract',versionLabel:'v1',fileName:'template.docx',mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',bytes,effectiveFrom:'2026-01-01'});
       const templateContext={...f.context,templateId:template.templateId,versionId:template.templateVersionId};await f.management.validate(templateContext);await f.management.approve(templateContext);
       const readiness=await f.rs.readiness({...f.context,contractId:c.contract_id});assert.equal(readiness.ready,true,JSON.stringify(readiness.issues));
+      const repository=new RsGenerationRepository(f.database);
+      await repository.setSigningPlan({...f.context,contractId:c.contract_id,versionId:c.version_id,sellerPlannedOn:'2026-10-20',buyerPlannedOn:'2026-10-21'});
       const key=randomUUID();const first=await f.rs.generate({...f.context,contractId:c.contract_id,idempotencyKey:key});const retry=await f.rs.generate({...f.context,contractId:c.contract_id,idempotencyKey:key});assert.equal(first.documentVersionId,retry.documentVersionId);assert.equal(retry.replayed,true);
+      const completed=await repository.completedGeneration({...f.context,contractId:c.contract_id,idempotencyKey:key});assert(completed);
+      await assert.rejects(repository.bind({...f.context,contractId:c.contract_id,...completed,snapshot:{...completed.snapshot,'buyer.name':'Tampered'}}),/CONTRACT_GENERATION_BINDING_MISMATCH/);
+      const firstSnapshot=(await f.db.query<{generation_payload:Record<string,string>}>("SELECT generation_payload FROM contract_versions WHERE id=$1",[first.contractVersionId])).rows[0].generation_payload;
       await f.db.query("UPDATE party_individual_details SET first_name='Corrected' WHERE tenant_id=$1 AND party_id=$2",[f.context.tenantId,c.partyId]);
       const second=await f.rs.generate({...f.context,contractId:c.contract_id,idempotencyKey:randomUUID()});assert.notEqual(second.documentVersionId,first.documentVersionId);assert.equal(second.contractVersion,2);
+      const plans=(await f.db.query<{seller:string;buyer:string;generation_payload:Record<string,string>}>("SELECT seller_planned_signing_on::text seller,buyer_planned_signing_on::text buyer,generation_payload FROM contract_versions WHERE contract_id=$1 ORDER BY version_number",[c.contract_id])).rows;
+      assert.equal(plans.length,2);for(const plan of plans){assert.equal(plan.seller,'2026-10-20');assert.equal(plan.buyer,'2026-10-21');}assert.deepEqual(plans[0].generation_payload,firstSnapshot);
       assert.equal((await f.db.query<{count:number}>("SELECT count(*)::int count FROM document_generation_operations WHERE contract_id=$1 AND state='completed'",[c.contract_id])).rows[0].count,2);
       c.version_id=second.contractVersionId;await f.approve(c);await f.evidence.exactFile({...f.context,contractId:c.contract_id,versionId:c.version_id});await f.sign(c);
       await assert.rejects(f.db.query("UPDATE document_generation_operations SET generation_snapshot='{}' WHERE output_document_version_id=$1",[second.documentVersionId]),/immutable/);
       assert.equal((await f.db.query<{count:number}>("SELECT count(*)::int count FROM document_versions WHERE document_id=$1",[first.documentId])).rows[0].count,2);
+    });
+    await t.test('SBK completed-generation binding: type, snapshot, exact document, plan race and retry',async()=>{
+      const base=await f.start();const contractId=(await f.db.query<{id:string}>("SELECT app.create_contract($1,$2,'sbk',$3,'Technical binding fixture',$4) id",[f.context.tenantId,base.salesCaseId,`SBK-BIND-${randomUUID()}`,f.context.membershipId])).rows[0].id;
+      const versionId=(await f.db.query<{id:string}>("SELECT id FROM contract_versions WHERE contract_id=$1 ORDER BY version_number DESC LIMIT 1",[contractId])).rows[0].id;
+      const repository=new RsGenerationRepository(f.database);
+      const plan={...f.context,contractId,versionId,sellerPlannedOn:'2026-10-17',buyerPlannedOn:'2026-10-17'};
+      await repository.setSigningPlan(plan);
+      const bytes=await readFile(new URL('../templates/review/sbk-dejvice-original-review.docx',import.meta.url));
+      const template=await f.management.upload({...f.context,projectId:f.projectId,code:'sbk-binding-fixture',name:'Technical SBK binding fixture',outputTypeCode:'future_purchase_contract',variantKey:ORIGINAL_DOB_FULL_VARIANT,versionLabel:'v1',fileName:'template.docx',mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',bytes,effectiveFrom:'2026-01-01'});
+      const templateContext={...f.context,templateId:template.templateId,versionId:template.templateVersionId};await f.management.validate(templateContext);
+      // Isolated DB fixture models a completed approved generation. The actual
+      // public service MUST still reject approval/generation of review profiles.
+      await assert.rejects(f.management.approve(templateContext),e=>(e as {code:string}).code==='template_generation_not_ready');
+      await f.database.withContext(f.context,client=>client.query('SELECT app.approve_document_template_version($1,$2,$3,$4)',[f.context.tenantId,f.context.membershipId,template.templateId,template.templateVersionId]));
+      const generations=new DocumentTemplateGenerationRepository(f.database);
+      const source=await generations.getTemplate({...f.context,projectId:f.projectId,templateVersionId:template.templateVersionId});assert(source);
+      const catalog=templateCatalog('future_purchase_contract',ORIGINAL_DOB_FULL_VARIANT)!;
+      const snapshot=Object.fromEntries(Object.entries(catalog.fields).map(([key,value])=>[key,value.sample]));
+      await assert.rejects(f.templates.generate({...f.context,projectId:f.projectId,templateVersionId:template.templateVersionId,idempotencyKey:randomUUID(),contractId,snapshot}),e=>(e as {code:string}).code==='template_generation_not_ready');
+      const rendered=await f.management.preview(templateContext);
+      const key=randomUUID();const operation=await generations.reserve({...f.context,projectId:f.projectId,template:source,idempotencyKey:key,requestHash:'a'.repeat(64),unitId:base.unitId,partyId:base.partyId,salesCaseId:base.salesCaseId,contractId,snapshot});
+      const output=await f.uploads.upload({...f.context,projectId:f.projectId,unitId:base.unitId,partyId:base.partyId,salesCaseId:base.salesCaseId,contractId,typeCode:'future_purchase_contract',idempotencyKey:`generation:${operation.id}`,documentName:'Technical SBK binding fixture',fileName:'fixture.docx',mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',bytes:rendered,versionLabel:'v1',status:'ready'});
+      await generations.complete({...f.context,operationId:operation.id,documentId:output.documentId,documentVersionId:output.documentVersionId,renderedContentHash:`sha256:${createHash('sha256').update(rendered).digest('hex')}`});
+      const input={...f.context,contractId,operationId:operation.id,documentId:output.documentId,documentVersionId:output.documentVersionId,templateVersionId:template.templateVersionId,snapshot};
+      await assert.rejects(repository.bind({...input,contractId:base.contract_id}),/CONTRACT_GENERATION_BINDING_MISMATCH/);
+      await assert.rejects(repository.bind({...input,tenantId:randomUUID()}));
+      await assert.rejects(repository.bind({...input,snapshot:{...snapshot,'buyer.name':'Wrong'}}),/CONTRACT_GENERATION_BINDING_MISMATCH/);
+      await repository.setSigningPlan({...plan,buyerPlannedOn:'2026-10-18'});
+      await assert.rejects(repository.bind(input),/CONTRACT_SIGNING_PLAN_CHANGED/);
+      assert.equal((await f.db.query<{source_type:string}>('SELECT source_type FROM contract_versions WHERE id=$1',[versionId])).rows[0].source_type,'manual');
+      await repository.setSigningPlan(plan);
+      await assert.rejects(f.db.query("UPDATE document_versions SET status_code='draft' WHERE id=$1",[output.documentVersionId]),/append-only/);
+      const bound=await repository.bind(input);const retry=await repository.bind(input);assert.deepEqual(retry,bound);assert.equal(bound.versionId,versionId);
+      await assert.rejects(repository.bind({...input,membershipId:randomUUID()}),/contract.manage permission required/);
+      const events=(await f.db.query<{audits:number;outbox:number}>("SELECT (SELECT count(*)::int FROM audit_log WHERE entity_id=$1 AND action='contract.sbk_generated') audits,(SELECT count(*)::int FROM outbox_events WHERE aggregate_id=$2 AND event_type='contract.sbk_generated.v1') outbox",[bound.versionId,contractId])).rows[0];assert.deepEqual(events,{audits:1,outbox:1});
+      assert.deepEqual((await f.db.query<{generation_payload:Record<string,string>}>('SELECT generation_payload FROM contract_versions WHERE id=$1',[bound.versionId])).rows[0].generation_payload,snapshot);
     });
     await t.test('external upload, exact hash, signature retry, and immutable document',async()=>{
       const c=await f.start();const uploaded=await f.external(c);const exact=await f.evidence.exactFile({...f.context,contractId:c.contract_id,versionId:uploaded.versionId});assert.deepEqual(exact.bytes,f.fileBytes);
