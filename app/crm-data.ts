@@ -42,6 +42,7 @@ export type UnitRecord = {
 export type AccessoryAssignmentRecord = { id:string; assignmentId?:string; code:string; type:string; category:string; areaM2:number|null; relation?:string|null; amount?:number; amountNet?:number|null; currency?:string };
 export type AccessoryAssignmentHistoryRecord = { assignmentId:string; unitId:string; unitCode:string; validFrom:string; validTo:string|null; assignedBy:string|null };
 export type CatalogAccessoryRecord = AccessoryAssignmentRecord & {
+  legalDetails?:import('../backend/src/shared/accessory-legal-details').AccessoryLegalDetails;
   project:string;
   projectBackendId?:string;
   subtype?:string|null;

@@ -18,7 +18,7 @@ function fixture(type:'rs'|'sbk'='rs'):RsSource{return{
  salesCaseId:'technical-case',reference:'TECH-RS-SBK',status:'draft',caseStatus:'active',variableSymbol:'701001',signedRsCount:1,paidReservationFee:250000,
  signingPlan:{versionId:'technical-version',sellerPlannedOn:'2026-11-02',buyerPlannedOn:'2026-11-03',editable:true},
  buyers:[{id:'technical-buyer',partyType:'individual',displayName:'Testovací Kupující',salutation:'paní',firstName:'Testovací',lastName:'Kupující',birthDate:'1990-01-01',registrationNumber:null,address:'Testovací bydliště 1, Praha, CZ',deliveryAddress:'Testovací doručování 3, Brno, CZ',email:'buyer@example.test',phone:'+420 777 000 701',dataBox:null}],
- accessories:[{code:'S-1',type:'cellar',amount:100000,floorLabel:'1.PP',description:null},{code:'P-1',type:'outdoor_parking',amount:200000,floorLabel:null,description:null},{code:'G-1',type:'garage',amount:200000,floorLabel:'1.PP',description:null}],
+ accessories:[{code:'S-1',type:'cellar',legalForm:'cellar_unit',amount:100000,floorLabel:'1.PP',description:null},{code:'P-1',type:'parking',legalForm:'outdoor_parking_use_right',amount:200000,floorLabel:null,description:null},{code:'G-1',type:'garage',legalForm:'garage_coownership',shareNumerator:1,shareDenominator:25,amount:200000,floorLabel:'1.PP',description:null}],
  templateVersionId:'technical-template-version',templateHash:'sha256:technical',templateApprovalStatus:'draft',approvedTemplateCount:0,documentId:null,documentVersionId:null,webUrl:null,contractVersion:null,
 };}
 const normalized=(value:string)=>value.replace(/\u00a0/g,' ');
@@ -64,9 +64,21 @@ test('mapování je deterministické, nemutuje zdroj a neobsahuje nepoužitá da
 });
 test('scalar mapper nezapíná schválení, právní fakta ani generationSupported',async()=>{
  for(const contractType of ['rs','sbk'] as const){const source=fixture(contractType);const readiness=await new RsGenerationService({load:async()=>source} as never,{} as never).readiness({tenantId:'technical-tenant',userId:'technical-user',membershipId:'technical-member',contractId:source.contractId});
-  assert.equal(readiness.ready,false);assert.ok(readiness.issues.some(issue=>issue.code==='accessory_legal_basis'));assert.ok(readiness.issues.some(issue=>issue.code==='original_profile_review'));
+  assert.equal(readiness.ready,false);assert.ok(!readiness.issues.some(issue=>issue.code==='accessory_legal_basis'));assert.ok(readiness.issues.some(issue=>issue.code==='original_profile_review'));
  }
  assert.equal(ORIGINAL_TEMPLATE_CATALOGS.reservation_contract.generationSupported,false);assert.equal(ORIGINAL_TEMPLATE_CATALOGS.future_purchase_contract.generationSupported,false);
+});
+test('smluvní forma se nedovozuje z kategorie, označení nebo popisu a nesprávný podíl blokuje mapper',()=>{
+ const missing=fixture();delete missing.accessories[2].legalForm;
+ assert.throws(()=>buildSnapshot(missing),OriginalContractSnapshotError);
+ const wrong=fixture('sbk');wrong.accessories[2].shareDenominator=24;
+ assert.throws(()=>buildSnapshot(wrong),OriginalContractSnapshotError);
+ const missingShare=fixture('sbk');delete missingShare.accessories[2].shareDenominator;delete missingShare.accessories[2].shareNumerator;
+ assert.throws(()=>buildSnapshot(missingShare),OriginalContractSnapshotError);
+ const formula=fixture();delete formula.accessories[2].shareDenominator;delete formula.accessories[2].shareNumerator;
+ assert.equal(buildSnapshot(formula)['unit.garageCode'],'G-1');
+ formula.accessories[2].shareNumerator=2;formula.accessories[2].shareDenominator=25;
+ assert.throws(()=>buildSnapshot(formula),OriginalContractSnapshotError);
 });
 test('přesné peníze neignorují haléře, záporné hodnoty ani přetečení DB rozsahu',()=>{
  for(const value of ['NaN','1e6','1000000000000','1.005','-1','2 000',Infinity])assert.throws(()=>originalMoney(value));

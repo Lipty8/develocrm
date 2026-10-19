@@ -1,4 +1,5 @@
 import type { Database } from "../database.js";
+import {normalizeAccessoryLegalDetails,type AccessoryUpdateInput} from '../shared/accessory-legal-details.js';
 import {archiveReadSql} from './project-visibility.js';
 import {validateProjectContractSettings,type ProjectContractSettings} from '../shared/project-contract-settings.js';
 
@@ -195,13 +196,14 @@ export class InventoryRepository {
          ORDER BY project.name, unit.code`,
         [input.tenantId, input.membershipId,input.projectId??null],
       );
-      const accessories=await client.query<{id:string;code:string;project_id:string;project_name:string;type:string;category:string;subtype:string|null;location:string|null;area_m2:string|null;available:boolean;archived:boolean;relation:string|null;amount:number;amount_net:number|null;currency:string;assignment_id:string|null;assigned_unit_id:string|null;assigned_unit_code:string|null;assigned_unit_status:string|null;assigned_client:string|null;assignment_history:Array<{assignmentId:string;unitId:string;unitCode:string;validFrom:string;validTo:string|null;assignedBy:string|null}>}>(
+      const accessories=await client.query<{id:string;code:string;project_id:string;project_name:string;type:string;category:string;subtype:string|null;location:string|null;area_m2:string|null;available:boolean;archived:boolean;relation:string|null;amount:number;amount_net:number|null;currency:string;assignment_id:string|null;assigned_unit_id:string|null;assigned_unit_code:string|null;assigned_unit_status:string|null;assigned_client:string|null;legal_details:import('../shared/accessory-legal-details.js').AccessoryLegalDetails;assignment_history:Array<{assignmentId:string;unitId:string;unitCode:string;validFrom:string;validTo:string|null;assignedBy:string|null}>}>(
         `SELECT accessory.id,accessory.code,accessory.project_id,project.name project_name,COALESCE(accessory.description,type.name) type,type.category,accessory.description subtype,accessory.floor_label location,accessory.area_m2::text,
           active_assignment.id IS NULL AND accessory.archived_at IS NULL available,accessory.archived_at IS NOT NULL archived,
           active_assignment.id assignment_id,active_assignment.unit_id assigned_unit_id,
           active_assignment.unit_code assigned_unit_code,active_assignment.commercial_status assigned_unit_status,buyers.names assigned_client,
           relation.target_code relation,COALESCE(price.amount,0)::float8 amount,price.amount_net::float8 amount_net,COALESCE(price.currency,'CZK') currency,
-          COALESCE(history.items,'[]'::jsonb) assignment_history
+          COALESCE(history.items,'[]'::jsonb) assignment_history,
+          jsonb_build_object('legalForm',to_jsonb(accessory)->'legal_form','shareNumerator',to_jsonb(accessory)->'coownership_numerator','shareDenominator',to_jsonb(accessory)->'coownership_denominator') legal_details
          FROM accessories accessory JOIN projects project ON project.tenant_id=accessory.tenant_id AND project.id=accessory.project_id
          JOIN accessory_types type ON type.tenant_id=accessory.tenant_id AND type.id=accessory.accessory_type_id
          LEFT JOIN LATERAL (
@@ -263,7 +265,7 @@ export class InventoryRepository {
           gardenM2: row.garden_m2 === null ? null : Number(row.garden_m2),
           floorLabel: row.floor_label, orientation: row.orientation, commercialStatus: row.commercial_status,businessStatus:row.business_status,currentBuyers:row.current_buyers,
           constructionStatus: row.construction_status,unitPrice:row.unit_price,accessoryPrice:row.accessory_price,totalPrice:row.total_price,updatedAt:row.updated_at, accessories: row.accessories,
-        })),accessories:accessories.rows.map(row=>({id:row.id,assignmentId:row.assignment_id??undefined,code:row.code,projectId:row.project_id,projectName:row.project_name,type:row.type,category:row.category,subtype:row.subtype,location:row.location,areaM2:row.area_m2===null?null:Number(row.area_m2),available:row.available,archived:row.archived,assignmentState:row.archived?"archived":row.assignment_id===null?"available":row.assigned_unit_status==="available"?"preassigned":"assigned",assignedUnitId:row.assigned_unit_id,assignedUnitCode:row.assigned_unit_code,assignedUnitStatus:row.assigned_unit_status,assignedClient:row.assigned_client,assignmentHistory:row.assignment_history,relation:row.relation,amount:row.amount,amountNet:row.amount_net,currency:row.currency})),memberships:memberships.rows,structures:structures.rows.map(row=>({id:row.id,projectId:row.project_id,projectName:row.project_name,name:row.name,kind:row.kind})),
+        })),accessories:accessories.rows.map(row=>({id:row.id,assignmentId:row.assignment_id??undefined,code:row.code,legalDetails:row.legal_details,projectId:row.project_id,projectName:row.project_name,type:row.type,category:row.category,subtype:row.subtype,location:row.location,areaM2:row.area_m2===null?null:Number(row.area_m2),available:row.available,archived:row.archived,assignmentState:row.archived?"archived":row.assignment_id===null?"available":row.assigned_unit_status==="available"?"preassigned":"assigned",assignedUnitId:row.assigned_unit_id,assignedUnitCode:row.assigned_unit_code,assignedUnitStatus:row.assigned_unit_status,assignedClient:row.assigned_client,assignmentHistory:row.assignment_history,relation:row.relation,amount:row.amount,amountNet:row.amount_net,currency:row.currency})),memberships:memberships.rows,structures:structures.rows.map(row=>({id:row.id,projectId:row.project_id,projectName:row.project_name,name:row.name,kind:row.kind})),
       };
     });
   }
@@ -315,11 +317,14 @@ export class InventoryRepository {
       [input.tenantId,input.projectId,input.category,input.code,input.areaM2??null,input.amount,input.amountNet??null,input.relatedAccessoryId??null,input.membershipId],
     )).rows[0]);
   }
-  async updateAccessory(input:{tenantId:string;userId:string;membershipId:string;accessoryId:string;code:string;areaM2?:number|null;amount:number;amountNet?:number|null;reason?:string}){
-    return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{id:string}>(
+  async updateAccessory(input:AccessoryUpdateInput&{tenantId:string;userId:string;membershipId:string}){
+    const legalDetails=input.legalDetails===undefined?undefined:normalizeAccessoryLegalDetails(input.legalDetails);
+    return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
+      if(legalDetails!==undefined)await client.query('SELECT app.set_accessory_legal_details($1,$2,$3::jsonb,$4)',[input.tenantId,input.accessoryId,JSON.stringify(legalDetails),input.membershipId]);
+      return(await client.query<{id:string}>(
       "SELECT app.update_project_accessory($1,$2,$3,$4,$5,$6,$7,$8) id",
       [input.tenantId,input.accessoryId,input.code,input.areaM2??null,input.amount,input.amountNet??null,input.reason??"Úprava příslušenství",input.membershipId],
-    )).rows[0]);
+    )).rows[0];});
   }
   async removeOrArchiveAccessory(input:{tenantId:string;userId:string;membershipId:string;accessoryId:string;reason:string}){
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>(await client.query<{outcome:{mode:"delete"|"archive";accessoryId:string}}>(

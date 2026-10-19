@@ -6,7 +6,7 @@ import {originalContractDate} from './original-contract-snapshot.js';
 
 export type RsBuyer={id:string;partyType:"individual"|"organization";displayName:string;salutation:string|null;firstName:string|null;lastName:string|null;
   birthDate:string|null;registrationNumber:string|null;address:string|null;email:string|null;phone:string|null;dataBox:string|null;deliveryAddress?:string|null};
-export type RsAccessory={code:string;type:string;amount:number;floorLabel:string|null;description:string|null};
+export type RsAccessory={id?:string;legalForm?:import('../shared/accessory-legal-details.js').AccessoryLegalForm|null;shareNumerator?:number|null;shareDenominator?:number|null;code:string;type:string;amount:number;floorLabel:string|null;description:string|null};
 export type RsSource={contractId:string;projectId:string;projectName:string;projectCode:string;completionYear:string|null;unitId:string;unitCode:string;
   contractType?:'rs'|'sbk';floorNumber?:number|null;templateVariant?:string;templateApprovalStatus?:string;approvedTemplateCount?:number;
   variableSymbol?:string|null;signedRsCount?:number;paidReservationFee?:number|null;
@@ -75,7 +75,7 @@ export class RsGenerationRepository{
             LEFT JOIN party_organization_details organization ON organization.tenant_id=party.tenant_id AND organization.party_id=party.id
             WHERE contract_party.tenant_id=contract.tenant_id AND contract_party.contract_id=contract.id
               AND contract_party.participant_role IN('buyer','co_buyer') AND contract_party.effective_to IS NULL),'[]'::jsonb) buyers,
-          COALESCE((SELECT jsonb_agg(item||jsonb_build_object('floorLabel',accessory.floor_label,'description',accessory.description) ORDER BY item->>'type',item->>'code')
+          COALESCE((SELECT jsonb_agg(item||jsonb_build_object('floorLabel',accessory.floor_label,'description',accessory.description,'legalForm',accessory.legal_form,'shareNumerator',accessory.coownership_numerator,'shareDenominator',accessory.coownership_denominator) ORDER BY item->>'type',item->>'code')
             FROM jsonb_array_elements(contract.accessory_price_snapshot) item LEFT JOIN accessories accessory ON accessory.tenant_id=contract.tenant_id AND accessory.id=(item->>'accessoryId')::uuid),'[]'::jsonb) accessories,
           template_version.id template_version_id,template_version.content_hash template_hash,template_version.name template_name,template_version.version_label,template_version.effective_from,
           template_version.variant_key,template_version.approval_status,template_version.approved_count,
@@ -180,6 +180,6 @@ function mapSource(row:Record<string,unknown>):RsSource{
     signedRsCount:Number(row.signed_count??0),paidReservationFee:row.paid_reservation_fee==null?null:Number(row.paid_reservation_fee),variableSymbol:row.variable_symbol?String(row.variable_symbol):null,
     signingPlan:row.plan_version_id?{versionId:String(row.plan_version_id),sellerPlannedOn:row.seller_planned_on?String(row.seller_planned_on):null,buyerPlannedOn:row.buyer_planned_on?String(row.buyer_planned_on):null,editable:row.plan_editable===true}:null,
     caseStatus:row.case_status?String(row.case_status):undefined,terraceM2:row.terrace_m2==null?null:Number(row.terrace_m2),templateName:row.template_name?String(row.template_name):null,templateVersionLabel:row.version_label?String(row.version_label):null,templateEffectiveFrom:row.effective_from?String(row.effective_from):null,contractVersionId:row.contract_version_id?String(row.contract_version_id):null,
-    salesCaseId:String(row.sales_case_id),reference:String(row.reference),status:String(row.current_status),buyers:(row.buyers as RsBuyer[])??[],accessories:((row.accessories as Array<Record<string,unknown>>)??[]).map(item=>({code:String(item.code),type:String(item.type),amount:Number(item.amount),floorLabel:item.floorLabel?String(item.floorLabel):null,description:item.description?String(item.description):null})),
+    salesCaseId:String(row.sales_case_id),reference:String(row.reference),status:String(row.current_status),buyers:(row.buyers as RsBuyer[])??[],accessories:((row.accessories as Array<Record<string,unknown>>)??[]).map(item=>({id:item.accessoryId?String(item.accessoryId):undefined,legalForm:item.legalForm as RsAccessory['legalForm'],shareNumerator:item.shareNumerator==null?null:Number(item.shareNumerator),shareDenominator:item.shareDenominator==null?null:Number(item.shareDenominator),code:String(item.code),type:String(item.type),amount:Number(item.amount),floorLabel:item.floorLabel?String(item.floorLabel):null,description:item.description?String(item.description):null})),
     templateVersionId:row.template_version_id?String(row.template_version_id):null,templateHash:row.template_hash?String(row.template_hash):null,documentMimeType:row.document_mime_type?String(row.document_mime_type):null,documentId:row.document_id?String(row.document_id):null,documentVersionId:row.document_version_id?String(row.document_version_id):null,webUrl:row.web_url?String(row.web_url):null,contractVersion:row.contract_version==null?null:Number(row.contract_version)};
 }

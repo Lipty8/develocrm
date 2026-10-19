@@ -6,6 +6,7 @@ export type TemplateCatalog={
   fields:Record<string,TemplateFieldDefinition>;
   /** False for review profiles until their server-side business mapping is ready. */
   generationSupported?:boolean;
+  legalRequirements?:{garageShare?:{numerator:number;denominator:number}};
 };
 
 export const ORIGINAL_DOB_FULL_VARIANT='dejvice-original-dob-full-v1';
@@ -79,6 +80,7 @@ export const ORIGINAL_TEMPLATE_CATALOGS:Record<string,TemplateCatalog>={
       'payment.reservationFeeWords':['Rezervační poplatek slovy','dvě stě padesát tisíc'],
     })},
   future_purchase_contract:{outputTypeCode:'future_purchase_contract',contractType:'sbk',label:'SBK Dejvice · kompletní varianta · datum narození',generationSupported:false,
+    legalRequirements:{garageShare:{numerator:1,denominator:25}},
     fields:scalarFields({...originalCommon,
       'buyer.deliveryAddress':['Doručovací adresa kupujícího','Doručovací 62, 160 00 Praha 6'],
       'seller.clientChangesBankAccount':['Účet klientských změn','TESTOVACÍ ÚČET KLIENTSKÝCH ZMĚN'],

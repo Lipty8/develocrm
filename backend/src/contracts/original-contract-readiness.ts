@@ -1,6 +1,24 @@
 import type {RsSource} from './rs-generation-repository.js';
 import type {RsReadinessIssue} from '../shared/rs-readiness.js';
 import {additionalSellerSettingFields} from '../shared/project-contract-settings.js';
+import {normalizeAccessoryLegalDetails,originalAccessoryKind} from '../shared/accessory-legal-details.js';
+import {ORIGINAL_TEMPLATE_CATALOGS} from '../documents/template-catalog.js';
+
+/** Only explicit canonical rights can prove compatibility with the pinned legal text. */
+export function originalAccessoryIssues(source:RsSource):RsReadinessIssue[]{
+  const issues:RsReadinessIssue[]=[];
+  const expected=ORIGINAL_TEMPLATE_CATALOGS[source.contractType==='sbk'?'future_purchase_contract':'reservation_contract'].legalRequirements?.garageShare;
+  for(const item of source.accessories){
+    const field=`unit.accessories.${item.id??item.code}`;
+    try{normalizeAccessoryLegalDetails({legalForm:item.legalForm??null,shareNumerator:item.shareNumerator,shareDenominator:item.shareDenominator});}
+    catch{issues.push({code:'accessory_legal_basis',field,message:`U příslušenství ${item.code} je neplatné smluvní vymezení nebo podíl.`});continue;}
+    const kind=originalAccessoryKind(item);
+    if(!kind)issues.push({code:'accessory_legal_basis',field,message:`U příslušenství ${item.code} doplňte nebo ověřte smluvní vymezení. Tato varianta podporuje sklep jako jednotku, venkovní užívací právo a podíl na garáži.`});
+    if(kind==='garage'&&((item.shareNumerator!=null&&item.shareNumerator!==1)||(expected&&(item.shareNumerator!==expected.numerator||item.shareDenominator!==expected.denominator))))
+      issues.push({code:'accessory_legal_share',field,message:expected?`Garážové stání ${item.code}: tato varianta smlouvy obsahuje podíl ${expected.numerator}/${expected.denominator}. Ověřte podklady a doplňte skutečný podíl; pro jiný podíl je potřeba schválená odpovídající varianta.`:`Garážové stání ${item.code}: podíl neodpovídá znění této varianty smlouvy (1 / konečný počet stání).`});
+  }
+  return issues;
+}
 
 /** Additional readiness for the pinned complete original variant. No legal
  * prose is composed here; missing canonical facts are never inferred from a
@@ -21,18 +39,15 @@ export function originalContractIssues(source:RsSource):RsReadinessIssue[]{
   if((source.gardenM2??0)<=0)add('garden_variant','unit.garden','Kompletní varianta obsahuje předzahrádku, která u jednotky není uvedena.');
   // The source contains one cellar, one outdoor right and one garage share.
   // A generic parking category is not evidence that it is outdoor parking.
-  const cellars=source.accessories.filter(a=>a.type==='cellar');
-  const garages=source.accessories.filter(a=>a.type==='garage');
-  const outdoor=source.accessories.filter(a=>a.type==='outdoor_parking');
+  const cellars=source.accessories.filter(a=>originalAccessoryKind(a)==='cellar');
+  const garages=source.accessories.filter(a=>originalAccessoryKind(a)==='garage');
+  const outdoor=source.accessories.filter(a=>originalAccessoryKind(a)==='outdoor_parking');
+  if(source.accessories.some(a=>!originalAccessoryKind(a)))add('accessory_classification','unit.accessories','Některé příslušenství nemá doložené smluvní zařazení podporované touto variantou.');
   for(const [items,key,label] of [[cellars,'cellar','sklep'],[garages,'garage','garážové stání'],[outdoor,'outdoorParking','venkovní parkovací stání']] as const){
     if(items.length!==1)add('accessory_variant',`unit.${key}`,`Kompletní varianta vyžaduje právě jedno ${label}. Ověřte příslušenství a jeho smluvní zařazení.`);
     else if(key!=='outdoorParking'&&!items[0].floorLabel?.trim())add('accessory_floor',`unit.${key}`,`U příslušenství ${items[0].code} chybí podlaží.`);
   }
-  if(source.accessories.some(a=>!['cellar','garage','outdoor_parking'].includes(a.type)))
-    add('accessory_classification','unit.accessories','Některé příslušenství nemá jednoznačné smluvní zařazení nebo není touto variantou podporované.');
-  // No canonical legal-right metadata currently proves the source's garage
-  // co-ownership. Keep the gate explicit, even if all physical items exist.
-  add('accessory_legal_basis','unit.accessories','Je nutné ověřit právní formu příslušenství a spoluvlastnický podíl garáže podle smluvní varianty.');
+  issues.push(...originalAccessoryIssues(source));
   if(!source.signingPlan?.sellerPlannedOn||!source.signingPlan.buyerPlannedOn)
     add('planned_signing_dates','contract.signingDates','Doplňte plánovaná data podpisu prodávajícího a kupujícího. Datum vytvoření dokumentu je nenahrazuje.');
   if(!source.variableSymbol)add('payment_reference','contract.payment','Platební povinnost nemá jednoznačný variabilní symbol pro tuto smlouvu.');

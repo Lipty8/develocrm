@@ -26,7 +26,7 @@ export interface CatalogRepository {
   assignAccessory(unitId:string, accessoryId:string): Promise<void>;
   removeAccessory(assignmentId:string): Promise<void>;
   createAccessory(input:{projectId:string;category:"parking"|"cellar"|"wallbox";code:string;areaM2?:number|null;amount:number;amountNet?:number|null;relatedAccessoryId?:string|null}):Promise<void>;
-  updateAccessory(input:{accessoryId:string;code:string;areaM2?:number|null;amount:number;amountNet?:number|null;reason?:string}):Promise<void>;
+  updateAccessory(input:import('../../backend/src/shared/accessory-legal-details').AccessoryUpdateInput):Promise<void>;
   removeOrArchiveAccessory(accessory:CatalogAccessoryRecord,reason:string):Promise<{mode:"delete"|"archive"}>;
 }
 
@@ -92,11 +92,11 @@ export class ApiCatalogRepository implements CatalogRepository {
       localStorage.setItem("develocrm.new.accessories",JSON.stringify(rows));
     }
   }
-  async updateAccessory(input:{accessoryId:string;code:string;areaM2?:number|null;amount:number;amountNet?:number|null;reason?:string}){
+  async updateAccessory(input:import('../../backend/src/shared/accessory-legal-details').AccessoryUpdateInput){
     const preview=await requestJson(`/api/catalog/accessories/${encodeURIComponent(input.accessoryId)}`,"PATCH",input);
     if(preview&&typeof window!=="undefined"){
       const edits=JSON.parse(localStorage.getItem("develocrm.accessory.edits")||"{}");
-      edits[input.accessoryId]={...(edits[input.accessoryId]||{}),code:input.code,areaM2:input.areaM2??null,amount:input.amount,amountNet:input.amountNet??null};
+      edits[input.accessoryId]={...(edits[input.accessoryId]||{}),code:input.code,areaM2:input.areaM2??null,amount:input.amount,amountNet:input.amountNet??null,...(input.legalDetails===undefined?{}:{legalDetails:input.legalDetails})};
       localStorage.setItem("develocrm.accessory.edits",JSON.stringify(edits));
     }
   }

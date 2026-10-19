@@ -7,7 +7,7 @@ import {Pool} from 'pg';
 import {bootstrapIds,bootstrapPilotWorkspace,normalizeBootstrapInput} from "../src/iam/pilot-bootstrap.js";
 import {importDejvice} from "../src/imports/dejvice.js";
 import {InventoryImportService} from "../src/inventory/import-service.js";
-import type {Database,SqlClient} from "../src/database.js";
+import {Database,type SqlClient} from "../src/database.js";
 import {DocumentRepository} from "../src/documents/repository.js";
 import {SharePointDocumentUploadService} from "../src/documents/upload-service.js";
 import {ContractDocumentEvidenceService} from "../src/contracts/document-evidence-service.js";
@@ -68,11 +68,54 @@ async function fixture(postgresUrl?:string){
   const templates=new DocumentTemplateGenerationService(new DocumentTemplateGenerationRepository(database),new DocumentRepository(database),uploads,graph);
   const management=new DocumentTemplateManagementService(new DocumentTemplateManagementRepository(database),new DocumentTemplateGenerationRepository(database),new DocumentRepository(database),uploads,graph);
   const rs=new RsGenerationService(new RsGenerationRepository(database),templates);
-  return{db,database,context,projectId,inventory,start,approve,sign,evidence,external,uploads,files,fileBytes,templates,management,rs};
+  return{db,database,connectionUrl:url?.toString(),context,projectId,inventory,start,approve,sign,evidence,external,uploads,files,fileBytes,templates,management,rs};
 }
 
 for(const usePostgres of [false,true])test(`price creation and signed document integrity (${usePostgres?'PostgreSQL':'PGlite'})`,{skip:usePostgres&&!process.env.WORKFLOW_TEST_DATABASE_URL},async t=>{
   const f=await fixture(usePostgres?process.env.WORKFLOW_TEST_DATABASE_URL:undefined);try{
+    await t.test('canonical accessory legal facts: atomic update, isolation, category validation and retry',async()=>{
+      const repository=new InventoryRepository(f.database);
+      const created=await repository.createAccessory({...f.context,projectId:f.projectId,category:'parking',code:'LEGAL-TECH',amount:500000});
+      const id=created.id,details={legalForm:'garage_coownership' as const,shareNumerator:1,shareDenominator:25};
+      const update={...f.context,accessoryId:id,code:'LEGAL-TECH',amount:500000,legalDetails:details};
+      const read=async()=>(await f.db.query<{legal_form:string|null;coownership_numerator:number|null;coownership_denominator:number|null}>('SELECT legal_form,coownership_numerator,coownership_denominator FROM accessories WHERE id=$1',[id])).rows[0];
+      assert.equal((await read()).legal_form,null);
+      await repository.updateAccessory(update);await repository.updateAccessory(update);
+      assert.deepEqual(await read(),{legal_form:'garage_coownership',coownership_numerator:1,coownership_denominator:25});
+      const count=async(table:string,key:string)=>(await f.db.query<{count:number}>(`SELECT count(*)::int count FROM ${table} WHERE ${key}=$1 AND ${table==='audit_log'?"action='accessory.legal_details_updated'":"event_type='accessory.legal_details_updated.v1'"}`,[id])).rows[0].count;
+      assert.equal(await count('audit_log','entity_id'),1);assert.equal(await count('outbox_events','aggregate_id'),1);
+      await repository.updateAccessory({...update,legalDetails:undefined});assert.equal((await read()).coownership_denominator,25);
+      const snapshot=await repository.getCatalog(f.context);assert.deepEqual(snapshot.accessories.find(item=>item.id===id)?.legalDetails,details);
+      await assert.rejects(repository.updateAccessory({...update,legalDetails:{legalForm:'cellar_unit',shareNumerator:null,shareDenominator:null}}),/CATEGORY_MISMATCH/);
+      await assert.rejects(repository.updateAccessory({...update,tenantId:randomUUID()}),/tenant context/);
+      await assert.rejects(repository.updateAccessory({...update,membershipId:randomUUID()}),/permission/);
+      await assert.rejects(repository.updateAccessory({...update,accessoryId:randomUUID()}),/permission/);
+      const restrictedUser=randomUUID(),restrictedMember=randomUUID();
+      await f.db.query("INSERT INTO users(id,entra_issuer,entra_subject,email,display_name) VALUES($1,'technical-issuer',$2,'legal-scope@example.test','Technical scope')",[restrictedUser,randomUUID()]);
+      await f.db.query("INSERT INTO tenant_memberships(id,tenant_id,user_id,status,accepted_at) VALUES($1,$2,$3,'active',now())",[restrictedMember,f.context.tenantId,restrictedUser]);
+      const otherProject=await repository.createProject({...f.context,name:'Technical legal scope',code:'LEGAL-SCOPE',slug:'legal-scope',constructionStatus:'preparation',defaultCurrency:'CZK'});
+      await f.db.query("INSERT INTO project_custom_access(tenant_id,project_id,membership_id,area,access_level,assigned_by_user_id) VALUES($1,$2,$3,'units','edit',$4)",[f.context.tenantId,otherProject.id,restrictedMember,f.context.userId]);
+      await assert.rejects(f.database.withContext(f.context,async client=>{await client.query("SELECT set_config('app.user_id',$1,true)",[restrictedUser]);return client.query('SELECT app.set_accessory_legal_details($1,$2,$3::jsonb,$4)',[f.context.tenantId,id,JSON.stringify({...details,shareDenominator:26}),restrictedMember]);}),/permission/);
+      await assert.rejects(repository.updateAccessory({...update,legalDetails:{...details,shareNumerator:2,shareDenominator:1},amount:700000}),/smluvní vymezení/);
+      const other=await repository.createAccessory({...f.context,projectId:f.projectId,category:'parking',code:'LEGAL-OTHER',amount:1});assert.ok(other.id);
+      await assert.rejects(repository.updateAccessory({...update,code:'LEGAL-OTHER',legalDetails:{...details,shareDenominator:26},amount:700000}),/duplicate key/);
+      assert.equal((await read()).coownership_denominator,25);assert.equal(await count('audit_log','entity_id'),1);
+      assert.equal((await f.db.query<{count:number}>('SELECT count(*)::int count FROM accessory_price_history WHERE accessory_id=$1',[id])).rows[0].count,1);
+      await assert.rejects(f.database.withContext(f.context,client=>client.query("UPDATE accessories SET coownership_denominator=24 WHERE id=$1",[id])),/COMMAND_REQUIRED/);
+      await assert.rejects(f.database.withContext(f.context,client=>client.query('SELECT app.set_accessory_legal_details($1,$2,$3::jsonb,$4)',[f.context.tenantId,id,JSON.stringify({...details,shareDenominator:9999999999}),f.context.membershipId])),/ACCESSORY_LEGAL_INVALID/);
+    });
+    if(f.connectionUrl)await t.test('parallel PostgreSQL updates serialize on the same accessory without duplicate legal events',async()=>{
+      if(!f.connectionUrl)throw new Error('PostgreSQL concurrency fixture missing');
+      const runtime=new Database(f.connectionUrl);
+      try{
+        const repository=new InventoryRepository(runtime);
+        const created=await repository.createAccessory({...f.context,projectId:f.projectId,category:'parking',code:'LEGAL-CONCURRENT',amount:500000});
+        const input={...f.context,accessoryId:created.id,code:'LEGAL-CONCURRENT',amount:500000,legalDetails:{legalForm:'garage_coownership' as const,shareNumerator:1,shareDenominator:25}};
+        await Promise.all(Array.from({length:8},()=>repository.updateAccessory(input)));
+        const result=(await f.db.query<{audit:number;outbox:number;denominator:number}>("SELECT (SELECT count(*)::int FROM audit_log WHERE entity_id=a.id AND action='accessory.legal_details_updated') audit,(SELECT count(*)::int FROM outbox_events WHERE aggregate_id=a.id AND event_type='accessory.legal_details_updated.v1') outbox,a.coownership_denominator denominator FROM accessories a WHERE id=$1",[created.id])).rows[0];
+        assert.deepEqual(result,{audit:1,outbox:1,denominator:25});
+      }finally{await runtime.close();}
+    });
     await t.test('initial zero and nonzero prices, retry, and price changes',async()=>{
       for(const price of [0,1234567]){const code=`PRICE-${price}`;const key=randomUUID();const input={...f.context,projectId:f.projectId,row:{rowNumber:1,code,areaM2:30,price},idempotencyKey:key};
         await f.inventory.createUnit(input);await f.inventory.createUnit(input);

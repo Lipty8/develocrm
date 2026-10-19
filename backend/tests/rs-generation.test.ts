@@ -86,7 +86,7 @@ test('SBK používá vlastní typ, skutečné CRM vazby a bezpečně popsané me
 test('původní kompletní varianta rozliší terasu a číselné podlaží bez parsování textu',async()=>{
   const current=source({templateVariant:ORIGINAL_DOB_FULL_VARIANT,templateApprovalStatus:'approved',approvedTemplateCount:1,
     floorNumber:3,balconyM2:0,terraceM2:15,gardenM2:12,variableSymbol:'417',settings:{...source().settings,signatureName:'Testovací zástupce'},
-    accessories:[{code:'S1',type:'cellar',amount:100,floorLabel:'1.PP',description:null},{code:'P1',type:'outdoor_parking',amount:100,floorLabel:null,description:null},{code:'G1',type:'garage',amount:100,floorLabel:'1.PP',description:null}]});
+    accessories:[{code:'S1',type:'cellar',legalForm:'cellar_unit',amount:100,floorLabel:'1.PP',description:null},{code:'P1',type:'parking',legalForm:'outdoor_parking_use_right',amount:100,floorLabel:null,description:null},{code:'G1',type:'garage',legalForm:'garage_coownership',shareNumerator:1,shareDenominator:25,amount:100,floorLabel:'1.PP',description:null}]});
   const result=await new RsGenerationService({load:async()=>current} as never,{} as never).readiness({...context,contractId:current.contractId});
   assert.equal(result.ready,false);assert.ok(result.issues.some(i=>i.code==='original_profile_review'));
   for(const code of ['unsupported_terrace','unit_floor_number','outdoor_space_variant','accessory_variant','accessory_classification'])assert.ok(!result.issues.some(i=>i.code===code),code);

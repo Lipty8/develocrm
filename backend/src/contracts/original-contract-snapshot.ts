@@ -3,6 +3,8 @@ import {ORIGINAL_DOB_FULL_VARIANT,ORIGINAL_TEMPLATE_CATALOGS} from '../documents
 import {originalPaymentPlan} from './original-payment-plan.js';
 import {originalMoney} from './original-money.js';
 import {signingPlanDay} from '../shared/contract-signing-plan.js';
+import {originalAccessoryKind} from '../shared/accessory-legal-details.js';
+import {originalAccessoryIssues} from './original-contract-readiness.js';
 
 export class OriginalContractSnapshotError extends Error{
   constructor(readonly field:string){super('Údaje pro smlouvu nejsou úplné nebo konzistentní.');this.name='OriginalContractSnapshotError';}
@@ -27,7 +29,7 @@ function money(value:number|null|undefined,field:string){
   try{const result=originalMoney(value);if(result.minor<=BigInt(0))return fail(field);return result;}catch{return fail(field);}
 }
 function one(source:RsSource,type:string,field:string):RsAccessory{
-  const values=source.accessories.filter(item=>item.type===type);
+  const values=source.accessories.filter(item=>originalAccessoryKind(item)===type);
   if(values.length!==1)return fail(field);return values[0];
 }
 
@@ -45,7 +47,7 @@ export function buildOriginalContractSnapshot(source:RsSource):Record<string,str
   if(!Number.isInteger(source.floorNumber)||(source.floorNumber??0)<1)return fail('unit.floorNumber');
   const balcony=(source.balconyM2??0)>0,terrace=(source.terraceM2??0)>0;
   if(balcony===terrace)return fail('unit.outdoorSpace');area(source.gardenM2,'unit.garden');
-  if(source.accessories.some(item=>!['cellar','garage','outdoor_parking'].includes(item.type)))return fail('unit.accessories');
+  if(originalAccessoryIssues(source).length)return fail('unit.accessories');
   const cellar=one(source,'cellar','unit.cellar'),garage=one(source,'garage','unit.garage'),parking=one(source,'outdoor_parking','unit.outdoorParking');
   const total=money(source.totalPrice,'contract.totalPrice'),fee=money(source.reservationFee,'payment.reservationFee');
   if(fee.minor>total.minor)return fail('payment.reservationFee');

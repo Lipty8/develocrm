@@ -28,7 +28,20 @@ import {clientRepository} from '../app/repositories/client-repository';
 import {commercialRepository} from '../app/repositories/commercial-repository';
 import {ContractEndResult} from '../app/components/contract-end-result';
 import type {PaymentRecord} from '../app/repositories/payment-repository';
+import {EditAccessoryModal} from '../app/CRMApp';
 import {clients as sampleClients,units as sampleUnits,contracts as sampleContracts} from '../app/crm-data';
+
+test('celý formulář příslušenství uloží právní formu a neúplný podíl zastaví před requestem',async()=>{
+ const saved:Array<import('../backend/src/shared/accessory-legal-details').AccessoryUpdateInput>=[];
+ render(<EditAccessoryModal item={{id:'technical-accessory',code:'TECH-P1',type:'Parkovací stání',category:'parking',areaM2:null,amount:500000,project:'Technical',available:true}} close={()=>{}} save={async value=>{saved.push(value);}}/>);
+ fireEvent.change(screen.getByRole('combobox',{name:'Právní forma příslušenství'}),{target:{value:'garage_coownership'}});
+ fireEvent.change(screen.getByRole('spinbutton',{name:'Podíl – čitatel'}),{target:{value:'1'}});
+ await userEvent.setup({document}).click(screen.getByRole('button',{name:'Uložit'}));
+ await waitFor(()=>assert.match(screen.getByText(/Zkontrolujte smluvní vymezení/).textContent??'',/podíl/));assert.equal(saved.length,0);
+ fireEvent.change(screen.getByRole('spinbutton',{name:'Podíl – jmenovatel'}),{target:{value:'25'}});
+ await userEvent.setup({document}).click(screen.getByRole('button',{name:'Uložit'}));
+ await waitFor(()=>assert.equal(saved.length,1));assert.deepEqual(saved[0].legalDetails,{legalForm:'garage_coownership',shareNumerator:1,shareDenominator:25});assert.equal(saved[0].amount,500000);
+});
 
 test('plánovaná data podpisu se uloží k přesné verzi a neprezentují se jako skutečný podpis',async()=>{
  const original=commercialRepository.setSigningPlan;let sent:unknown;let refreshes=0;
