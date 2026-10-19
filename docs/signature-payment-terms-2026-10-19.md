@@ -1,7 +1,7 @@
 # Signature-bound RS/SBK payment terms
 
-Status: implemented and locally verified; coordinated deployment and authenticated
-pilot E2E are pending. No real pilot business data was changed. The separate
+Status: implemented, locally verified and deployed; authenticated pilot E2E is
+in progress. No real pilot business data was changed. The separate
 content-review gate for newly parameterized original legal templates remains
 closed.
 
@@ -74,8 +74,7 @@ existing transactions, allocations, events, audit and outbox.
 - Full frontend interaction suite: 93/93. Includes the actual creation modal,
   stale-unit responses, failed discovery, evidence upload/retry and no fabricated
   due date.
-- Frontend regression suite: 143/143 (latest run before delivery-panel addition;
-  repeat as part of final release gates).
+- Frontend regression suite: 143/143, repeated after the delivery-panel addition.
 - Root TypeScript, backend production build, frontend production build and
   changed-file lint passed. The existing large-bundle/static-route-analysis
   warnings remain.
@@ -107,3 +106,61 @@ existing transactions, allocations, events, audit and outbox.
    and SBK, exact-document signature, installments, delivery proof, repeat and
    reload. Verify audit/outbox and DB without touching real historical cases.
 5. Keep original RS/SBK legal profiles review-only until separate content approval.
+
+## Coordinated deployment evidence
+
+- Source commit: `44a77fd4ff7891b8c3cf09c9490a4706b348b062`, pushed to private GitHub.
+- Migration execution: `caj-develocrm-migrations-pilot-36amirl`, Succeeded.
+  Only 0066 was applied. Read-only verification execution
+  `caj-develocrm-migrations-pilot-3r1ol52` confirmed its stored checksum
+  `2b619c7e1b5ec34ee7b17fadc10eec1971b1c548bc1c1490289521fde5abc6b9`;
+  the previous migration remains 0065.
+- API image: `develocrm-api:signature-payments-44a77fd`, immutable digest
+  `sha256:57a0d6168ec528e69cf4dee3355fd3347df8ee91c5f366f9fa76141303109a33`.
+- Migration image digest:
+  `sha256:79e1252e8795b808ec868a07494465baa8abab7afe064ae6f242d1ca9af1020f`.
+- Backend: `ca-develocrm-api-pilot--signature-payments-44a77fd`, Healthy/Running
+  and latestReady. Liveness and readiness probes remain active. `/health` and
+  `/ready` both returned 200. Startup log contains successful probes, not a
+  startup failure. The existing PostgreSQL SSL-mode deprecation warning remains.
+- Frontend: private Sites **152**, deployment
+  `appgdep_6ad65c03bfac81918349451c91dd123d`, Succeeded.
+  Sites source `fcf748ee786bbccd2c0a2c5814388fd41ac35b38` has exactly the same
+  Git tree `e47b50137f3034dee8ee0079c7eaad3359ece653` as the GitHub source.
+  Audience is unchanged.
+- Authenticated UI reached projects and created only the isolated TECH66
+  technical project and TECH66-A unit. Initial unit price is 10,000,000 CZK in
+  both the table and unit detail. Further signature/payment E2E is pending.
+- Existing unrelated UX issue observed: the newly created project's edit actions
+  were initially absent until reload refreshed project permission context.
+  No permissions were broadened and no backend authorization was bypassed.
+
+### Authenticated E2E checkpoint
+
+- Isolated project: `fc56a75f-8941-44c6-b4cc-2e998b04e80d` (TECH66).
+  Unit: `54f2496c-d727-42ce-8ee4-2bb2e511f3e4` (TECH66-A).
+  Existing synthetic buyer reused; no real buyer or historic case changed.
+- Both original-profile RS/SBK files were uploaded only as draft review versions.
+  UI displays "Generování smluv z ní zatím není dostupné". Neither was approved
+  or activated. RS has 32 fields, SBK 37 fields.
+- Created RS `bfcacf61-2b48-4068-a2e9-68a1e36cf810` through the unit UI.
+  Form correctly omits a fixed due date and displays three working days after
+  the last required signature. Plan amount is 200,000 CZK, variable symbol 66.
+- Read-only DB job `caj-develocrm-migrations-pilot-cdavw7r` Succeeded: draft
+  contract's stored plan has `signatureAnchor=last_required_signature` and zero
+  actual obligations. UI independently displays zero prescriptions.
+- Uploaded an explicitly NON-BINDING single-page test PDF via the existing
+  external-document action; endpoint returned 201 (correlation `req-7r`). UI
+  displays "Dokument připraven", version 1, the exact technical filename and
+  a SharePoint link under this project's UUID-based folder. No legal document
+  was generated or signed.
+- Existing allowed workflow transitions draft -> sent -> approved returned 200.
+- The signature form was set to actual test signature day 16 October 2026
+  (recording on 19 October), so expected RS due day is 21 October. This expected
+  outcome is **not yet verified**: a native confirmation dialog blocked browser
+  automation before the final mutation. User handoff requested. Do not repeat
+  the signature request while that confirmation is outstanding.
+- SBK signature, delivery proof/final installment and post-signature reload
+  remain pending; local/native PostgreSQL tests are not represented as a live
+  browser pass. This release is deployed but not fully E2E-verified.
+- No 5xx/RLS/startup failure was found in the inspected new-revision log windows.
