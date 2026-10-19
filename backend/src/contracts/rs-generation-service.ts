@@ -9,23 +9,35 @@ import {originalContractIssues} from './original-contract-readiness.js';
 import {ORIGINAL_CONTRACT_TERMS} from './original-payment-plan.js';
 import {buildOriginalContractSnapshot} from './original-contract-snapshot.js';
 import {originalMoney} from './original-money.js';
+import {signaturePaymentTerms} from './signature-payment-terms.js';
 export type {RsReadiness,RsReadinessIssue} from '../shared/rs-readiness.js';
 export class RsGenerationError extends Error{constructor(readonly code:string,readonly issues:RsReadinessIssue[]=[]){super("Rezervační smlouvu se nepodařilo vytvořit.");this.name="RsGenerationError";}}
 
 export class RsGenerationService{
   constructor(private readonly repository:RsGenerationRepository,private readonly generator:DocumentTemplateGenerationService){}
   async setSigningPlan(input:Parameters<RsGenerationRepository['setSigningPlan']>[0]){return this.repository.setSigningPlan(input);}
+  async preparePaymentTerms(input:DocumentContext&{contractId:string;versionId:string}){
+    const source=await this.repository.load({...input,permission:'contract.manage'});
+    if(!source)throw new RsGenerationError('contract_not_found');
+    if(source.templateVariant!==ORIGINAL_DOB_FULL_VARIANT)throw new Error('PAYMENT_TERMS_TEMPLATE_PROFILE_REQUIRED');
+    return this.repository.preparePaymentTerms(input);
+  }
   async readiness(input:DocumentContext&{contractId:string}):Promise<RsReadiness>{
     const source=await this.repository.load({...input,permission:"contract.read"});
     if(!source)return{ready:false,contractId:input.contractId,issues:[issue("contract","contract","Smlouva nebyla nalezena nebo k ní nemáte přístup.")]};
     const issues=validate(source).map(item=>({...item,action:issueAction(item,source)}));
     const original=source.templateVariant===ORIGINAL_DOB_FULL_VARIANT;
+    const paymentPlan=validPaymentTerms(source);
     return{ready:issues.length===0,issues,contractType:source.contractType??'rs',contractId:source.contractId,projectId:source.projectId,templateVersionId:source.templateVersionId,
       summary:{project:{id:source.projectId,label:source.projectName},unit:{id:source.unitId,label:source.unitCode},buyers:source.buyers.map(b=>({id:b.id,label:b.displayName})),
         seller:source.settings?.name??null,unitPrice:source.unitPrice,totalPrice:source.totalPrice,reservationFee:source.reservationFee,
         reservationFeeDueDays:original?ORIGINAL_CONTRACT_TERMS.rsFeeWorkingDays:source.reservationFeeDueDays,
         reservationPeriodDays:original?ORIGINAL_CONTRACT_TERMS.reservationCalendarDays:source.reservationPeriodDays,accessories:source.accessories.map(a=>a.code),signingPlan:original||source.contractType==='sbk'?source.signingPlan:undefined,
         paymentTimingLabel:original?(source.contractType==='sbk'?`První splátka: ${ORIGINAL_CONTRACT_TERMS.sbkFirstWorkingDays} pracovních dnů od účinného podpisu. Doplatek: ${ORIGINAL_CONTRACT_TERMS.sbkFinalCalendarDays} dnů od doručení výzvy.`:`${ORIGINAL_CONTRACT_TERMS.rsFeeWorkingDays} pracovní dny od podpisu poslední smluvní strany`):undefined,
+        paymentPlan:original&&paymentPlan?{versionId:source.signingPlan?.versionId??null,variableSymbol:paymentPlan.variableSymbol,rows:paymentPlan.rows}:undefined,
+        paymentPlanPreparation:original&&source.signingPlan?{versionId:source.signingPlan.versionId,
+          canPrepare:source.signingPlan.editable&&source.status==='draft'&&!source.hasPaymentObligations&&!source.paymentTerms,
+          hasExistingObligations:source.hasPaymentObligations===true}:undefined,
         template:source.templateVersionId?{name:source.templateName??'Smlouva',version:source.templateVersionLabel??'',effectiveFrom:source.templateEffectiveFrom??null,approvalStatus:source.templateApprovalStatus??'approved'}:null},
       currentDocument:source.documentId&&source.documentVersionId&&source.contractVersion&&(!source.signingPlan||source.signingPlan.versionId===source.contractVersionId)?{documentId:source.documentId,documentVersionId:source.documentVersionId,contractVersionId:source.contractVersionId??undefined,version:source.contractVersion,webUrl:source.webUrl}:null};
   }
@@ -50,6 +62,8 @@ export class RsGenerationService{
 function validate(source:RsSource):RsReadinessIssue[]{
   const issues:RsReadinessIssue[]=[];
   const original=source.templateVariant===ORIGINAL_DOB_FULL_VARIANT||source.contractType==='sbk';
+  if(source.paymentTerms!=null&&source.templateVariant!==ORIGINAL_DOB_FULL_VARIANT)
+    issues.push(issue('payment_terms_template_mismatch','template','Platební plán neodpovídá vybrané variantě šablony. Před generováním ověřte správnou projektovou šablonu.'));
   if(source.caseStatus&&source.caseStatus!=='active')issues.push(issue('closed_case','contract','Obchod již byl ukončen. Historickou smlouvu nelze znovu připravit ani podepsat.'));
   if(!source.settings)issues.push(issue("seller_settings","project.seller","Projekt nemá vyplněné smluvní údaje prodávajícího."));
   else for(const field of sellerSettingFields)if(!source.settings[field.key]?.trim())issues.push(issue("seller_field",`project.seller.${field.key}`,`Prodávající: doplňte ${field.label.toLocaleLowerCase('cs-CZ')}.`));
@@ -58,6 +72,7 @@ function validate(source:RsSource):RsReadinessIssue[]{
   if((source.approvedTemplateCount??1)>1)issues.push(issue('ambiguous_template','template','Pro tento typ smlouvy je dostupných více účinných šablon. Je nutné jednoznačně určit odpovídající variantu.'));
   if(original){
     issues.push(...originalContractIssues(source));
+    if(!validPaymentTerms(source))issues.push(issue('contract_payment_terms','contract.paymentTerms','Platební plán této verze smlouvy chybí nebo neodpovídá aktuálním údajům. Splatnost musí vycházet ze skutečného podpisu, nikoli z vytvoření smlouvy.'));
     issues.push(issue('original_profile_review','template','Tato varianta smlouvy ještě není připravena k běžnému použití. Zbývá dokončit kontrolu údajů a obsahové schválení.'));
   }
   if(source.buyers.length!==1)issues.push(issue("buyer_count","buyers","Tato verze šablony vyžaduje právě jednoho kupujícího."));
@@ -79,6 +94,12 @@ function validate(source:RsSource):RsReadinessIssue[]{
   if(!original&&(!Number.isInteger(source.reservationFeeDueDays)||source.reservationFeeDueDays<1))issues.push(issue("reservation_fee_due","contract.reservationFeeDueDays","Smlouva nemá platnou splatnost rezervačního poplatku."));
   if(source.accessories.some(accessory=>accessory.type==='wallbox'))issues.push(issue("unsupported_wallbox","unit.accessories","Tato verze šablony neumí bezpečně popsat wallbox. Použijte schválenou rozšířenou šablonu."));
   return issues;
+}
+function validPaymentTerms(source:RsSource){
+  const plan=signaturePaymentTerms(source.paymentTerms);
+  return plan&&plan.contractType===(source.contractType??'rs')&&Number(plan.totalPrice)===source.totalPrice
+    &&Number(plan.reservationFee)===source.reservationFee&&plan.buyerPartyId===source.buyers[0]?.id&&source.buyers.length===1
+    &&(plan.contractType==='rs'||Number(plan.paidReservationFee)===source.paidReservationFee&&plan.precedingRsContractId===source.signedRsContractId)?plan:null;
 }
 function issueAction(item:RsReadinessIssue,source:RsSource):RsReadinessIssue['action']{
   const back=`returnTo=${encodeURIComponent(`/contracts/${source.contractId}`)}`;

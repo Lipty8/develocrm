@@ -21,6 +21,13 @@ test('doménový kód stále vyvolá bezpečnou srozumitelnou chybu',()=>{
   assert.equal(result.code,'CONTRACT_CASE_CLOSED');
   assert.equal(result.message,'Obchod již byl ukončen. Historickou smlouvu nelze posunout ani podepsat.');
 });
+test('missing contractual payment data is not misreported as a permission failure',()=>{
+  for(const code of ['PAYMENT_TERMS_FEE_REQUIRED','PAYMENT_TERMS_CURRENT_VERSION_REQUIRED','PAYMENT_TERMS_DELIVERY_EVIDENCE_REQUIRED']){
+    const result=mapApiError(new Error(code),409,'terms-test');
+    assert.equal(result.code,code);assert.doesNotMatch(result.message,/oprávnění|PAYMENT_TERMS|SELECT|undefined/);
+    assert.deepEqual(mapApiError(result,409,'terms-test'),result);
+  }
+});
 test('raw SQL ani diagnostický detail se nesmí dostat do veřejné chyby',()=>{
   const result=mapApiError({error:'Smlouvu nelze uložit.',detail:'duplicate key violates secret constraint after INSERT INTO contracts'},409,'req-test');
   assert.equal(result.message,'Operaci nelze dokončit kvůli aktuálnímu stavu záznamu.');

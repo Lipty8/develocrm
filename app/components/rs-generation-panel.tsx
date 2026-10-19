@@ -29,7 +29,8 @@ export function RsPreparationReturn({search}:{search:string}){
 }
 
 export function RsGenerationPanel({contractId,contractType='rs',canGenerate,onChanged,onShowVersions}:{contractId:string;contractType?:'rs'|'sbk';canGenerate:boolean;onChanged:()=>void;onShowVersions?:()=>void}){
-  const [readiness,setReadiness]=useState<RsReadiness|null>(null);
+  const [storedReadiness,setReadiness]=useState<RsReadiness|null>(null);
+  const readiness=storedReadiness?.contractId===contractId?storedReadiness:null;
   const [error,setError]=useState('');const [working,setWorking]=useState(false);const [checking,setChecking]=useState(true);
   const request=useRef<AbortController|null>(null);const generationKey=useRef<string|null>(null);
   const reload=useCallback(async()=>{
@@ -39,6 +40,7 @@ export function RsGenerationPanel({contractId,contractType='rs',canGenerate,onCh
     finally{if(!controller.signal.aborted)setChecking(false);}
   },[contractId]);
   useEffect(()=>{
+    generationKey.current=null;
     const refresh=()=>{if(document.visibilityState!=='hidden')void reload();};
     void Promise.resolve().then(refresh);window.addEventListener('focus',refresh);document.addEventListener('visibilitychange',refresh);
     return()=>{request.current?.abort();window.removeEventListener('focus',refresh);document.removeEventListener('visibilitychange',refresh);};
@@ -48,6 +50,14 @@ export function RsGenerationPanel({contractId,contractType='rs',canGenerate,onCh
     setWorking(true);setError('');generationKey.current??=crypto.randomUUID();
     try{await commercialRepository.generateContract(contractId,generationKey.current);generationKey.current=null;await reload();onChanged();}
     catch(value){setError(value instanceof Error?value.message:'Smlouvu nelze vytvořit.');}
+    finally{setWorking(false);}
+  }
+  async function preparePaymentPlan(){
+    const preparation=readiness?.summary?.paymentPlanPreparation;
+    if(working||checking||!canGenerate||!preparation?.canPrepare)return;
+    setWorking(true);setError('');
+    try{await commercialRepository.preparePaymentTerms(contractId,preparation.versionId);await reload();onChanged();}
+    catch(value){setError(value instanceof Error?value.message:'Platební plán se nepodařilo připravit.');}
     finally{setWorking(false);}
   }
   const summary=readiness?.summary;const money=(amount:number|null)=>amount==null?'—':formatMoney(amount);
@@ -74,6 +84,17 @@ export function RsGenerationPanel({contractId,contractType='rs',canGenerate,onCh
         <div><dt>{summary.template?.approvalStatus&&summary.template.approvalStatus!=='approved'?'Šablona ke kontrole':'Schválená šablona'}</dt><dd>{summary.template?`${summary.template.name} · ${summary.template.version}`:'Není dostupná'}</dd></div>
         {summary.template?.effectiveFrom&&<div><dt>Šablona účinná od</dt><dd>{formatPragueDate(summary.template.effectiveFrom)}</dd></div>}
       </dl>}
+      {summary?.paymentPlan&&<div className="contract-payment-terms" aria-label="Platební plán smlouvy"><h3>Platební plán</h3>
+        <dl className="rs-preparation-summary">{summary.paymentPlan.rows.map(row=><div key={row.key}>
+          <dt>{row.key==='rs_fee'?'Rezervační poplatek':row.key==='sbk_first'?'První splátka SBK':'Doplatek SBK'}</dt>
+          <dd>{formatMoney(Number(row.amount))}<br/>{row.days} {row.calendar==='calendar_days'?'kalendářních dnů':row.days===3?'pracovní dny':'pracovních dnů'} od {row.anchor==='notice_delivery'?'doručení výzvy':'posledního potřebného podpisu'}</dd>
+        </div>)}<div><dt>Variabilní symbol</dt><dd>{summary.paymentPlan.variableSymbol}</dd></div></dl>
+        <p>Konkrétní splatnost vznikne až po evidenci skutečného podpisu nebo doručení výzvy.</p>
+      </div>}
+      {!summary?.paymentPlan&&summary?.paymentPlanPreparation&&<div className="contract-payment-terms">
+        {summary.paymentPlanPreparation.hasExistingObligations?<p>Smlouva již má platební předpisy. Touto akcí se jejich podmínky zpětně nemění.</p>:
+          canGenerate&&summary.paymentPlanPreparation.canPrepare&&<button className="secondary-button compact" disabled={working||checking} onClick={()=>void preparePaymentPlan()}>{working?'Připravuji…':'Připravit platební plán'}</button>}
+      </div>}
       {summary?.signingPlan&&(canGenerate&&summary.signingPlan.editable?<ContractSigningPlanForm key={`${summary.signingPlan.versionId}:${summary.signingPlan.sellerPlannedOn}:${summary.signingPlan.buyerPlannedOn}`} plan={summary.signingPlan} contractId={contractId} disabled={working||checking} onSaved={reload}/>:<div className="contract-payment-terms"><h3>Plánovaná data podpisu</h3><p>Prodávající: {formatPragueDate(summary.signingPlan.sellerPlannedOn)} · Kupující: {formatPragueDate(summary.signingPlan.buyerPlannedOn)}</p>{!summary.signingPlan.editable&&<p>Pro změnu dat v dokumentu vytvořte novou verzi smlouvy.</p>}</div>)}
       {readiness.issues.length>0&&<ul>{readiness.issues.map(item=><li key={`${item.code}-${item.field}`}><span>{item.message}</span>{item.action&&<Link href={item.action.href}>{item.action.label}</Link>}</li>)}</ul>}
       <div className="project-detail-actions"><button className="secondary-button compact" onClick={()=>void reload()} disabled={working||checking}>Znovu zkontrolovat</button>

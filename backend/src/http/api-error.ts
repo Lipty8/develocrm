@@ -26,7 +26,27 @@ export function mapApiError(input: unknown, statusCode: number, correlationId: s
   if (!TECHNICAL_PATTERN.test(source) && /[áčďéěíňóřšťúůýž]/i.test(publicText) && publicText.length <= 240) {
     message = publicText;
   }
-  if (/CONTRACT_CASE_CLOSED/.test(source)) {
+  const paymentTermsCode=source.match(/\bPAYMENT_TERMS_[A-Z_]+\b/)?.[0];
+  if(paymentTermsCode){
+    code=paymentTermsCode;
+    const messages:Record<string,string>={
+      PAYMENT_TERMS_TEMPLATE_CHANGED:'Platební podmínky projektu se změnily. Zavřete formulář a otevřete jej znovu.',
+      PAYMENT_TERMS_NOTICE_NOT_AVAILABLE:'U této smlouvy nyní nelze evidovat doručení výzvy. Ověřte stav smlouvy a obchodního případu.',
+      PAYMENT_TERMS_AMBIGUOUS_TEMPLATE:'Projekt má více účinných šablon pro stejný typ smlouvy. Nejdříve určete správnou variantu.',
+      PAYMENT_TERMS_ALREADY_MATERIALIZED:'Smlouva již má platební předpis. Jeho podmínky nelze touto akcí zpětně změnit.',
+      PAYMENT_TERMS_CURRENT_VERSION_REQUIRED:'Smlouva má novější verzi. Načtěte ji a zkuste to znovu.',
+      PAYMENT_TERMS_VERSION_IMMUTABLE:'Tato verze již má dokument nebo podpis. Pro změnu připravte novou verzi smlouvy.',
+      PAYMENT_TERMS_TEMPLATE_PROFILE_REQUIRED:'Vybraná šablona tento platební plán nepoužívá.',
+      PAYMENT_TERMS_PAID_RS_MISMATCH:'Úhrada rezervačního poplatku neodpovídá podmínkám této SBK.',
+      PAYMENT_TERMS_SIGNED_RS_REQUIRED:'Pro přípravu plateb SBK je potřeba jednoznačná účinná podepsaná RS.',
+      PAYMENT_TERMS_FEE_REQUIRED:'Doplňte platný rezervační poplatek.',
+      PAYMENT_TERMS_DELIVERY_EVIDENCE_REQUIRED:'Vyberte uložený doklad o doručení výzvy patřící k této smlouvě.',
+      PAYMENT_TERMS_INVALID_DELIVERY_DATE:'Datum doručení musí být mezi účinným podpisem smlouvy a dneškem.',
+      PAYMENT_TERMS_DELIVERY_ALREADY_RECORDED:'Doručení výzvy již bylo zaevidováno s jinými údaji.',
+      PAYMENT_TERMS_CONTEXT_CHANGED:'Údaje obchodu se změnily. Před pokračováním ověřte kupujícího a platební podmínky.',
+    };
+    message=messages[code]??'Platební podmínky této verze smlouvy nejsou úplné nebo konzistentní. Ověřte je před pokračováním.';
+  } else if (/CONTRACT_CASE_CLOSED/.test(source)) {
     code = "CONTRACT_CASE_CLOSED";
     message = "Obchod již byl ukončen. Historickou smlouvu nelze posunout ani podepsat.";
   } else if (/SIGNED_CONTRACT_PROTECTS_RESERVATION/.test(source)) {

@@ -5,6 +5,8 @@ export type RsPreparationSummary={
   seller:string|null;unitPrice:number|null;totalPrice:number|null;reservationFee:number|null;
   reservationFeeDueDays:number;reservationPeriodDays:number;accessories:string[];paymentTimingLabel?:string;
   signingPlan?:ContractSigningPlan|null;
+  paymentPlan?:{versionId:string|null;variableSymbol:string;rows:Array<{key:'rs_fee'|'sbk_first'|'sbk_final';amount:string;anchor:'effective_signature'|'notice_delivery';days:number;calendar:'czech_working_days'|'calendar_days'}>};
+  paymentPlanPreparation?:{versionId:string;canPrepare:boolean;hasExistingObligations:boolean};
   template:{name:string;version:string;effectiveFrom:string|null;approvalStatus?:string}|null;
 };
 export type RsReadiness={ready:boolean;issues:RsReadinessIssue[];contractType?:'rs'|'sbk';contractId:string;projectId?:string;templateVersionId?:string|null;

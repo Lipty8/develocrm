@@ -6,6 +6,30 @@ import {RS_PLACEHOLDERS} from "../src/documents/template-generation-service.js";
 import {ORIGINAL_DOB_FULL_VARIANT} from '../src/documents/template-catalog.js';
 
 const context={tenantId:"10000000-0000-0000-0000-000000000001",userId:"10000000-0000-0000-0000-000000000002",membershipId:"10000000-0000-0000-0000-000000000003"};
+test('original preparation requires a current payment plan but never activates the legal template',async()=>{
+  const base=source();const paymentTerms={version:1,profile:ORIGINAL_DOB_FULL_VARIANT,calendarPolicy:'cz-2026-v1',signatureAnchor:'last_required_signature',contractType:'rs',
+    totalPrice:'22000000.00',reservationFee:'250000',paidReservationFee:'0',precedingRsContractId:null,buyerPartyId:base.buyers[0].id,variableSymbol:'417',
+    rows:[{key:'rs_fee',amount:'250000',anchor:'effective_signature',days:3,calendar:'czech_working_days'}]};
+  let current=source({templateVariant:ORIGINAL_DOB_FULL_VARIANT,paymentTerms,signingPlan:{versionId:'current',sellerPlannedOn:'2026-10-01',buyerPlannedOn:'2026-10-01',editable:true}});
+  const service=new RsGenerationService({load:async()=>current} as never,{} as never);
+  let result=await service.readiness({...context,contractId:current.contractId});
+  assert.equal(result.issues.some(i=>i.code==='contract_payment_terms'),false);assert.equal(result.ready,false);
+  assert.ok(result.issues.some(i=>i.code==='original_profile_review'));assert.equal(result.summary?.paymentPlan?.variableSymbol,'417');
+  for(const update of [{paymentTerms:null},{totalPrice:23000000},{reservationFee:260000},{buyers:[{...base.buyers[0],id:context.userId}]}]){
+    current=source({templateVariant:ORIGINAL_DOB_FULL_VARIANT,paymentTerms,...update});
+    result=await service.readiness({...context,contractId:current.contractId});assert.ok(result.issues.some(i=>i.code==='contract_payment_terms'));
+    assert.equal(result.summary?.paymentPlan,undefined);
+  }
+});
+test('preparing contractual terms uses authorized CRM context and the exact selected version only',async()=>{
+  const current=source({templateVariant:ORIGINAL_DOB_FULL_VARIANT});let forwarded:unknown;
+  const service=new RsGenerationService({load:async()=>current,preparePaymentTerms:async(input:unknown)=>{forwarded=input;return{version:1};}} as never,{} as never);
+  const input={...context,contractId:current.contractId,versionId:'exact-version'};await service.preparePaymentTerms(input);assert.deepEqual(forwarded,input);
+  const legacy=new RsGenerationService({load:async()=>source()} as never,{} as never);
+  await assert.rejects(legacy.preparePaymentTerms(input),/TEMPLATE_PROFILE_REQUIRED/);
+  const missing=new RsGenerationService({load:async()=>null} as never,{} as never);
+  await assert.rejects(missing.preparePaymentTerms(input),error=>error instanceof RsGenerationError&&error.code==='contract_not_found');
+});
 function source(overrides:Record<string,unknown>={}){return{contractId:"20000000-0000-0000-0000-000000000001",projectId:"20000000-0000-0000-0000-000000000002",projectName:"Rezidence Dejvice",projectCode:"DEJ",completionYear:"2027",unitId:"20000000-0000-0000-0000-000000000003",unitCode:"417",layout:"4+kk",floorLabel:"4. NP",areaM2:112.4,balconyM2:10,gardenM2:null,unitPrice:20_000_000,totalPrice:22_000_000,reservationFee:250_000,reservationFeeDueDays:3,reservationPeriodDays:30,settings:{name:"Rezidence Dejvice 2 s.r.o.",registrationNumber:"24106119",address:"Rohanské nábřeží 693/10, 186 00 Praha 8",registryEntry:"Městský soud v Praze, oddíl C, vložka 179591",representative:"Jaroslav Žahourek",email:"info@example.cz",dataBox:"abc123",bankAccount:"123/0100",bankName:"UniCredit Bank Czech Republic and Slovakia a.s."},salesCaseId:"20000000-0000-0000-0000-000000000004",reference:"RS-417",status:"draft",buyers:[{id:"20000000-0000-0000-0000-000000000005",partyType:"individual",displayName:"Jan Novák",salutation:"pan",firstName:"Jan",lastName:"Novák",birthDate:"1980-05-12",registrationNumber:null,address:"Květnová 1, 160 00 Praha 6",email:"jan@example.cz",phone:"+420 777 000 111",dataBox:null}],accessories:[{code:"P9",type:"parking",amount:800_000,floorLabel:"1. NP",description:"Venkovní stání"},{code:"S7",type:"cellar",amount:300_000,floorLabel:"1. PP",description:null}],templateVersionId:"20000000-0000-0000-0000-000000000006",templateHash:"sha256:test",documentId:null,documentVersionId:null,webUrl:null,contractVersion:null,...overrides};}
 
 test('starší RS mapování rovněž neztrácí haléře v číselné ani slovní ceně',()=>{

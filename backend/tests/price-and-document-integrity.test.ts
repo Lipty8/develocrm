@@ -20,9 +20,11 @@ import {RsGenerationRepository} from "../src/contracts/rs-generation-repository.
 import {RsGenerationService} from "../src/contracts/rs-generation-service.js";
 import {InventoryRepository} from "../src/inventory/repository.js";
 import {CommercialRepository} from "../src/commercial/repository.js";
+import {CommercialService} from '../src/commercial/service.js';
 import {ConsistencyChecker} from '../src/diagnostics/consistency-checker.js';
 import {ORIGINAL_DOB_FULL_VARIANT,templateCatalog} from '../src/documents/template-catalog.js';
 import {createHash} from 'node:crypto';
+import {isCzechWorkingDay} from '../src/contracts/czech-working-days.js';
 
 async function fixture(postgresUrl?:string){
   const memory=postgresUrl?undefined:new PGlite();
@@ -50,9 +52,10 @@ async function fixture(postgresUrl?:string){
   const database={withContext:async(_input:unknown,work:(c:SqlClient)=>Promise<unknown>)=>{await db.exec('BEGIN');try{await db.query("SELECT set_config('app.tenant_id',$1,true),set_config('app.user_id',$2,true)",[ids.tenantId,ids.userId]);const r=await work(client);await db.exec('COMMIT');return r;}catch(e){await db.exec('ROLLBACK');throw e;}}} as unknown as Database;
   const projectId=(await db.query<{id:string}>("SELECT id FROM projects WHERE tenant_id=$1 LIMIT 1",[ids.tenantId])).rows[0].id;
   const inventory=new InventoryImportService(database);
-  async function start(unitId?:string){const unit=unitId?{id:unitId}:(await db.query<{id:string}>("SELECT id FROM units WHERE tenant_id=$1 AND commercial_status='available' AND project_id=$2 AND NOT EXISTS(SELECT 1 FROM sales_cases s WHERE s.unit_id=units.id AND s.status='active') LIMIT 1",[ids.tenantId,projectId])).rows[0];
+  async function start(unitId?:string,signaturePayments=false){const unit=unitId?{id:unitId}:(await db.query<{id:string}>("SELECT id FROM units WHERE tenant_id=$1 AND commercial_status='available' AND project_id=$2 AND NOT EXISTS(SELECT 1 FROM sales_cases s WHERE s.unit_id=units.id AND s.status='active') AND app.current_unit_price(units.tenant_id,units.id,now())>=1000000 ORDER BY units.code,units.id LIMIT 1",[ids.tenantId,projectId])).rows[0];
     const hold=(await db.query<{sales_case_id:string;party_id:string}>("SELECT * FROM app.create_party_and_unit_hold($1,$2,'pre_reservation',now()+interval '48 hours',$3,$4,'Test','individual',NULL,'Evidence',$6,NULL,NULL,$5,NULL)",[ids.tenantId,unit.id,ids.membershipId,randomUUID(),`${randomUUID()}@example.test`,`Buyer ${randomUUID()}`])).rows[0];
-    const c=(await db.query<{contract_id:string;version_id:string}>("SELECT * FROM app.create_contract_with_payment($1,$2,'rs',$3,'Technical RS',$4,NULL,$5,'fixed',250000,now()+interval '7 days')",[ids.tenantId,hold.sales_case_id,`EVID-${randomUUID()}`,ids.membershipId,randomUUID()])).rows[0];return{...c,unitId:unit.id,partyId:hold.party_id,salesCaseId:hold.sales_case_id};}
+    const sql=signaturePayments?"SELECT * FROM app.create_contract_with_signature_payments($1,$2,'rs',$3,'Technical RS',$4,$5,'fixed',250000)":"SELECT * FROM app.create_contract_with_payment($1,$2,'rs',$3,'Technical RS',$4,NULL,$5,'fixed',250000,now()+interval '7 days')";
+    const c=(await db.query<{contract_id:string;version_id:string}>(sql,[ids.tenantId,hold.sales_case_id,`EVID-${randomUUID()}`,ids.membershipId,randomUUID()])).rows[0];return{...c,unitId:unit.id,partyId:hold.party_id,salesCaseId:hold.sales_case_id};}
   async function approve(c:{contract_id:string}){for(const status of ['sent','approved'])await db.query("SELECT app.transition_contract_status($1,$2,$3,'Test',$4)",[ids.tenantId,c.contract_id,status,ids.membershipId]);}
   const sign=(c:{contract_id:string;version_id:string})=>db.query("SELECT * FROM app.sign_contract_externally($1,$2,$3,now(),$4,NULL)",[ids.tenantId,c.contract_id,c.version_id,ids.membershipId]);
   const fileBytes=new TextEncoder().encode('%PDF-1.4\nTechnical evidence fixture\n%%EOF');const files=new Map<string,{meta:GraphFileMetadata;bytes:Uint8Array}>();const nativeVersions=new Map<string,Uint8Array[]>();
@@ -73,6 +76,158 @@ async function fixture(postgresUrl?:string){
 
 for(const usePostgres of [false,true])test(`price creation and signed document integrity (${usePostgres?'PostgreSQL':'PGlite'})`,{skip:usePostgres&&!process.env.WORKFLOW_TEST_DATABASE_URL},async t=>{
   const f=await fixture(usePostgres?process.env.WORKFLOW_TEST_DATABASE_URL:undefined);try{
+    await t.test('SQL calendar matches the canonical Czech calendar for every supported date',async()=>{
+      const days=(await f.db.query<{day:string;working:boolean}>("SELECT to_char(d,'YYYY-MM-DD') AS day,app.contract_working_day_2026_v1(d::date) working FROM generate_series(DATE '2016-01-01',DATE '2099-12-31',interval '1 day') d")).rows;
+      assert.equal(days.length,30681);
+      for(const day of days)assert.equal(day.working,isCzechWorkingDay(day.day),day.day);
+      await assert.rejects(f.db.query("SELECT app.contract_working_day_2026_v1(DATE '2100-01-01')"),/unsupported_contract_calendar_year/);
+    });
+    await t.test('signature-bound RS: no premature obligation, actual signature plus three working days, immutable plan and retry',async()=>{
+      const c=await f.database.withContext(f.context,()=>f.start(undefined,true));
+      const count=async()=>(await f.db.query<{n:number}>("SELECT count(*)::int n FROM payment_obligations WHERE contract_id=$1",[c.contract_id])).rows[0].n;
+      assert.equal(await count(),0);
+      const plan=(await f.db.query<{payment_terms_snapshot:Record<string,unknown>}>('SELECT payment_terms_snapshot FROM contract_versions WHERE id=$1',[c.version_id])).rows[0].payment_terms_snapshot;
+      assert.equal(plan.calendarPolicy,'cz-2026-v1');
+      const loaded=await new RsGenerationRepository(f.database).load({...f.context,contractId:c.contract_id,permission:'contract.read'});
+      assert.deepEqual(loaded?.paymentTerms,plan);assert.equal(loaded?.variableSymbol,plan.variableSymbol);
+      assert.equal(loaded?.hasPaymentObligations,false);
+      await f.database.withContext(f.context,client=>client.query('SELECT app.prepare_signature_payment_terms($1,$2,$3)',[f.context.tenantId,c.contract_id,f.context.membershipId]));
+      const original=(await f.db.query<{idempotency_key:string;reference:string}>('SELECT idempotency_key,reference FROM contracts WHERE id=$1',[c.contract_id])).rows[0];
+      const retry=(fee:number)=>f.database.withContext(f.context,client=>client.query("SELECT * FROM app.create_contract_with_signature_payments($1,$2,'rs',$3,'Technical RS',$4,$5,'fixed',$6)",[f.context.tenantId,c.salesCaseId,original.reference,f.context.membershipId,original.idempotency_key,fee]));
+      assert.equal((await retry(250000)).rows[0].contract_id,c.contract_id);
+      await assert.rejects(retry(260000),/IDEMPOTENCY_MISMATCH/);
+      const next=(await f.database.withContext(f.context,client=>client.query<{id:string}>("SELECT app.create_contract_version($1,$2,'New draft','manual',$3,$4,'{}'::jsonb) id",[f.context.tenantId,c.contract_id,f.context.membershipId,c.version_id]))).rows[0].id;
+      assert.deepEqual((await f.db.query<{payment_terms_snapshot:unknown}>('SELECT payment_terms_snapshot FROM contract_versions WHERE id=$1',[next])).rows[0].payment_terms_snapshot,plan);
+      c.version_id=next;
+      const uploaded=await f.external(c);c.version_id=uploaded.versionId;
+      await assert.rejects(f.db.query('UPDATE contract_versions SET payment_terms_snapshot=NULL WHERE id=$1',[c.version_id]),/PAYMENT_TERMS_VERSION_IMMUTABLE|immutable/);
+      await f.approve(c);
+      // Thursday before Easter: Friday and Monday are public holidays.
+      const sign=()=>f.database.withContext(f.context,async client=>{
+        await client.query('SET LOCAL ROLE develocrm_app');
+        return client.query("SELECT * FROM app.sign_contract_externally($1,$2,$3,'2026-04-02T21:30:00Z',$4,NULL)",[f.context.tenantId,c.contract_id,c.version_id,f.context.membershipId]);
+      });
+      await sign();await sign();assert.equal(await count(),1);
+      const obligation=(await f.db.query<{schedule_key:string;contract_version_id:string;amount:string;due_day:string}>("SELECT schedule_key,contract_version_id,amount::text,to_char(due_at AT TIME ZONE 'Europe/Prague','YYYY-MM-DD HH24:MI:SS') due_day FROM payment_obligations WHERE contract_id=$1",[c.contract_id])).rows[0];
+      assert.equal(obligation.schedule_key,'rs_fee');assert.equal(obligation.contract_version_id,c.version_id);
+      assert.equal(Number(obligation.amount),250000);assert.equal(obligation.due_day,'2026-04-09 23:59:59');
+      const events=(await f.db.query<{n:number}>("SELECT count(*)::int n FROM payment_events WHERE obligation_id IN(SELECT id FROM payment_obligations WHERE contract_id=$1) AND event_type='obligation.created'",[c.contract_id])).rows[0].n;
+      assert.equal(events,1);
+      await assert.rejects(f.database.withContext(f.context,client=>client.query("SELECT app.materialize_signature_payment($1,$2,$3,'rs_fee',DATE '2026-04-01',$4)",[f.context.tenantId,c.contract_id,c.version_id,f.context.membershipId])),/ANCHOR_EVIDENCE_REQUIRED/);
+      const materialize=(tenant:string,actor:string)=>f.database.withContext(f.context,client=>client.query("SELECT app.materialize_signature_payment($1,$2,$3,'rs_fee',DATE '2026-04-02',$4)",[tenant,c.contract_id,c.version_id,actor]));
+      await assert.rejects(materialize(randomUUID(),f.context.membershipId),/tenant context/);
+      await assert.rejects(materialize(f.context.tenantId,randomUUID()),/permission required/);
+      await assert.rejects(f.database.withContext(f.context,async client=>{
+        await client.query('DELETE FROM project_role_assignments WHERE tenant_id=$1 AND project_id=$2 AND membership_id=$3',[f.context.tenantId,f.projectId,f.context.membershipId]);
+        await client.query('DELETE FROM project_custom_access WHERE tenant_id=$1 AND project_id=$2 AND membership_id=$3',[f.context.tenantId,f.projectId,f.context.membershipId]);
+        await client.query('SET LOCAL ROLE develocrm_app');
+        return client.query("SELECT app.materialize_signature_payment($1,$2,$3,'rs_fee',DATE '2026-04-02',$4)",[f.context.tenantId,c.contract_id,c.version_id,f.context.membershipId]);
+      }),/permission required/);
+      // Authorized due-date extensions are not silently undone by a retry.
+      await f.database.withContext(f.context,client=>client.query("SELECT app.change_payment_obligation_due_date($1,(SELECT id FROM payment_obligations WHERE contract_id=$2),'2027-01-15T22:59:59Z','Technical extension',$3,$4)",[f.context.tenantId,c.contract_id,randomUUID(),f.context.membershipId]));
+      await materialize(f.context.tenantId,f.context.membershipId);
+      assert.equal((await f.db.query<{due_day:string}>("SELECT to_char(due_at AT TIME ZONE 'Europe/Prague','YYYY-MM-DD') due_day FROM payment_obligations WHERE contract_id=$1",[c.contract_id])).rows[0].due_day,'2027-01-15');
+    });
+    await t.test('recording a signed RS materializes its agreed fee without granting financial management',async()=>{
+      const c=await f.database.withContext(f.context,()=>f.start(undefined,true));const document=await f.external(c);c.version_id=document.versionId;await f.approve(c);
+      const rollback=new Error('intentional-test-rollback');
+      await assert.rejects(f.database.withContext(f.context,async client=>{
+        await client.query('DELETE FROM project_role_assignments WHERE tenant_id=$1 AND project_id=$2 AND membership_id=$3',[f.context.tenantId,f.projectId,f.context.membershipId]);
+        await client.query('DELETE FROM project_custom_access WHERE tenant_id=$1 AND project_id=$2 AND membership_id=$3',[f.context.tenantId,f.projectId,f.context.membershipId]);
+        await client.query(`INSERT INTO project_custom_access(tenant_id,project_id,membership_id,area,access_level,permission_overrides,assigned_by_user_id)
+          VALUES($1,$2,$3,'contracts','edit',ARRAY['contracts.record_signature'],$4),($1,$2,$3,'units','edit',ARRAY[]::text[],$4),($1,$2,$3,'documents','read',ARRAY[]::text[],$4)`,[f.context.tenantId,f.projectId,f.context.membershipId,f.context.userId]);
+        await client.query('SET LOCAL ROLE develocrm_app');
+        const permission=(await client.query<{finance:boolean;sign:boolean}>("SELECT app.has_project_permission($1,$2,$3,'payments.manage') finance,app.has_project_permission($1,$2,$3,'contract.sign') sign",[f.context.tenantId,f.context.membershipId,f.projectId])).rows[0];
+        assert.deepEqual(permission,{finance:false,sign:true});
+        await client.query("SELECT * FROM app.sign_contract_externally($1,$2,$3,'2026-04-02T10:00:00Z',$4,NULL)",[f.context.tenantId,c.contract_id,c.version_id,f.context.membershipId]);
+        await client.query('RESET ROLE');
+        assert.equal((await client.query<{n:number}>("SELECT count(*)::int n FROM payment_obligations WHERE contract_id=$1 AND schedule_key='rs_fee'",[c.contract_id])).rows[0].n,1);
+        throw rollback;
+      }),error=>error===rollback);
+    });
+    await t.test('different signature days use the approved last-required-signature anchor',async()=>{
+      const c=await f.database.withContext(f.context,()=>f.start(undefined,true));
+      const other=await f.start();
+      await f.db.query("INSERT INTO contract_parties(tenant_id,project_id,contract_id,party_id,participant_role,signing_required) VALUES($1,$2,$3,$4,'seller',true)",[f.context.tenantId,f.projectId,c.contract_id,other.partyId]);
+      const doc=await f.external(c);c.version_id=doc.versionId;await f.approve(c);
+      // The later signature was recorded first: entry order must not determine
+      // the legal day. The other party's earlier signature is recorded now.
+      await f.db.query("UPDATE contract_parties SET signature_status='signed',signed_at='2026-04-02T10:00:00Z',signed_version_id=$1 WHERE contract_id=$2 AND party_id=$3",[c.version_id,c.contract_id,c.partyId]);
+      await f.database.withContext(f.context,client=>client.query("SELECT * FROM app.sign_contract_externally($1,$2,$3,'2026-04-01T10:00:00Z',$4,NULL)",[f.context.tenantId,c.contract_id,c.version_id,f.context.membershipId]));
+      assert.equal((await f.db.query<{current_status:string}>('SELECT current_status FROM contracts WHERE id=$1',[c.contract_id])).rows[0].current_status,'signed');
+      const obligation=(await f.db.query<{due_day:string}>("SELECT to_char(due_at AT TIME ZONE 'Europe/Prague','YYYY-MM-DD') due_day FROM payment_obligations WHERE contract_id=$1",[c.contract_id])).rows;
+      assert.deepEqual(obligation,[{due_day:'2026-04-09'}]);
+    });
+    await t.test('SBK signature and evidenced notice create distinct, idempotent installments without premature final due date',async()=>{
+      const rs=await f.database.withContext(f.context,()=>f.start(undefined,true));
+      const rsDoc=await f.external(rs);rs.version_id=rsDoc.versionId;await f.approve(rs);
+      const run=(sql:string,parameters:unknown[])=>f.database.withContext(f.context,client=>client.query(sql,parameters));
+      await run("SELECT * FROM app.sign_contract_externally($1,$2,$3,'2026-04-02T10:00:00Z',$4,NULL)",[f.context.tenantId,rs.contract_id,rs.version_id,f.context.membershipId]);
+      const rsObligation=(await f.db.query<{id:string}>('SELECT id FROM payment_obligations WHERE contract_id=$1',[rs.contract_id])).rows[0].id;
+      await run("SELECT app.record_payment($1,$2,250000,'2026-04-07T10:00:00Z',NULL,NULL,NULL,NULL,$3,$4)",[f.context.tenantId,rsObligation,randomUUID(),f.context.membershipId]);
+      const key=randomUUID();
+      const create=()=>run("SELECT * FROM app.create_contract_with_signature_payments($1,$2,'sbk','TECH66-SBK','Technical SBK',$3,$4,NULL,NULL)",[f.context.tenantId,rs.salesCaseId,f.context.membershipId,key]);
+      const created=(await create()).rows[0] as {contract_id:string;version_id:string};
+      assert.deepEqual((await create()).rows[0],created);
+      const rows=async()=>(await f.db.query<{id:string;schedule_key:string;amount:string;due_day:string}>("SELECT id,schedule_key,amount::text,to_char(due_at AT TIME ZONE 'Europe/Prague','YYYY-MM-DD') due_day FROM payment_obligations WHERE contract_id=$1 ORDER BY schedule_key",[created.contract_id])).rows;
+      assert.equal((await rows()).length,0);
+      const doc=await f.external(created);created.version_id=doc.versionId;await f.approve(created);
+      const sign=()=>run("SELECT * FROM app.sign_contract_externally($1,$2,$3,'2026-04-10T10:00:00Z',$4,NULL)",[f.context.tenantId,created.contract_id,created.version_id,f.context.membershipId]);
+      if(f.connectionUrl){
+        const parallel=new Database(f.connectionUrl);
+        try{await Promise.all([1,2].map(()=>parallel.withContext(f.context,client=>client.query("SELECT * FROM app.sign_contract_externally($1,$2,$3,'2026-04-10T10:00:00Z',$4,NULL)",[f.context.tenantId,created.contract_id,created.version_id,f.context.membershipId]))));}
+        finally{await parallel.close();}
+      }else await sign();
+      await sign();
+      const first=await rows();assert.equal(first.length,1);assert.equal(first[0].schedule_key,'sbk_first');assert.equal(first[0].due_day,'2026-04-17');
+      await assert.rejects(run("SELECT app.materialize_signature_payment($1,$2,$3,'sbk_final',DATE '2026-04-13',$4)",[f.context.tenantId,created.contract_id,created.version_id,f.context.membershipId]),/ANCHOR_EVIDENCE_REQUIRED/);
+      const proof=await f.uploads.upload({...f.context,projectId:f.projectId,contractId:created.contract_id,salesCaseId:rs.salesCaseId,unitId:rs.unitId,
+        idempotencyKey:randomUUID(),typeCode:'amendment',documentName:'Technical delivery evidence',fileName:'delivery.pdf',mimeType:'application/pdf',bytes:f.fileBytes,versionLabel:'delivery 1',status:'ready'});
+      const noticeKey=randomUUID();
+      const notice=(evidence=proof.documentVersionId,day='2026-04-13')=>run('SELECT app.record_sbk_final_notice($1,$2,$3,$4::date,$5,$6,$7)',[f.context.tenantId,created.contract_id,created.version_id,day,evidence,f.context.membershipId,noticeKey]);
+      await assert.rejects(notice(randomUUID()),/DELIVERY_EVIDENCE_REQUIRED/);
+      await assert.rejects(notice(proof.documentVersionId,'2026-04-01'),/INVALID_DELIVERY_DATE/);
+      const input={...f.context,contractId:created.contract_id,versionId:created.version_id,deliveredOn:'2026-04-13',idempotencyKey:noticeKey,fileName:'delivery.pdf',mimeType:'application/pdf',bytes:f.fileBytes};
+      const before=f.files.size;
+      await assert.rejects(f.evidence.recordFinalNotice({...input,deliveredOn:'2026-04-01'}),/INVALID_DELIVERY_DATE/);
+      await assert.rejects(f.evidence.recordFinalNotice({...input,versionId:randomUUID()}),/CURRENT_VERSION_REQUIRED/);
+      assert.equal(f.files.size,before,'invalid requests do not upload a file');
+      const failure=new Error('technical test DB outage after persisted Graph upload');
+      const failingDatabase={withContext:async(context:typeof f.context,work:(client:SqlClient)=>Promise<unknown>)=>f.database.withContext(context,client=>work({query:async(sql,parameters)=>{
+        if(sql.includes('SELECT app.record_sbk_final_notice'))throw failure;
+        return client.query(sql,parameters);
+      }}))} as unknown as Database;
+      const failing=new ContractDocumentEvidenceService(failingDatabase,{} as never,f.uploads,'unused');
+      await assert.rejects(failing.recordFinalNotice(input),error=>error===failure);
+      assert.equal((await rows()).length,1,'no final obligation after failed DB transaction');
+      const persistedFiles=f.files.size;assert.ok(persistedFiles>before);
+      const recorded=await f.evidence.recordFinalNotice(input);assert.equal(recorded.replayed,true);
+      assert.deepEqual(await f.evidence.recordFinalNotice(input),recorded);assert.equal(f.files.size,persistedFiles,'retry does not create another physical file');
+      assert.equal(recorded.context?.notice?.deliveredOn,'2026-04-13');assert.equal(recorded.context?.notice?.dueOn,'2026-05-13');assert.equal(recorded.context?.canRecord,false);
+      await assert.rejects(run('SELECT app.sbk_final_notice_context($1,$2,$3)',[randomUUID(),created.contract_id,f.context.membershipId]),/tenant context/);
+      await assert.rejects(run('SELECT app.sbk_final_notice_context($1,$2,$3)',[f.context.tenantId,created.contract_id,randomUUID()]),/permission required/);
+      await assert.rejects(f.database.withContext(f.context,async client=>{
+        await client.query('DELETE FROM project_role_assignments WHERE tenant_id=$1 AND project_id=$2 AND membership_id=$3',[f.context.tenantId,f.projectId,f.context.membershipId]);
+        await client.query('DELETE FROM project_custom_access WHERE tenant_id=$1 AND project_id=$2 AND membership_id=$3',[f.context.tenantId,f.projectId,f.context.membershipId]);
+        await client.query('SET LOCAL ROLE develocrm_app');
+        return client.query('SELECT app.sbk_final_notice_context($1,$2,$3)',[f.context.tenantId,created.contract_id,f.context.membershipId]);
+      }),/permission required/);
+      const rollback=new Error('restore project grants after successful notice-context test');
+      await assert.rejects(f.database.withContext(f.context,async client=>{
+        await client.query('DELETE FROM project_role_assignments WHERE tenant_id=$1 AND project_id=$2 AND membership_id=$3',[f.context.tenantId,f.projectId,f.context.membershipId]);
+        await client.query('DELETE FROM project_custom_access WHERE tenant_id=$1 AND project_id=$2 AND membership_id=$3',[f.context.tenantId,f.projectId,f.context.membershipId]);
+        await client.query("INSERT INTO project_custom_access(tenant_id,project_id,membership_id,area,access_level,assigned_by_user_id) VALUES($1,$2,$3,'contracts','read',$4)",[f.context.tenantId,f.projectId,f.context.membershipId,f.context.userId]);
+        await client.query('SET LOCAL ROLE develocrm_app');
+        const result=(await client.query<{context:import('../src/shared/sbk-final-notice.js').SbkFinalNoticeContext;finance:boolean}>("SELECT app.sbk_final_notice_context($1,$2,$3) context,app.has_project_permission($1,$3,$4,'payments.read') finance",[f.context.tenantId,created.contract_id,f.context.membershipId,f.projectId])).rows[0];
+        assert.equal(result.finance,false);assert.equal(result.context.notice?.dueOn,'2026-05-13');assert.equal(result.context.notice?.webUrl,null);assert.equal(result.context.canRecord,false);
+        throw rollback;
+      }),error=>error===rollback);
+      const all=await rows();assert.equal(all.length,2);assert.equal(all.find(r=>r.schedule_key==='sbk_final')?.due_day,'2026-05-13');
+      const total=Number((await f.db.query<{total:string}>('SELECT total_price_snapshot::text total FROM contracts WHERE id=$1',[created.contract_id])).rows[0].total);
+      assert.equal(all.reduce((sum,r)=>sum+Number(r.amount),250000),total);
+      await assert.rejects(notice(proof.documentVersionId,'2026-04-14'),/DELIVERY_ALREADY_RECORDED/);
+      assert.equal((await f.db.query<{n:number}>("SELECT count(*)::int n FROM payment_events WHERE event_type='contract.final_notice_delivered' AND payload->>'contractVersionId'=$1",[created.version_id])).rows[0].n,1);
+    });
     await t.test('canonical accessory legal facts: atomic update, isolation, category validation and retry',async()=>{
       const repository=new InventoryRepository(f.database);
       const created=await repository.createAccessory({...f.context,projectId:f.projectId,category:'parking',code:'LEGAL-TECH',amount:500000});
@@ -196,6 +351,25 @@ for(const usePostgres of [false,true])test(`price creation and signed document i
       await assert.rejects(repository.bind({...input,membershipId:randomUUID()}),/contract.manage permission required/);
       const events=(await f.db.query<{audits:number;outbox:number}>("SELECT (SELECT count(*)::int FROM audit_log WHERE entity_id=$1 AND action='contract.sbk_generated') audits,(SELECT count(*)::int FROM outbox_events WHERE aggregate_id=$2 AND event_type='contract.sbk_generated.v1') outbox",[bound.versionId,contractId])).rows[0];assert.deepEqual(events,{audits:1,outbox:1});
       assert.deepEqual((await f.db.query<{generation_payload:Record<string,string>}>('SELECT generation_payload FROM contract_versions WHERE id=$1',[bound.versionId])).rows[0].generation_payload,snapshot);
+    });
+    await t.test('commercial creation derives SBK timing from the same project-template selection and retries safely',async()=>{
+      const rs=await f.start();const document=await f.external(rs);rs.version_id=document.versionId;await f.approve(rs);await f.sign(rs);
+      const obligation=(await f.db.query<{id:string}>('SELECT id FROM payment_obligations WHERE contract_id=$1',[rs.contract_id])).rows[0].id;
+      await f.database.withContext(f.context,client=>client.query("SELECT app.record_payment($1,$2,250000,now(),NULL,NULL,NULL,NULL,$3,$4)",[f.context.tenantId,obligation,randomUUID(),f.context.membershipId]));
+      const commercial=new CommercialService(f.database);const action=await commercial.nextContractAction({...f.context,unitId:rs.unitId});
+      assert.equal(action.kind,'create_contract');assert.equal(action.paymentTimings?.rs,'fixed_date');assert.equal(action.paymentTimings?.sbk,'signature');
+      const input={...f.context,unitId:rs.unitId,type:'sbk' as const,idempotencyKey:randomUUID(),paymentTiming:'signature' as const};
+      await assert.rejects(commercial.createNextContract({...input,paymentTiming:'fixed_date',paymentCalculationType:'fixed',paymentInputValue:100000,paymentDueAt:'2027-01-01T12:00:00Z'}),/TEMPLATE_CHANGED/);
+      let created:Awaited<ReturnType<CommercialService['createNextContract']>>;
+      if(f.connectionUrl){const parallel=new Database(f.connectionUrl);
+        try{const service=new CommercialService(parallel);const results=await Promise.all([service.createNextContract(input),service.createNextContract(input)]);assert.deepEqual(results[0],results[1]);created=results[0];}
+        finally{await parallel.close();}
+      }else created=await commercial.createNextContract(input);
+      assert.equal(created.paymentObligationId,null);
+      assert.deepEqual(await commercial.createNextContract(input),created);
+      const source=await new RsGenerationRepository(f.database).load({...f.context,contractId:created.id,permission:'contract.read'});
+      assert.equal(source?.templateVariant,ORIGINAL_DOB_FULL_VARIANT);assert.equal(source?.hasPaymentObligations,false);assert.ok(source?.paymentTerms);
+      assert.equal((await f.rs.readiness({...f.context,contractId:created.id})).ready,false,'draft legal template remains unavailable for generation');
     });
     await t.test('external upload, exact hash, signature retry, and immutable document',async()=>{
       const c=await f.start();const uploaded=await f.external(c);const exact=await f.evidence.exactFile({...f.context,contractId:c.contract_id,versionId:uploaded.versionId});assert.deepEqual(exact.bytes,f.fileBytes);

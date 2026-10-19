@@ -4,6 +4,7 @@ import React from 'react';
 import {JSDOM} from 'jsdom';
 import {RsGenerationPanel,RsPreparationReturn} from '../app/components/rs-generation-panel';
 import {commercialRepository,type RsReadiness} from '../app/repositories/commercial-repository';
+import {formatMoney} from '../app/crm-data';
 let render:typeof import('@testing-library/react').render,screen:typeof import('@testing-library/react').screen,cleanup:typeof import('@testing-library/react').cleanup,fireEvent:typeof import('@testing-library/react').fireEvent,waitFor:typeof import('@testing-library/react').waitFor;
 before(async()=>{const dom=new JSDOM('<!doctype html><html><body></body></html>',{url:'https://develocrm.test',pretendToBeVisual:true});Object.assign(globalThis,{self:dom.window,window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,Node:dom.window.Node});Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});({render,screen,cleanup,fireEvent,waitFor}=await import('@testing-library/react'));});
 afterEach(()=>{cleanup();mock.restoreAll();});
@@ -50,4 +51,36 @@ test('SBK má společný přehled a konkrétní mezery bez nepravdivé splatnost
 test('návrat k existující smlouvě neumožňuje externí URL ani jinou cestu',()=>{
   const view=render(<RsPreparationReturn search={`?returnTo=${encodeURIComponent(`/contracts/${contractId}`)}`}/>);assert.equal(screen.getByRole('link').getAttribute('href'),`/contracts/${contractId}`);
   view.rerender(<RsPreparationReturn search='?returnTo=https%3A%2F%2Fexample.test'/>);assert.equal(screen.queryByRole('link'),null);
+});
+test('platební plán ukáže částky včetně haléřů, ale nevymýšlí datum splatnosti',async()=>{
+  const value=ready();value.summary!.paymentPlan={versionId:'cv',variableSymbol:'417',rows:[
+    {key:'sbk_first',amount:'1500000.03',anchor:'effective_signature',days:5,calendar:'czech_working_days'},
+    {key:'sbk_final',amount:'5850000.07',anchor:'notice_delivery',days:30,calendar:'calendar_days'}]};
+  mock.method(commercialRepository,'getRsReadiness',async()=>value);
+  render(<RsGenerationPanel contractId={contractId} contractType="sbk" canGenerate={false} onChanged={()=>{}}/>);
+  await screen.findByRole('heading',{name:'Platební plán'});
+  const text=screen.getByLabelText('Platební plán smlouvy').textContent!.replace(/\s/g,' ');
+  assert.match(text,/1 500 000,03 Kč/);assert.match(text,/5 pracovních dnů od posledního potřebného podpisu/);
+  assert.match(text,/30 kalendářních dnů od doručení výzvy/);assert.doesNotMatch(text,/2026|1970/);
+  assert.equal(formatMoney(1500000).replace(/\s/g,' '),'1 500 000 Kč');
+});
+test('příprava platebního plánu předá pouze aktuální verzi a znovu načte přehled',async()=>{
+  let prepared=false;let changed=0;const value=ready();value.ready=false;
+  value.summary!.paymentPlanPreparation={versionId:'current-version',canPrepare:true,hasExistingObligations:false};
+  mock.method(commercialRepository,'getRsReadiness',async()=>{const next=structuredClone(value);if(prepared){next.summary!.paymentPlanPreparation!.canPrepare=false;next.summary!.paymentPlan={versionId:'current-version',variableSymbol:'417',rows:[{key:'rs_fee',amount:'150000',anchor:'effective_signature',days:3,calendar:'czech_working_days'}]};}return next;});
+  const sent:unknown[]=[];mock.method(commercialRepository,'preparePaymentTerms',async(...args:unknown[])=>{sent.push(args);prepared=true;});
+  render(<RsGenerationPanel contractId={contractId} canGenerate onChanged={()=>{changed++;}}/>);
+  fireEvent.click(await screen.findByRole('button',{name:'Připravit platební plán'}));
+  await screen.findByRole('heading',{name:'Platební plán'});assert.deepEqual(sent,[[contractId,'current-version']]);assert.equal(changed,1);
+  assert.equal(screen.queryByRole('button',{name:'Připravit platební plán'}),null);
+});
+test('stávající předpisy nenabízejí jejich tichou změnu a bez oprávnění není příprava dostupná',async()=>{
+  const value=ready();value.summary!.paymentPlanPreparation={versionId:'cv',canPrepare:false,hasExistingObligations:true};
+  mock.method(commercialRepository,'getRsReadiness',async()=>value);
+  const view=render(<RsGenerationPanel contractId={contractId} canGenerate onChanged={()=>{}}/>);
+  await screen.findByText(/Smlouva již má platební předpisy/);assert.equal(screen.queryByRole('button',{name:'Připravit platební plán'}),null);
+  value.summary!.paymentPlanPreparation={versionId:'cv',canPrepare:true,hasExistingObligations:false};
+  view.rerender(<RsGenerationPanel contractId="another" canGenerate={false} onChanged={()=>{}}/>);
+  await waitFor(()=>assert.equal(screen.queryByText(/Smlouva již má platební předpisy/),null));
+  assert.equal(screen.queryByRole('button',{name:'Připravit platební plán'}),null);
 });

@@ -4,6 +4,9 @@ import type {DocumentContext} from "../documents/repository.js";
 import type {MicrosoftGraphAdapter} from "../documents/graph-adapter.js";
 import type {SharePointDocumentUploadService} from "../documents/upload-service.js";
 import {inspectDocxTemplate} from "../documents/docx-template.js";
+import {signingPlanDay} from '../shared/contract-signing-plan.js';
+import {czechSignatureDay} from './czech-working-days.js';
+import type {SbkFinalNoticeContext} from '../shared/sbk-final-notice.js';
 
 export class ContractDocumentError extends Error {
   constructor(readonly code:string){super("Smlouva nemá ověřený dokument připravený k podpisu.");}
@@ -47,15 +50,7 @@ export class ContractDocumentEvidenceService {
   }
 
   async uploadExternal(input:DocumentContext&{contractId:string;idempotencyKey:string;fileName:string;mimeType:string;bytes:Uint8Array}){
-    const allowed:Record<string,string[]>={"application/pdf":["pdf"],"application/vnd.openxmlformats-officedocument.wordprocessingml.document":["docx"]};
-    const extension=input.fileName.split(".").at(-1)?.toLowerCase();
-    if(!extension||!allowed[input.mimeType]?.includes(extension))throw new ContractDocumentError("invalid_file_type");
-    if(extension==='pdf'&&Buffer.from(input.bytes.subarray(0,5)).toString()!=='%PDF-')throw new ContractDocumentError("invalid_file_type");
-    if(extension==='docx'&&(input.bytes[0]!==0x50||input.bytes[1]!==0x4b))throw new ContractDocumentError("invalid_file_type");
-    if(extension==='docx'){
-      try{if(inspectDocxTemplate(input.bytes).tokens.length)throw new ContractDocumentError("unresolved_document_fields");}
-      catch{throw new ContractDocumentError("invalid_final_docx");}
-    }
+    validateFinalContractFile(input);
     const c=await this.database.withContext(input,async client=>(await client.query<{project_id:string;unit_id:string;sales_case_id:string;reference:string;document_type_code:string;document_id:string|null;mime_type:string|null}>(`
       SELECT c.project_id,c.unit_id,c.sales_case_id,c.reference,app.contract_document_type(c.contract_type) document_type_code,latest.document_id,d.mime_type FROM contracts c
         LEFT JOIN LATERAL(SELECT document_id FROM contract_versions WHERE tenant_id=c.tenant_id AND contract_id=c.id ORDER BY version_number DESC LIMIT 1) latest ON true
@@ -71,5 +66,41 @@ export class ContractDocumentEvidenceService {
     const result=await this.database.withContext(input,async client=>(await client.query<{versionId:string}>(`
       SELECT app.bind_external_contract_document($1,$2,$3,$4,$5) "versionId"`,[input.tenantId,input.contractId,uploaded.documentId,uploaded.documentVersionId,input.membershipId])).rows[0]);
     return {...uploaded,...result};
+  }
+
+  async recordFinalNotice(input:DocumentContext&{contractId:string;versionId:string;deliveredOn:string;idempotencyKey:string;fileName:string;mimeType:string;bytes:Uint8Array}){
+    validateFinalContractFile(input);
+    if(typeof input.idempotencyKey!=='string'||!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,159}$/.test(input.idempotencyKey))throw new Error('PAYMENT_TERMS_INVALID_REQUEST');
+    const day=signingPlanDay(input.deliveredOn);
+    const c=await this.database.withContext(input,async client=>(await client.query<{project_id:string;unit_id:string;sales_case_id:string;reference:string;context:SbkFinalNoticeContext|null}>(`
+      SELECT c.project_id,c.unit_id,c.sales_case_id,c.reference,app.sbk_final_notice_context($1,c.id,$2) context
+      FROM contracts c WHERE c.tenant_id=$1 AND c.id=$3 AND app.has_project_permission(c.tenant_id,$2,c.project_id,'contract.manage')`,
+      [input.tenantId,input.membershipId,input.contractId])).rows[0]);
+    if(!c?.context||!c.context.canRecord&&!c.context.notice)throw new Error('PAYMENT_TERMS_NOTICE_NOT_AVAILABLE');
+    if(c.context.versionId!==input.versionId)throw new Error('PAYMENT_TERMS_CURRENT_VERSION_REQUIRED');
+    if(!day||day<c.context.signedOn||day>czechSignatureDay(new Date().toISOString()))throw new Error('PAYMENT_TERMS_INVALID_DELIVERY_DATE');
+    if(c.context.notice&&c.context.notice.deliveredOn!==day)throw new Error('PAYMENT_TERMS_DELIVERY_ALREADY_RECORDED');
+    const uploaded=await this.uploads.upload({...input,projectId:c.project_id,unitId:c.unit_id,salesCaseId:c.sales_case_id,
+      idempotencyKey:`notice:${createHash('sha256').update(input.idempotencyKey).digest('hex')}`,typeCode:'other',documentName:`${c.reference} · doklad doručení výzvy`,versionLabel:'Doklad doručení',status:'ready'});
+    const result=await this.database.withContext(input,async client=>{
+      await client.query('SELECT app.record_sbk_final_notice($1,$2,$3,$4::date,$5,$6,$7)',
+        [input.tenantId,input.contractId,input.versionId,day,uploaded.documentVersionId,input.membershipId,input.idempotencyKey]);
+      return(await client.query<{context:SbkFinalNoticeContext|null}>('SELECT app.sbk_final_notice_context($1,$2,$3) context',
+        [input.tenantId,input.contractId,input.membershipId])).rows[0];
+    });
+    return{...result,documentId:uploaded.documentId,documentVersionId:uploaded.documentVersionId,replayed:uploaded.replayed};
+  }
+}
+
+function validateFinalContractFile(input:{fileName:string;mimeType:string;bytes:Uint8Array}){
+  if(typeof input.fileName!=='string'||typeof input.mimeType!=='string')throw new ContractDocumentError('invalid_file_type');
+  const allowed:Record<string,string[]>={'application/pdf':['pdf'],'application/vnd.openxmlformats-officedocument.wordprocessingml.document':['docx']};
+  const extension=input.fileName.split('.').at(-1)?.toLowerCase();
+  if(!extension||!allowed[input.mimeType]?.includes(extension))throw new ContractDocumentError('invalid_file_type');
+  if(extension==='pdf'&&Buffer.from(input.bytes.subarray(0,5)).toString()!=='%PDF-')throw new ContractDocumentError('invalid_file_type');
+  if(extension==='docx'&&(input.bytes[0]!==0x50||input.bytes[1]!==0x4b))throw new ContractDocumentError('invalid_file_type');
+  if(extension==='docx'){
+    try{if(inspectDocxTemplate(input.bytes).tokens.length)throw new ContractDocumentError('unresolved_document_fields');}
+    catch{throw new ContractDocumentError('invalid_final_docx');}
   }
 }

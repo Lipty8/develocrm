@@ -102,4 +102,4 @@ export const activity: Array<{time:string;title:string;meta:string;kind:string}>
 export const unitTimeline: Array<{date:string;title:string;detail:string;icon:string}> = [];
 
 export const formatMoney = (value: number) =>
-  new Intl.NumberFormat("cs-CZ", { style: "currency", currency: "CZK", maximumFractionDigits: 0 }).format(value);
+  new Intl.NumberFormat("cs-CZ", { style: "currency", currency: "CZK", minimumFractionDigits:Number.isInteger(value)?0:2,maximumFractionDigits:2 }).format(value);
