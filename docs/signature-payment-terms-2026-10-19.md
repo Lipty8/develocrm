@@ -164,3 +164,24 @@ existing transactions, allocations, events, audit and outbox.
   remain pending; local/native PostgreSQL tests are not represented as a live
   browser pass. This release is deployed but not fully E2E-verified.
 - No 5xx/RLS/startup failure was found in the inspected new-revision log windows.
+
+### Project onboarding follow-up
+
+The authenticated test exposed stale project permission context immediately after
+creating a project. Catalog mutation invalidation did not re-fetch the identity
+session; an administrator's project-scoped permissions therefore did not include
+the newly created project until a reload. The backend authorization was correct.
+
+The frontend now subscribes to the existing successful mutation event for the
+exact same-origin project-create endpoint and re-fetches the normal identity
+session. It does not infer administrator grants, add permission keys, broaden a
+role, or refresh identity for ordinary unit/payment/contract mutations. Aborted
+old session responses cannot overwrite a newer response. Listener cleanup is
+covered. Failure remains fail-closed through the existing session error UI.
+
+Verification: 99/99 frontend interaction tests (six new cases), 143/143 static
+regression checks, TypeScript, changed-file lint and production build passed.
+The existing large-bundle/static-route-analysis warnings remain. No backend
+change or migration is required. Live new-project UI verification is pending
+while the outstanding native TECH66 signature confirmation blocks browser
+automation; this is not represented as a completed browser test.

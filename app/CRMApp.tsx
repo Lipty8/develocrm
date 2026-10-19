@@ -103,6 +103,7 @@ import {
 import { identityRepository, prototypeSession, type IdentitySession } from "./repositories/identity-repository";
 import { catalogRepository, type CatalogSnapshot as ProjectCatalogSnapshot, type InventoryEntityType, type InventoryImportPreview, type InventoryImportRow } from "./repositories/catalog-repository";
 import { DATA_MUTATED_EVENT } from "./lib/data-invalidation";
+import { subscribeProjectAccessChanges } from './lib/session-revalidation';
 import { clientRepository } from "./repositories/client-repository";
 import { commercialRepository, type CommercialSnapshot, type ContextualContractInput, type UnitNextContractAction } from "./repositories/commercial-repository";
 import { salesCommandRepository } from "./repositories/sales-command-repository";
@@ -327,6 +328,7 @@ export default function CRMApp() {
   const [catalogVersion, setCatalogVersion] = useState(0);
   const [catalogReloadKey, setCatalogReloadKey] = useState(0);
   const [connectionRetryKey,setConnectionRetryKey]=useState(0);
+  const [projectAccessRevision,setProjectAccessRevision]=useState(0);
   const [startupError,setStartupError]=useState<string|null>(null);
   const [clientDataVersion, setClientDataVersion] = useState(0);
   const [clientReloadKey, setClientReloadKey] = useState(0);
@@ -466,9 +468,11 @@ export default function CRMApp() {
 
   useEffect(() => {
     const controller = new AbortController();
-    identityRepository.getSession(controller.signal).then(session=>{setIdentitySession({...session,user:profileRepository.hydrate(session.user)});setIdentityReady(true);setStartupError(null);}).catch(error=>{if(!controller.signal.aborted){setIdentityReady(false);setStartupError(error instanceof Error?error.message:"Přihlášení není dostupné");}});
+    identityRepository.getSession(controller.signal).then(session=>{if(controller.signal.aborted)return;setIdentitySession({...session,user:profileRepository.hydrate(session.user)});setIdentityReady(true);setStartupError(null);}).catch(error=>{if(!controller.signal.aborted){setIdentityReady(false);setStartupError(error instanceof Error?error.message:"Přihlášení není dostupné");}});
     return () => controller.abort();
-  }, [connectionRetryKey]);
+  }, [connectionRetryKey,projectAccessRevision]);
+
+  useEffect(()=>subscribeProjectAccessChanges(()=>setProjectAccessRevision(revision=>revision+1)),[]);
 
   useEffect(()=>{
     const restore=()=>{
