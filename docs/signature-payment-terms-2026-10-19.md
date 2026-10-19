@@ -185,3 +185,11 @@ The existing large-bundle/static-route-analysis warnings remain. No backend
 change or migration is required. Live new-project UI verification is pending
 while the outstanding native TECH66 signature confirmation blocks browser
 automation; this is not represented as a completed browser test.
+
+Follow-up deployed: GitHub `f5b011d34a089733d4827c116e25fb74cba53a1b`, private
+Sites **153**, deployment `appgdep_6ad672b7aa5c8191822fb79c2e730619` Succeeded.
+Matching Sites commit `acc204e0c1eef6595cb7bf56eb9023f95bfbd146` and GitHub
+have identical source tree `4efba981122bdd09acd8e873b4c976b54eca0108`.
+Backend remains `signature-payments-44a77fd`; `/ready` returned 200 after
+publication. No additional migration, image build, permission change, audience
+change or pilot business mutation was performed for this frontend follow-up.
