@@ -85,7 +85,7 @@ function issueAction(item:RsReadinessIssue,source:RsSource):RsReadinessIssue['ac
   if(item.field.startsWith('buyer')&&source.buyers[0])return{href:`/clients/${source.buyers[0].id}?${back}`,label:'Otevřít kupujícího'};
   if(item.code==='accessory_legal_basis'||item.code==='accessory_legal_share'){
     const accessory=source.accessories.find(a=>item.field===`unit.accessories.${a.id??a.code}`);
-    return{href:`/projects/${source.projectId}?tab=${accessory?.type==='cellar'?'cellars':'parking'}&${back}`,label:'Doplnit příslušenství'};
+    return{href:`/projects/${source.projectId}/${accessory?.type==='cellar'?'cellars':'parking'}?${back}`,label:'Doplnit příslušenství'};
   }
   if(item.field.startsWith('unit'))return{href:`/units/${source.unitId}?${back}`,label:'Otevřít jednotku'};
   if(item.field==='template')return{href:`/contracts?view=templates&project=${source.projectId}&${back}`,label:'Otevřít šablony'};

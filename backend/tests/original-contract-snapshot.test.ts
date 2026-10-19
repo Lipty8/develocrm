@@ -80,6 +80,14 @@ test('smluvní forma se nedovozuje z kategorie, označení nebo popisu a nesprá
  formula.accessories[2].shareNumerator=2;formula.accessories[2].shareDenominator=25;
  assert.throws(()=>buildSnapshot(formula),OriginalContractSnapshotError);
 });
+test('chybějící právní údaje odkazují na skutečnou projektovou záložku, ne ignorovaný query parametr',async()=>{
+ const source=fixture();for(const item of source.accessories)delete item.legalForm;
+ const readiness=await new RsGenerationService({load:async()=>source} as never,{} as never).readiness({tenantId:'technical-tenant',userId:'technical-user',membershipId:'technical-member',contractId:source.contractId});
+ const issues=readiness.issues.filter(item=>item.code==='accessory_legal_basis');assert.equal(issues.length,3);
+ assert.ok(issues[0].action?.href.startsWith('/projects/technical-project/cellars?returnTo='));
+ assert.ok(issues[1].action?.href.startsWith('/projects/technical-project/parking?returnTo='));
+ assert.ok(issues.every(item=>!item.action?.href.includes('tab=')));
+});
 test('přesné peníze neignorují haléře, záporné hodnoty ani přetečení DB rozsahu',()=>{
  for(const value of ['NaN','1e6','1000000000000','1.005','-1','2 000',Infinity])assert.throws(()=>originalMoney(value));
  assert.equal(originalMoney('5000000.03').decimal,'5000000.03');assert.equal(originalMoney('999999999999.99').minor,BigInt('99999999999999'));
