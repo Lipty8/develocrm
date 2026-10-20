@@ -2,6 +2,11 @@
 
 Status: deployed; scoped authenticated save/reload and DB verification passed. Original legal profiles remain review-only and cannot be activated by this package.
 
+20 October follow-up: manual accessory floor/location editing is now deployed
+and browser/DB verified in migration 0067 / Sites 155. See
+`docs/accessory-location-2026-10-20.md`. Historical pending notes below describe
+the original 0065 checkpoint, not the current location-editing status.
+
 ## Model and behavior
 
 - Migration `0065_accessory_legal_details.sql` adds nullable legal form and an optional numerator/denominator pair to the existing `accessories` table. No new inventory, commercial status, template or document model.
