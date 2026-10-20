@@ -94,6 +94,31 @@ test('přesné peníze neignorují haléře, záporné hodnoty ani přetečení 
  assert.equal(originalMoney(2000000000).words,'dvě miliardy');assert.equal(originalMoney(1000000000).words,'jedna miliarda');
  assert.equal(originalMoney(21000000).words,'dvacet jedna milionů');assert.equal(originalMoney('1.01').words,'jedna celá jedna setina');
 });
+for(const type of ['rs','sbk'] as const)test(`${type}: připravenost pojmenuje neplatnou smluvní částku dříve než scalar renderer`,async()=>{
+ for(const [changes,code] of [
+  [{totalPrice:0},'contract_price'],[{totalPrice:NaN},'contract_price'],
+  [{totalPrice:5000000.005},'contract_price'],[{reservationFee:0},'contract_fee'],
+  [{reservationFee:0.001},'contract_fee'],[{reservationFee:6000000},'contract_fee'],
+ ] as const){
+  const source={...fixture(type),...changes};
+  assert.throws(()=>buildSnapshot(source),OriginalContractSnapshotError);
+  const result=await new RsGenerationService({load:async()=>source} as never,{} as never).readiness({tenantId:'technical-tenant',userId:'technical-user',membershipId:'technical-member',contractId:source.contractId});
+  assert.ok(result.issues.some(item=>item.code===code),`${code}: ${JSON.stringify(changes)}`);
+  assert.equal(result.ready,false);assert.ok(result.issues.some(item=>item.code==='original_profile_review'));
+ }
+});
+test('platné haléřové částky a chybějící hodnoty zachovají existující pravidla připravenosti',async()=>{
+ for(const type of ['rs','sbk'] as const){
+  const source=fixture(type),service=new RsGenerationService({load:async()=>source} as never,{} as never);
+  const input={tenantId:'technical-tenant',userId:'technical-user',membershipId:'technical-member',contractId:source.contractId};
+  const valid=await service.readiness(input);
+  assert.ok(!valid.issues.some(item=>['contract_price','contract_fee'].includes(item.code)));
+  source.totalPrice=null;source.reservationFee=null;
+  const missing=await service.readiness(input);
+  assert.ok(missing.issues.some(item=>item.code==='price'));assert.ok(missing.issues.some(item=>item.code==='reservation_fee'));
+  assert.ok(!missing.issues.some(item=>['contract_price','contract_fee'].includes(item.code)));
+ }
+});
 for(const type of ['rs','sbk'] as const)test(`skutečná neaktivní ${type.toUpperCase()} šablona přijme serverové scalar mapování a zachová ostatní části Wordu`,async()=>{
  const template=await readFile(new URL(`../templates/review/${type}-dejvice-original-review.docx`,import.meta.url));
  const snapshot=buildSnapshot(fixture(type)),tokens=Object.keys(snapshot);

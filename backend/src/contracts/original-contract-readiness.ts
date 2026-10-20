@@ -3,6 +3,7 @@ import type {RsReadinessIssue} from '../shared/rs-readiness.js';
 import {additionalSellerSettingFields} from '../shared/project-contract-settings.js';
 import {normalizeAccessoryLegalDetails,originalAccessoryKind} from '../shared/accessory-legal-details.js';
 import {ORIGINAL_TEMPLATE_CATALOGS} from '../documents/template-catalog.js';
+import {originalMoney} from './original-money.js';
 
 /** Only explicit canonical rights can prove compatibility with the pinned legal text. */
 export function originalAccessoryIssues(source:RsSource):RsReadinessIssue[]{
@@ -28,6 +29,17 @@ export function originalContractIssues(source:RsSource):RsReadinessIssue[]{
   const issues:RsReadinessIssue[]=[];
   const add=(code:string,field:string,message:string)=>issues.push({code,field,message});
   const sbk=source.contractType==='sbk';
+  // Use the renderer's exact decimal parser, not display rounding or a new
+  // payment calculation. Nulls already have dedicated missing-field issues.
+  const positiveMinor=(value:number|null)=>{
+    if(value==null)return null;
+    try{const amount=originalMoney(value).minor;return amount>BigInt(0)?amount:null;}catch{return null;}
+  };
+  const total=positiveMinor(source.totalPrice),fee=positiveMinor(source.reservationFee);
+  if(source.totalPrice!=null&&total===null)
+    add('contract_price','contract.totalPrice','Sjednaná kupní cena musí být kladná částka v korunách a haléřích. Ověřte cenu této verze smlouvy.');
+  if(source.reservationFee!=null&&(fee===null||total!==null&&fee>total))
+    add('contract_fee','contract.reservationFee','Rezervační poplatek musí být kladná částka v korunách a haléřích a nesmí převýšit sjednanou kupní cenu.');
   for(const field of additionalSellerSettingFields){
     if((field.key==='signatureName'||sbk)&&!source.settings?.[field.key]?.trim())
       add('seller_field',`project.seller.${field.key}`,`Prodávající: doplňte ${field.label.toLocaleLowerCase('cs-CZ')}.`);
