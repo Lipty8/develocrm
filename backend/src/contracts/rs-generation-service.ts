@@ -4,7 +4,7 @@ import {RsGenerationRepository,type RsSource,type RsAccessory} from "./rs-genera
 
 import type {RsReadiness,RsReadinessIssue} from '../shared/rs-readiness.js';
 import {sellerSettingFields} from '../shared/project-contract-settings.js';
-import {ORIGINAL_DOB_FULL_VARIANT,templateCatalog} from '../documents/template-catalog.js';
+import {isOriginalContractVariant,templateCatalog} from '../documents/template-catalog.js';
 import {originalContractIssues} from './original-contract-readiness.js';
 import {ORIGINAL_CONTRACT_TERMS} from './original-payment-plan.js';
 import {buildOriginalContractSnapshot,OriginalContractSnapshotError} from './original-contract-snapshot.js';
@@ -20,14 +20,14 @@ export class RsGenerationService{
   async preparePaymentTerms(input:DocumentContext&{contractId:string;versionId:string}){
     const source=await this.repository.load({...input,permission:'contract.manage'});
     if(!source)throw new RsGenerationError('contract_not_found');
-    if(source.templateVariant!==ORIGINAL_DOB_FULL_VARIANT)throw new Error('PAYMENT_TERMS_TEMPLATE_PROFILE_REQUIRED');
+    if(!isOriginalContractVariant(source.templateVariant))throw new Error('PAYMENT_TERMS_TEMPLATE_PROFILE_REQUIRED');
     return this.repository.preparePaymentTerms(input);
   }
   async readiness(input:DocumentContext&{contractId:string}):Promise<RsReadiness>{
     const source=await this.repository.load({...input,permission:"contract.read"});
     if(!source)return{ready:false,contractId:input.contractId,issues:[issue("contract","contract","Smlouva nebyla nalezena nebo k ní nemáte přístup.")]};
     const issues=validate(source).map(item=>({...item,action:issueAction(item,source)}));
-    const original=source.templateVariant===ORIGINAL_DOB_FULL_VARIANT;
+    const original=isOriginalContractVariant(source.templateVariant);
     const paymentPlan=validPaymentTerms(source);
     return{ready:issues.length===0,issues,contractType:source.contractType??'rs',contractId:source.contractId,projectId:source.projectId,templateVersionId:source.templateVersionId,
       summary:{project:{id:source.projectId,label:source.projectName},unit:{id:source.unitId,label:source.unitCode},buyers:source.buyers.map(b=>({id:b.id,label:b.displayName})),
@@ -62,8 +62,8 @@ export class RsGenerationService{
 
 function validate(source:RsSource):RsReadinessIssue[]{
   const issues:RsReadinessIssue[]=[];
-  const original=source.templateVariant===ORIGINAL_DOB_FULL_VARIANT||source.contractType==='sbk';
-  if(source.paymentTerms!=null&&source.templateVariant!==ORIGINAL_DOB_FULL_VARIANT)
+  const original=isOriginalContractVariant(source.templateVariant)||source.contractType==='sbk';
+  if(source.paymentTerms!=null&&!isOriginalContractVariant(source.templateVariant))
     issues.push(issue('payment_terms_template_mismatch','template','Platební plán neodpovídá vybrané variantě šablony. Před generováním ověřte správnou projektovou šablonu.'));
   if(source.caseStatus&&source.caseStatus!=='active')issues.push(issue('closed_case','contract','Obchod již byl ukončen. Historickou smlouvu nelze znovu připravit ani podepsat.'));
   if(!source.settings)issues.push(issue("seller_settings","project.seller","Projekt nemá vyplněné smluvní údaje prodávajícího."));
@@ -97,7 +97,7 @@ function validate(source:RsSource):RsReadinessIssue[]{
   // Approval/payment preparation are independent gates. Once the business
   // facts are present, preflight the exact mapper even while those gates are
   // closed. This prevents readiness accepting a value the renderer rejects.
-  if(source.templateVariant===ORIGINAL_DOB_FULL_VARIANT&&issues.every(item=>
+  if(isOriginalContractVariant(source.templateVariant)&&issues.every(item=>
     ['approved_template','ambiguous_template','original_profile_review','contract_payment_terms'].includes(item.code))){
     try{buildOriginalContractSnapshot(source);}
     catch(error){
@@ -134,7 +134,7 @@ function issueAction(item:RsReadinessIssue,source:RsSource):RsReadinessIssue['ac
   return undefined;
 }
 export function buildSnapshot(source:RsSource):Record<string,string>{
-  if(source.templateVariant===ORIGINAL_DOB_FULL_VARIANT)return buildOriginalContractSnapshot(source);
+  if(isOriginalContractVariant(source.templateVariant))return buildOriginalContractSnapshot(source);
   const buyer=source.buyers[0],seller=source.settings!;const underground=(a:RsAccessory)=>a.type==='garage'||a.type==='parking'&&(/\bPP\b/i.test(a.floorLabel??'')||/garáž/i.test(a.description??''));const parking=source.accessories.filter(a=>a.type==='parking'&&!underground(a)),garage=source.accessories.filter(underground),cellars=source.accessories.filter(a=>a.type==='cellar');
   return{"seller.name":seller.name,"seller.address":seller.address,"seller.registryEntry":seller.registryEntry,"seller.registrationNumber":seller.registrationNumber,"seller.representative":seller.representative,"seller.email":seller.email,"seller.dataBox":seller.dataBox,"seller.bankAccount":seller.bankAccount,
     "buyer.salutation":buyer.salutation==='paní'?'Paní':'Pan',"buyer.name":`${buyer.firstName} ${buyer.lastName}`,"buyer.address":buyer.address!,"buyer.birthDate":formatDate(buyer.birthDate!),"buyer.email":buyer.email!,"buyer.phone":buyer.phone!,"buyer.dataBoxLine":buyer.dataBox?`Datová schránka: ${buyer.dataBox}`:"Datová schránka neuvedena",

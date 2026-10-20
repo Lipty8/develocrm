@@ -48,7 +48,9 @@ def replace_span(xml, start, end, replacement):
     return xml
 
 
-def parameterize(kind, source, out):
+def parameterize(kind, source, out, delivery_version=False):
+    if delivery_version and kind != 'sbk':
+        raise ValueError('delivery profile is supported only for SBK')
     data = source.read_bytes()
     if hashlib.sha256(data).hexdigest() != HASHES[kind]:
         raise ValueError(f'{kind}: source hash differs; audit this version first')
@@ -170,6 +172,8 @@ def parameterize(kind, source, out):
             pattern(118, r'…', 'unit.variableSymbol', '62001', 1)
             pattern(124, r'…', 'unit.variableSymbol', '62001')
             pattern(221, r'…+', 'buyer.deliveryAddress', 'Doručovací 62, 160 00 Praha 6')
+            if delivery_version:
+                slot(217, texts[217], 'seller.deliveryAddress', texts[217])
             signature_i = 252
         # Independent planned signing dates; no inference of actual signatures.
         pattern(signature_i, r'…+', 'contract.sellerPlannedDate', '16. 10. 2026', 0)
@@ -199,7 +203,8 @@ def parameterize(kind, source, out):
             raise ValueError('non-text structure changed')
         inventory = {i.filename: hashlib.sha256(archive.read(i)).hexdigest() for i in archive.infolist()}
         out.mkdir(parents=True, exist_ok=True)
-        target = out / f'{kind}-dejvice-original-review.docx'
+        stem = 'sbk-dejvice-original-delivery-review' if delivery_version else f'{kind}-dejvice-original-review'
+        target = out / f'{stem}.docx'
         with zipfile.ZipFile(target, 'w') as result:
             for info in archive.infolist():
                 result.writestr(info, xml.encode('utf-8') if info.filename == 'word/document.xml' else archive.read(info))
@@ -223,7 +228,13 @@ def parameterize(kind, source, out):
                                    'signature_based_due_date', 'accessory_variants',
                                    'source_bound_lender_and_delivery_address',
                                    'seller_email_hyperlink_target']}
-        (out / f'{kind}-review-manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2)+'\n')
+        if delivery_version:
+            manifest['profileKey'] = 'dejvice-original-dob-delivery-v2'
+            manifest['knownGates'] = [gate for gate in manifest['knownGates']
+                                      if gate not in ['source_bound_lender_and_delivery_address', 'seller_email_hyperlink_target']]
+            manifest['knownGates'].append('source_bound_lender_and_project_legal_facts')
+        manifest_name = 'sbk-delivery-review-manifest.json' if delivery_version else f'{kind}-review-manifest.json'
+        (out / manifest_name).write_text(json.dumps(manifest, ensure_ascii=False, indent=2)+'\n')
         print(f'{kind}: {len(slots)} exact slots, {len(values)} fields; all non-text structure and package parts preserved')
 
 
@@ -232,6 +243,10 @@ if __name__ == '__main__':
     parser.add_argument('--rs-source', type=Path, required=True)
     parser.add_argument('--sbk-source', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True)
+    parser.add_argument('--sbk-delivery-version', action='store_true')
     args = parser.parse_args()
-    parameterize('rs', args.rs_source, args.out)
-    parameterize('sbk', args.sbk_source, args.out)
+    if args.sbk_delivery_version:
+        parameterize('sbk', args.sbk_source, args.out, delivery_version=True)
+    else:
+        parameterize('rs', args.rs_source, args.out)
+        parameterize('sbk', args.sbk_source, args.out)

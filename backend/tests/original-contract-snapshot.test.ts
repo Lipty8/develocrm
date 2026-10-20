@@ -6,7 +6,7 @@ import {inspectDocxTemplate,renderDocxTemplate} from '../src/documents/docx-temp
 import {buildOriginalContractSnapshot,OriginalContractSnapshotError} from '../src/contracts/original-contract-snapshot.js';
 import {buildSnapshot,RsGenerationService,RsGenerationError} from '../src/contracts/rs-generation-service.js';
 import type {RsSource} from '../src/contracts/rs-generation-repository.js';
-import {ORIGINAL_DOB_FULL_VARIANT,ORIGINAL_TEMPLATE_CATALOGS} from '../src/documents/template-catalog.js';
+import {ORIGINAL_DOB_FULL_VARIANT,ORIGINAL_TEMPLATE_CATALOGS,SBK_DOB_DELIVERY_VARIANT,templateCatalog} from '../src/documents/template-catalog.js';
 import {originalMoney} from '../src/contracts/original-money.js';
 import {precedingRsComparison} from '../src/contracts/preceding-rs-comparison.js';
 
@@ -77,6 +77,26 @@ test('originálová SBK mapuje přesně 37 polí a používá centrální přesn
  assert.equal(result['buyer.deliveryAddress'],'Testovací doručování 3, Brno, CZ');assert.equal(result['seller.clientChangesBankAccount'],'TEST-2');
  assert.equal(normalized(result['payment.reservationFeePaidAmount']),'250 000');assert.equal(normalized(result['payment.firstInstallmentAmount']),'1 000 000,01');assert.equal(normalized(result['payment.finalInstallmentAmount']),'3 750 000,02');
  assert.equal(result['buyer.dataBox'],undefined);assert.equal(result['payment.reservationFeeAmount'],undefined);
+});
+test('nová SBK doručovací varianta má 38 polí a nemění staré snapshoty ani platební plán',async()=>{
+ const old=fixture('sbk'),before=buildSnapshot(old),source={...old,templateVariant:SBK_DOB_DELIVERY_VARIANT};
+ const next=buildSnapshot(source);assert.equal(Object.keys(before).length,37);assert.equal(Object.keys(next).length,38);
+ assert.equal(before['seller.deliveryAddress'],undefined);assert.equal(next['seller.deliveryAddress'],source.settings!.deliveryAddress);
+ const {['seller.deliveryAddress']:address,...other}=next;assert.equal(address,'Testovací doručování 2');assert.deepEqual(other,before);
+ assert.deepEqual(Object.keys(next).sort(),Object.keys(templateCatalog('future_purchase_contract',SBK_DOB_DELIVERY_VARIANT)!.fields).sort());
+ assert.equal(templateCatalog('reservation_contract',SBK_DOB_DELIVERY_VARIANT),null);
+ assert.throws(()=>buildSnapshot({...fixture('rs'),templateVariant:SBK_DOB_DELIVERY_VARIANT}),OriginalContractSnapshotError);
+ for(const invalid of [undefined,'','   ','{{foreign}}']){
+  const missing={...source,settings:{...source.settings!,deliveryAddress:invalid}};
+  assert.throws(()=>buildSnapshot(missing),OriginalContractSnapshotError);
+  const readiness=await new RsGenerationService({load:async()=>missing} as never,{} as never).readiness({tenantId:'t',userId:'u',membershipId:'m',contractId:source.contractId});
+  assert.equal(readiness.ready,false);assert.ok(readiness.issues.some(item=>item.field==='project.seller.deliveryAddress'));
+ }
+ const compare=successor();compare.templateVariant=SBK_DOB_DELIVERY_VARIANT;
+ assert.equal(precedingRsComparison(compare)?.status,'compared');
+ assert.equal(precedingRsComparison(compare)?.differences.length,0);
+ const ready=await new RsGenerationService({load:async()=>source} as never,{} as never).readiness({tenantId:'t',userId:'u',membershipId:'m',contractId:source.contractId});
+ assert.equal(ready.ready,false);assert.ok(ready.issues.some(item=>item.code==='original_profile_review'));
 });
 test('žádná chybějící hodnota se nenahrazuje datem vytvoření, bydlištěm nebo cenou nula',()=>{
  for(const source of [

@@ -10,6 +10,10 @@ export type TemplateCatalog={
 };
 
 export const ORIGINAL_DOB_FULL_VARIANT='dejvice-original-dob-full-v1';
+export const SBK_DOB_DELIVERY_VARIANT='dejvice-original-dob-delivery-v2';
+export function isOriginalContractVariant(value:unknown):boolean{
+  return value===ORIGINAL_DOB_FULL_VARIANT||value===SBK_DOB_DELIVERY_VARIANT;
+}
 
 export const TECHNICAL_PLACEHOLDERS=["project.name","project.code","unit.code","buyer.name","generation.date","unit.totalPrice"] as const;
 export const RS_PLACEHOLDERS=["seller.name","seller.address","seller.registryEntry","seller.registrationNumber","seller.representative","seller.email","seller.dataBox","seller.bankAccount","buyer.salutation","buyer.name","buyer.address","buyer.birthDate","buyer.email","buyer.phone","buyer.dataBoxLine","project.name","project.completionYear","contract.reservationPeriodDays","unit.subjectClause","unit.balconyClause","unit.gardenClause","unit.outdoorParkingClause","unit.cellarClause","unit.garageClause","payment.reservationFeeClause","contract.totalPriceClause","contract.date"] as const;
@@ -94,8 +98,18 @@ export const ORIGINAL_TEMPLATE_CATALOGS:Record<string,TemplateCatalog>={
     })},
 };
 
+// A distinct schema profile preserves already uploaded 37-field SBK versions.
+// This is still review-only; it does not approve or activate legal content.
+export const SBK_DELIVERY_TEMPLATE_CATALOG:TemplateCatalog={
+  ...ORIGINAL_TEMPLATE_CATALOGS.future_purchase_contract,
+  label:'SBK Dejvice · kompletní varianta · doručování prodávajícímu',
+  fields:{...ORIGINAL_TEMPLATE_CATALOGS.future_purchase_contract.fields,
+    'seller.deliveryAddress':{required:true,label:'Doručovací adresa prodávajícího',sample:'Testovací doručování 62, 160 00 Praha 6'}},
+};
+
 export function templateCatalog(outputTypeCode:string,variantKey='default'):TemplateCatalog|null{
   if(variantKey===ORIGINAL_DOB_FULL_VARIANT)return Object.hasOwn(ORIGINAL_TEMPLATE_CATALOGS,outputTypeCode)?ORIGINAL_TEMPLATE_CATALOGS[outputTypeCode]:null;
+  if(variantKey===SBK_DOB_DELIVERY_VARIANT)return outputTypeCode==='future_purchase_contract'?SBK_DELIVERY_TEMPLATE_CATALOG:null;
   return Object.hasOwn(TEMPLATE_CATALOGS,outputTypeCode)?TEMPLATE_CATALOGS[outputTypeCode]:null;
 }
-export function supportedTemplateTokens():Set<string>{return new Set([...Object.values(TEMPLATE_CATALOGS),...Object.values(ORIGINAL_TEMPLATE_CATALOGS)].flatMap(catalog=>Object.keys(catalog.fields)));}
+export function supportedTemplateTokens():Set<string>{return new Set([...Object.values(TEMPLATE_CATALOGS),...Object.values(ORIGINAL_TEMPLATE_CATALOGS),SBK_DELIVERY_TEMPLATE_CATALOG].flatMap(catalog=>Object.keys(catalog.fields)));}

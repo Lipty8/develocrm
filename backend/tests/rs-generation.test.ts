@@ -68,7 +68,7 @@ test('výběr RS šablony respektuje tenant, projekt, výchozí variantu, schvá
   const repo=new RsGenerationRepository({withContext:async(_ctx:unknown,work:(client:unknown)=>unknown)=>work({query:async(q:string,v:unknown[])=>{sql=q;values=v;return{rows:[]};}})} as never);
   assert.equal(await repo.load({...context,contractId:source().contractId,permission:'contract.read'}),null);
   assert.ok(sql.includes('version.tenant_id=contract.tenant_id'));assert.ok(sql.includes('version.project_id=contract.project_id'));
-  assert.ok(sql.includes("template.variant_key IN ('default','dejvice-original-dob-full-v1')"));assert.ok(sql.includes("version.approval_status='approved'"));assert.ok(sql.includes('version.effective_from<=CURRENT_DATE'));
+  assert.ok(sql.includes("template.variant_key IN ('default','dejvice-original-dob-full-v1','dejvice-original-dob-delivery-v2')"));assert.ok(sql.includes("version.approval_status='approved'"));assert.ok(sql.includes('version.effective_from<=CURRENT_DATE'));
   assert.ok(sql.includes('template.contract_type=contract.contract_type'));
   assert.ok(sql.includes('approved_count'));
   assert.equal(values[0],context.tenantId);assert.equal(values[1],context.membershipId);

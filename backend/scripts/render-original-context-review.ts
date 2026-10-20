@@ -5,11 +5,12 @@ import {resolve} from 'node:path';
 import {strFromU8,unzipSync} from 'fflate';
 import type {RsSource} from '../src/contracts/rs-generation-repository.js';
 import {buildOriginalContractSnapshot} from '../src/contracts/original-contract-snapshot.js';
-import {ORIGINAL_DOB_FULL_VARIANT} from '../src/documents/template-catalog.js';
+import {ORIGINAL_DOB_FULL_VARIANT,SBK_DOB_DELIVERY_VARIANT} from '../src/documents/template-catalog.js';
 import {inspectDocxTemplate,renderDocxTemplate} from '../src/documents/docx-template.js';
 
 // Offline, explicit synthetic context only. No DB, Graph, approval or activation.
 const [rsOriginal,sbkOriginal,directory]=process.argv.slice(2);
+const delivery=process.argv[5]==='sbk-delivery-v2';
 if(!rsOriginal||!sbkOriginal||!directory)throw new Error('Usage: render-original-context-review.ts RS.docx SBK.docx /absolute/output');
 type Manifest={sourceSha256:string;templateSha256:string;status:string;activationAllowed:boolean;sampleIsSynthetic:boolean;
   schema:{fields:Record<string,{required:boolean}>};sampleValues:Record<string,string>;
@@ -19,21 +20,21 @@ const decode=(value:string)=>value.replace(/&lt;/g,'<').replace(/&gt;/g,'>').rep
 const text=(xml:string)=>[...xml.matchAll(/<w:p(?:\s[^>]*)?>[\s\S]*?<\/w:p>/g)].map(p=>[...p[0].matchAll(/<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/g)].map(t=>decode(t[1])).join(''));
 const structure=(xml:string)=>xml.replace(/(<w:t(?:\s[^>]*)?>)[\s\S]*?(<\/w:t>)/g,'$1$2');
 await mkdir(resolve(directory),{recursive:true});
-for(const kind of ['rs','sbk'] as const){
+for(const kind of delivery?['sbk'] as const:['rs','sbk'] as const){
   const base=new URL('../templates/review/',import.meta.url);
-  const m=JSON.parse(await readFile(new URL(`${kind}-review-manifest.json`,base),'utf8')) as Manifest;
+  const m=JSON.parse(await readFile(new URL(delivery?'sbk-delivery-review-manifest.json':`${kind}-review-manifest.json`,base),'utf8')) as Manifest;
   assert.equal(m.status,'draft');assert.equal(m.activationAllowed,false);assert.equal(m.sampleIsSynthetic,true);
   const original=await readFile(resolve(kind==='rs'?rsOriginal:sbkOriginal));assert.equal(digest(original),m.sourceSha256,'Wrong original');
-  const template=await readFile(new URL(`${kind}-dejvice-original-review.docx`,base));assert.equal(digest(template),m.templateSha256,'Wrong template');
+  const template=await readFile(new URL(delivery?'sbk-dejvice-original-delivery-review.docx':`${kind}-dejvice-original-review.docx`,base));assert.equal(digest(template),m.templateSha256,'Wrong template');
   const v=m.sampleValues;
   const source:RsSource={
     contractId:'technical-review-contract',projectId:'technical-review-project',projectName:'Rezidence Dejvice',projectCode:'TECH-REVIEW',completionYear:'2027',
-    unitId:'technical-review-unit',unitCode:'TECH-701',contractType:kind,templateVariant:ORIGINAL_DOB_FULL_VARIANT,
+    unitId:'technical-review-unit',unitCode:'TECH-701',contractType:kind,templateVariant:delivery?SBK_DOB_DELIVERY_VARIANT:ORIGINAL_DOB_FULL_VARIANT,
     floorNumber:3,floorLabel:'3. NP',layout:'2+kk',areaM2:55.5,balconyM2:5,terraceM2:null,gardenM2:12,unitPrice:4500000.03,totalPrice:5000000.03,
     reservationFee:250000,reservationFeeDueDays:3,reservationPeriodDays:30,
     settings:{name:v['seller.name'],address:v['seller.address'],registrationNumber:v['seller.registrationNumber'],registryEntry:v['seller.registryEntry'],
       representative:v['seller.representative'],email:v['seller.email'],dataBox:v['seller.dataBox'],bankAccount:v['seller.bankAccount'],bankName:v['seller.bankName'],
-      signatureName:v['seller.signatureName'],clientChangesBankAccount:v['seller.clientChangesBankAccount'],deliveryAddress:undefined},
+      signatureName:v['seller.signatureName'],clientChangesBankAccount:v['seller.clientChangesBankAccount'],deliveryAddress:delivery?'TECHNICKÁ DORUČOVACÍ ADRESA 701, 160 00 Praha 6':undefined},
     salesCaseId:'technical-review-case',reference:`TECH-REVIEW-${kind.toUpperCase()}`,status:'draft',caseStatus:'active',variableSymbol:'701001',signedRsCount:1,paidReservationFee:250000,
     signingPlan:{versionId:'technical-review-version',sellerPlannedOn:'2026-11-02',buyerPlannedOn:'2026-11-03',editable:true},
     buyers:[{id:'technical-review-buyer',partyType:'individual',displayName:'TESTOVACÍ KUPUJÍCÍ NEPODEPISOVAT',salutation:'paní',firstName:'TESTOVACÍ',lastName:'KUPUJÍCÍ NEPODEPISOVAT',birthDate:'1990-01-01',registrationNumber:null,
@@ -58,7 +59,7 @@ for(const kind of ['rs','sbk'] as const){
   });
   const actual=text(after);assert.equal(actual.length,expected.length);
   for(let i=0;i<actual.length;i++)assert.equal(digest(actual[i]),digest(expected[i]),`Unexplained paragraph ${i}`);
-  const fileName=`${kind}-technicky-vyplneny-ke-kontrole-2026-10-20.docx`;
+  const fileName=delivery?'sbk-dorucovani-v2-ke-kontrole-2026-10-20.docx':`${kind}-technicky-vyplneny-ke-kontrole-2026-10-20.docx`;
   await writeFile(resolve(directory,fileName),output);
   await writeFile(resolve(directory,`${kind}-verification.json`),JSON.stringify({synthetic:true,activation:false,sourceSha256:m.sourceSha256,templateSha256:m.templateSha256,
     outputSha256:digest(output),snapshotSha256:digest(JSON.stringify(snapshot)),snapshot,paragraphs:actual.length,fields:fields.length,

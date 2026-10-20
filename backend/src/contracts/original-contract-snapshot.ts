@@ -1,5 +1,5 @@
 import type {RsSource,RsAccessory} from './rs-generation-repository.js';
-import {ORIGINAL_DOB_FULL_VARIANT,ORIGINAL_TEMPLATE_CATALOGS} from '../documents/template-catalog.js';
+import {isOriginalContractVariant,SBK_DOB_DELIVERY_VARIANT,templateCatalog} from '../documents/template-catalog.js';
 import {originalPaymentPlan} from './original-payment-plan.js';
 import {originalMoney} from './original-money.js';
 import {signingPlanDay,ContractSigningPlanValidationError} from '../shared/contract-signing-plan.js';
@@ -39,8 +39,9 @@ function one(source:RsSource,type:string,field:string):RsAccessory{
  * Input is the authorized repository projection, never a request's render data.
  */
 export function buildOriginalContractSnapshot(source:RsSource):Record<string,string>{
-  if(source.templateVariant!==ORIGINAL_DOB_FULL_VARIANT||!['rs','sbk'].includes(source.contractType??'rs'))return fail('template.variant');
-  const sbk=source.contractType==='sbk',catalog=ORIGINAL_TEMPLATE_CATALOGS[sbk?'future_purchase_contract':'reservation_contract'];
+  if(!isOriginalContractVariant(source.templateVariant)||!['rs','sbk'].includes(source.contractType??'rs'))return fail('template.variant');
+  const sbk=source.contractType==='sbk',catalog=templateCatalog(sbk?'future_purchase_contract':'reservation_contract',source.templateVariant);
+  if(!catalog)return fail('template.variant');
   if(!source.settings)return fail('project.seller');const seller=source.settings;
   if(source.buyers.length!==1||source.buyers[0].partyType!=='individual')return fail('buyer.type');
   const buyer=source.buyers[0];if(!['pan','paní'].includes(buyer.salutation??''))return fail('buyer.salutation');
@@ -89,6 +90,7 @@ export function buildOriginalContractSnapshot(source:RsSource):Record<string,str
       'payment.firstInstallmentAmount':originalMoney(payments[0].amount).display,'payment.finalInstallmentAmount':originalMoney(payments[1].amount).display,
     });
   }else Object.assign(result,{'buyer.dataBox':buyer.dataBox?text(buyer.dataBox,'buyer.dataBox'):'neuvedena','payment.reservationFeeAmount':fee.display,'payment.reservationFeeWords':fee.words});
+  if(source.templateVariant===SBK_DOB_DELIVERY_VARIANT)result['seller.deliveryAddress']=text(seller.deliveryAddress,'seller.deliveryAddress');
   if(Object.keys(result).length!==Object.keys(catalog.fields).length||Object.keys(catalog.fields).some(key=>!result[key]))return fail('template.fields');
   return result;
 }

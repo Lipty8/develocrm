@@ -149,3 +149,31 @@ for (const kind of ['rs', 'sbk'] as const) {
     }
   });
 }
+
+test('SBK delivery-v2 mění pouze datové místo doručovací adresy a zachová originál i v1',async()=>{
+ const base=new URL('../templates/review/',import.meta.url);
+ const old=unzipSync(await readFile(new URL('sbk-dejvice-original-review.docx',base)));
+ const bytes=await readFile(new URL('sbk-dejvice-original-delivery-review.docx',base));
+ const m=JSON.parse(await readFile(new URL('sbk-delivery-review-manifest.json',base),'utf8')) as Manifest&{profileKey:string};
+ assert.equal(m.profileKey,'dejvice-original-dob-delivery-v2');assert.equal(m.sourceSha256,expectedSources.sbk);
+ assert.equal(m.status,'draft');assert.equal(m.activationAllowed,false);assert.equal(m.sampleIsSynthetic,true);
+ assert.equal(digest(bytes),m.templateSha256);assert.equal(Object.keys(m.schema.fields).length,38);
+ const next=unzipSync(bytes),oldText=paragraphs(strFromU8(old['word/document.xml'])),nextText=paragraphs(strFromU8(next['word/document.xml']));
+ assert.equal(nextText.length,261);assert.deepEqual(Object.keys(next).sort(),Object.keys(old).sort());
+ for(const key of Object.keys(next))if(key!=='word/document.xml'){
+  assert.equal(digest(next[key]),digest(old[key]),key);assert.equal(digest(next[key]),m.preserveOnlyParts[key],key);
+ }
+ assert.equal(structure(strFromU8(next['word/document.xml'])),structure(strFromU8(old['word/document.xml'])));
+ for(let i=0;i<oldText.length;i++)assert.equal(nextText[i],i===217?'{{seller.deliveryAddress}}':oldText[i],`only slot 217 changes: ${i}`);
+ for(let i=0;i<nextText.length;i++){
+  let restored=nextText[i];for(const slot of m.slots.filter(s=>s.paragraph===i))restored=restored.replace(slot.replacement,slot.original);
+  assert.equal(digest(restored),m.sourceParagraphTextSha256[i],`original paragraph ${i}`);
+ }
+ const fields=Object.keys(m.schema.fields);assert.deepEqual(inspectDocxTemplate(bytes).tokens,fields.sort());
+ const values={...m.sampleValues,'seller.deliveryAddress':'TECHNICKÁ NOVÁ DORUČOVACÍ ADRESA'};
+ const output=renderDocxTemplate(bytes,values,{allowedTokens:fields,requiredTokens:fields}).bytes;
+ assert.deepEqual(inspectDocxTemplate(output).tokens,[]);
+ const text=paragraphs(strFromU8(unzipSync(output)['word/document.xml']));assert.equal(text[217],values['seller.deliveryAddress']);
+ assert.ok(!text[217].includes('Rustonka'));assert.match(text[118],/80 % Kupní ceny/);
+ assert.throws(()=>renderDocxTemplate(bytes,{...values,'seller.deliveryAddress':''},{allowedTokens:fields,requiredTokens:fields}),DocxTemplateError);
+});

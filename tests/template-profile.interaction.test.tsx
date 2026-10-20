@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {before,afterEach,test} from 'node:test';
 import React from 'react';
 import {JSDOM} from 'jsdom';
-import {TemplateProfilePicker,TemplateGenerationNotice,ORIGINAL_DOB_FULL_VARIANT} from '../app/components/template-profile-picker';
+import {TemplateProfilePicker,TemplateGenerationNotice,ORIGINAL_DOB_FULL_VARIANT,SBK_DOB_DELIVERY_VARIANT} from '../app/components/template-profile-picker';
 
 let render:typeof import('@testing-library/react').render,screen:typeof import('@testing-library/react').screen,
   cleanup:typeof import('@testing-library/react').cleanup,fireEvent:typeof import('@testing-library/react').fireEvent;
@@ -42,4 +42,15 @@ test('upozornění rozlišuje review-only šablonu od dostupného generování',
   assert.match(screen.getByRole('status').textContent??'',/pouze ke kontrole/);
   view.rerender(<TemplateGenerationNotice supported/>);
   assert.equal(screen.queryByRole('status'),null);
+});
+test('nová doručovací varianta je volitelná pouze pro SBK a zůstává neaktivní',()=>{
+ let selected=ORIGINAL_DOB_FULL_VARIANT;
+ const view=render(<TemplateProfilePicker type="future_purchase_contract" value={selected} onChange={value=>{selected=value;}}/>);
+ fireEvent.change(screen.getByRole('combobox'),{target:{value:SBK_DOB_DELIVERY_VARIANT}});
+ assert.equal(selected,SBK_DOB_DELIVERY_VARIANT);
+ view.rerender(<TemplateProfilePicker type="future_purchase_contract" value={selected} onChange={()=>{}}/>);
+ assert.match(screen.getByRole('combobox').textContent??'',/doručování prodávajícímu z projektu/);
+ assert.ok(screen.getByText(/Nelze ji aktivovat/));
+ view.rerender(<TemplateProfilePicker type="reservation_contract" value={ORIGINAL_DOB_FULL_VARIANT} onChange={()=>{}}/>);
+ assert.equal(screen.queryByRole('option',{name:/doručování prodávajícímu z projektu/}),null);
 });

@@ -1,7 +1,7 @@
 import type {RsSource} from './rs-generation-repository.js';
 import type {PrecedingRsComparison} from '../shared/rs-readiness.js';
 import {buildOriginalContractSnapshot,OriginalContractSnapshotError} from './original-contract-snapshot.js';
-import {ORIGINAL_DOB_FULL_VARIANT,ORIGINAL_TEMPLATE_CATALOGS} from '../documents/template-catalog.js';
+import {ORIGINAL_DOB_FULL_VARIANT,ORIGINAL_TEMPLATE_CATALOGS,isOriginalContractVariant} from '../documents/template-catalog.js';
 import {OriginalPaymentPlanError} from './original-payment-plan.js';
 
 // Only shared scalar facts. Never compare/parse legal prose or planned signature
@@ -25,7 +25,7 @@ export function precedingRsComparison(source:RsSource):PrecedingRsComparison|und
   const expected=Object.keys(ORIGINAL_TEMPLATE_CATALOGS.reservation_contract.fields);
   if(expected.some(key=>typeof prior.snapshot?.[key]!=='string'||!prior.snapshot[key].trim())||Object.keys(prior.snapshot).length!==expected.length)
     return missing('Uložené údaje podepsané RS nejsou úplné. Je nutná kontrola podepsaného dokumentu.');
-  if(source.templateVariant!==ORIGINAL_DOB_FULL_VARIANT)
+  if(!isOriginalContractVariant(source.templateVariant))
     return missing('Vybraná varianta SBK nepodporuje automatické porovnání s touto RS.');
   let current:Record<string,string>;
   try{current=buildOriginalContractSnapshot(source);}catch(error){

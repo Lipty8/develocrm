@@ -1,5 +1,5 @@
 import type {SqlClient} from '../database.js';
-import {ORIGINAL_DOB_FULL_VARIANT} from '../documents/template-catalog.js';
+import {isOriginalContractVariant} from '../documents/template-catalog.js';
 
 /** One selection for preparation, creation and generation. The outer query
  * supplies an authorized `contract` alias with tenant/project/type. */
@@ -8,7 +8,7 @@ export const projectContractTemplateSelectionSql=`SELECT version.id,version.cont
   FROM document_template_versions version
   JOIN document_templates template ON template.tenant_id=version.tenant_id AND template.id=version.template_id
   WHERE version.tenant_id=contract.tenant_id AND version.project_id=contract.project_id AND template.contract_type=contract.contract_type
-    AND template.variant_key IN ('default','dejvice-original-dob-full-v1') AND template.status='active'
+    AND template.variant_key IN ('default','dejvice-original-dob-full-v1','dejvice-original-dob-delivery-v2') AND template.status='active'
     AND version.approval_status IN ('draft','validated','approved')
   ORDER BY (version.approval_status='approved' AND version.effective_from<=CURRENT_DATE) DESC,
     version.effective_from DESC,version.created_at DESC,version.id DESC LIMIT 1`;
@@ -24,7 +24,7 @@ export async function projectContractPaymentTimings(client:SqlClient,input:{tena
   if(rows.length!==2)throw new Error('contract.read permission required');
   const result:Record<'rs'|'sbk',ContractPaymentTiming|null>={rs:'fixed_date',sbk:'fixed_date'};
   for(const row of rows){
-    result[row.contract_type]=Number(row.approved_count??0)>1?null:row.variant_key===ORIGINAL_DOB_FULL_VARIANT?'signature':'fixed_date';
+    result[row.contract_type]=Number(row.approved_count??0)>1?null:isOriginalContractVariant(row.variant_key)?'signature':'fixed_date';
   }
   return result;
 }

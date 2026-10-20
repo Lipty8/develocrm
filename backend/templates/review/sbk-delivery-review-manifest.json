@@ -1,0 +1,961 @@
+{
+  "contractType": "sbk",
+  "status": "draft",
+  "activationAllowed": false,
+  "sourceSha256": "bc79743f8c9561a51f015a02a8a083416a3b12d32918875f2a974bce2a22c160",
+  "sourceFileName": "sbk-original.docx",
+  "templateSha256": "2d320d0331e0c17f9d3e37c601420b54077da53f2e99eb0b2b0be0d51774af50",
+  "schema": {
+    "fields": {
+      "buyer.address": {
+        "required": true
+      },
+      "buyer.birthDate": {
+        "required": true
+      },
+      "buyer.deliveryAddress": {
+        "required": true
+      },
+      "buyer.email": {
+        "required": true
+      },
+      "buyer.name": {
+        "required": true
+      },
+      "buyer.phone": {
+        "required": true
+      },
+      "buyer.salutation": {
+        "required": true
+      },
+      "contract.buyerPlannedDate": {
+        "required": true
+      },
+      "contract.sellerPlannedDate": {
+        "required": true
+      },
+      "contract.totalPriceAmount": {
+        "required": true
+      },
+      "contract.totalPriceWords": {
+        "required": true
+      },
+      "payment.finalInstallmentAmount": {
+        "required": true
+      },
+      "payment.firstInstallmentAmount": {
+        "required": true
+      },
+      "payment.reservationFeePaidAmount": {
+        "required": true
+      },
+      "seller.address": {
+        "required": true
+      },
+      "seller.bankAccount": {
+        "required": true
+      },
+      "seller.bankName": {
+        "required": true
+      },
+      "seller.clientChangesBankAccount": {
+        "required": true
+      },
+      "seller.dataBox": {
+        "required": true
+      },
+      "seller.deliveryAddress": {
+        "required": true
+      },
+      "seller.email": {
+        "required": true
+      },
+      "seller.name": {
+        "required": true
+      },
+      "seller.registrationNumber": {
+        "required": true
+      },
+      "seller.registryEntry": {
+        "required": true
+      },
+      "seller.representative": {
+        "required": true
+      },
+      "seller.signatureName": {
+        "required": true
+      },
+      "unit.area": {
+        "required": true
+      },
+      "unit.cellarCode": {
+        "required": true
+      },
+      "unit.cellarFloor": {
+        "required": true
+      },
+      "unit.code": {
+        "required": true
+      },
+      "unit.floorNumber": {
+        "required": true
+      },
+      "unit.garageCode": {
+        "required": true
+      },
+      "unit.garageFloor": {
+        "required": true
+      },
+      "unit.gardenArea": {
+        "required": true
+      },
+      "unit.outdoorParkingCode": {
+        "required": true
+      },
+      "unit.outdoorSpaceArea": {
+        "required": true
+      },
+      "unit.outdoorSpaceCase": {
+        "required": true
+      },
+      "unit.variableSymbol": {
+        "required": true
+      }
+    }
+  },
+  "sampleIsSynthetic": true,
+  "sampleValues": {
+    "seller.name": "Rezidence Dejvice 2 s.r.o.",
+    "seller.address": "Rohanské nábřeží 693/ 10, Praha 8 - Karlín, 186 00",
+    "seller.registryEntry": "zapsaná v Obchodním rejstříku vedeném Městským soudem v Praze, oddíl C vložka 439 174",
+    "seller.registrationNumber": "241 06 119",
+    "seller.representative": "jednatelem, Ing. Jaroslavem Žahourkem",
+    "seller.email": "jaroslav.zahourek@immobuilding.cz",
+    "seller.dataBox": "nymania",
+    "seller.bankAccount": "178 412 7011 / 2700",
+    "seller.bankName": "UniCredit Bank Czech Republic and Slovakia, a.s.",
+    "buyer.salutation": "Pan",
+    "buyer.name": "TESTOVACÍ KUPUJÍCÍ NEPODEPISOVAT",
+    "buyer.address": "Testovací 62, 160 00 Praha 6",
+    "buyer.birthDate": "1. 1. 1990",
+    "buyer.deliveryAddress": "Doručovací 62, 160 00 Praha 6",
+    "buyer.email": "kupujici@example.test",
+    "buyer.phone": "+420 777 000 062",
+    "seller.clientChangesBankAccount": "178 412 7003 / 2700",
+    "unit.code": "T-062",
+    "unit.floorNumber": "3.",
+    "unit.area": "55,5",
+    "unit.outdoorSpaceCase": "Balkonu",
+    "unit.outdoorSpaceArea": "5",
+    "unit.gardenArea": "12",
+    "unit.outdoorParkingCode": "P-TEST1",
+    "unit.garageFloor": "1.PP",
+    "unit.garageCode": "P-TEST2",
+    "unit.cellarCode": "S-TEST1",
+    "unit.cellarFloor": "1.PP",
+    "contract.totalPriceAmount": "5 000 000",
+    "contract.totalPriceWords": "pět milionů",
+    "payment.reservationFeePaidAmount": "250 000",
+    "payment.firstInstallmentAmount": "1 000 000",
+    "unit.variableSymbol": "62001",
+    "payment.finalInstallmentAmount": "3 750 000",
+    "seller.deliveryAddress": "Rohanské nábřeží 693/ 10, kancelářská budova Rustonka R2, kanceláře IMMO Business a.s., 4. patro.",
+    "contract.sellerPlannedDate": "16. 10. 2026",
+    "contract.buyerPlannedDate": "16. 10. 2026",
+    "seller.signatureName": "Ing. Jaroslav Žahourek, jednatel"
+  },
+  "slots": [
+    {
+      "paragraph": 2,
+      "start": 3,
+      "end": 29,
+      "original": "Rezidence Dejvice 2 s.r.o.",
+      "replacement": "{{seller.name}}",
+      "key": "seller.name"
+    },
+    {
+      "paragraph": 3,
+      "start": 10,
+      "end": 60,
+      "original": "Rohanské nábřeží 693/ 10, Praha 8 - Karlín, 186 00",
+      "replacement": "{{seller.address}}",
+      "key": "seller.address"
+    },
+    {
+      "paragraph": 4,
+      "start": 0,
+      "end": 85,
+      "original": "zapsaná v Obchodním rejstříku vedeném Městským soudem v Praze, oddíl C vložka 439 174",
+      "replacement": "{{seller.registryEntry}}",
+      "key": "seller.registryEntry"
+    },
+    {
+      "paragraph": 5,
+      "start": 4,
+      "end": 14,
+      "original": "241 06 119",
+      "replacement": "{{seller.registrationNumber}}",
+      "key": "seller.registrationNumber"
+    },
+    {
+      "paragraph": 6,
+      "start": 11,
+      "end": 48,
+      "original": "jednatelem, Ing. Jaroslavem Žahourkem",
+      "replacement": "{{seller.representative}}",
+      "key": "seller.representative"
+    },
+    {
+      "paragraph": 7,
+      "start": 0,
+      "end": 33,
+      "original": "jaroslav.zahourek@immobuilding.cz",
+      "replacement": "{{seller.email}}",
+      "key": "seller.email"
+    },
+    {
+      "paragraph": 8,
+      "start": 17,
+      "end": 24,
+      "original": "nymania",
+      "replacement": "{{seller.dataBox}}",
+      "key": "seller.dataBox"
+    },
+    {
+      "paragraph": 11,
+      "start": 0,
+      "end": 19,
+      "original": "178 412 7011 / 2700",
+      "replacement": "{{seller.bankAccount}}",
+      "key": "seller.bankAccount"
+    },
+    {
+      "paragraph": 11,
+      "start": 30,
+      "end": 78,
+      "original": "UniCredit Bank Czech Republic and Slovakia, a.s.",
+      "replacement": "{{seller.bankName}}",
+      "key": "seller.bankName"
+    },
+    {
+      "paragraph": 20,
+      "start": 4,
+      "end": 12,
+      "original": "Pan/paní",
+      "replacement": "{{buyer.salutation}}",
+      "key": "buyer.salutation"
+    },
+    {
+      "paragraph": 20,
+      "start": 12,
+      "end": 21,
+      "original": "…………………….",
+      "replacement": "{{buyer.name}}",
+      "key": "buyer.name"
+    },
+    {
+      "paragraph": 21,
+      "start": 5,
+      "end": 14,
+      "original": "…………………….",
+      "replacement": "{{buyer.address}}",
+      "key": "buyer.address"
+    },
+    {
+      "paragraph": 23,
+      "start": 0,
+      "end": 2,
+      "original": "RČ",
+      "replacement": "Datum narození",
+      "key": null
+    },
+    {
+      "paragraph": 23,
+      "start": 2,
+      "end": 11,
+      "original": "…………………….",
+      "replacement": "{{buyer.birthDate}}",
+      "key": "buyer.birthDate"
+    },
+    {
+      "paragraph": 22,
+      "start": 18,
+      "end": 27,
+      "original": "…………………….",
+      "replacement": "{{buyer.deliveryAddress}}",
+      "key": "buyer.deliveryAddress"
+    },
+    {
+      "paragraph": 24,
+      "start": 6,
+      "end": 15,
+      "original": "…………………….",
+      "replacement": "{{buyer.email}}",
+      "key": "buyer.email"
+    },
+    {
+      "paragraph": 25,
+      "start": 3,
+      "end": 12,
+      "original": "…………………….",
+      "replacement": "{{buyer.phone}}",
+      "key": "buyer.phone"
+    },
+    {
+      "paragraph": 14,
+      "start": 0,
+      "end": 19,
+      "original": "178 412 7003 / 2700",
+      "replacement": "{{seller.clientChangesBankAccount}}",
+      "key": "seller.clientChangesBankAccount"
+    },
+    {
+      "paragraph": 73,
+      "start": 82,
+      "end": 108,
+      "original": "Rezidence Dejvice 2 s.r.o.",
+      "replacement": "{{seller.name}}",
+      "key": "seller.name"
+    },
+    {
+      "paragraph": 73,
+      "start": 363,
+      "end": 389,
+      "original": "Rezidence Dejvice 2 s.r.o.",
+      "replacement": "{{seller.name}}",
+      "key": "seller.name"
+    },
+    {
+      "paragraph": 73,
+      "start": 117,
+      "end": 170,
+      "original": "Rohanské nábřeží 693/ 10, Karlín, Praha 8, PSČ 186 00",
+      "replacement": "{{seller.address}}",
+      "key": "seller.address"
+    },
+    {
+      "paragraph": 73,
+      "start": 398,
+      "end": 451,
+      "original": "Rohanské nábřeží 693/ 10, Karlín, Praha 8, PSČ 186 00",
+      "replacement": "{{seller.address}}",
+      "key": "seller.address"
+    },
+    {
+      "paragraph": 73,
+      "start": 176,
+      "end": 186,
+      "original": "241 06 119",
+      "replacement": "{{seller.registrationNumber}}",
+      "key": "seller.registrationNumber"
+    },
+    {
+      "paragraph": 73,
+      "start": 457,
+      "end": 467,
+      "original": "241 06 119",
+      "replacement": "{{seller.registrationNumber}}",
+      "key": "seller.registrationNumber"
+    },
+    {
+      "paragraph": 73,
+      "start": 489,
+      "end": 508,
+      "original": "178 412 7011 / 2700",
+      "replacement": "{{seller.bankAccount}}",
+      "key": "seller.bankAccount"
+    },
+    {
+      "paragraph": 117,
+      "start": 45,
+      "end": 64,
+      "original": "178 412 7011 / 2700",
+      "replacement": "{{seller.bankAccount}}",
+      "key": "seller.bankAccount"
+    },
+    {
+      "paragraph": 118,
+      "start": 44,
+      "end": 63,
+      "original": "178 412 7011 / 2700",
+      "replacement": "{{seller.bankAccount}}",
+      "key": "seller.bankAccount"
+    },
+    {
+      "paragraph": 124,
+      "start": 182,
+      "end": 201,
+      "original": "178 412 7011 / 2700",
+      "replacement": "{{seller.bankAccount}}",
+      "key": "seller.bankAccount"
+    },
+    {
+      "paragraph": 97,
+      "start": 187,
+      "end": 206,
+      "original": "178 412 7003 / 2700",
+      "replacement": "{{seller.clientChangesBankAccount}}",
+      "key": "seller.clientChangesBankAccount"
+    },
+    {
+      "paragraph": 14,
+      "start": 30,
+      "end": 78,
+      "original": "UniCredit Bank Czech Republic and Slovakia, a.s.",
+      "replacement": "{{seller.bankName}}",
+      "key": "seller.bankName"
+    },
+    {
+      "paragraph": 97,
+      "start": 217,
+      "end": 265,
+      "original": "UniCredit Bank Czech Republic and Slovakia, a.s.",
+      "replacement": "{{seller.bankName}}",
+      "key": "seller.bankName"
+    },
+    {
+      "paragraph": 117,
+      "start": 75,
+      "end": 122,
+      "original": "UniCredit Bank Czech Republic and Slovakia a.s.",
+      "replacement": "{{seller.bankName}}",
+      "key": "seller.bankName"
+    },
+    {
+      "paragraph": 118,
+      "start": 73,
+      "end": 120,
+      "original": "UniCredit Bank Czech Republic and Slovakia a.s.",
+      "replacement": "{{seller.bankName}}",
+      "key": "seller.bankName"
+    },
+    {
+      "paragraph": 124,
+      "start": 212,
+      "end": 260,
+      "original": "UniCredit Bank Czech Republic and Slovakia, a.s.",
+      "replacement": "{{seller.bankName}}",
+      "key": "seller.bankName"
+    },
+    {
+      "paragraph": 73,
+      "start": 519,
+      "end": 567,
+      "original": "UniCredit Bank Czech Republic and Slovakia, a.s.",
+      "replacement": "{{seller.bankName}}",
+      "key": "seller.bankName"
+    },
+    {
+      "paragraph": 82,
+      "start": 12,
+      "end": 13,
+      "original": "…",
+      "replacement": "{{unit.code}}",
+      "key": "unit.code"
+    },
+    {
+      "paragraph": 82,
+      "start": 123,
+      "end": 124,
+      "original": "…",
+      "replacement": "{{unit.floorNumber}}",
+      "key": "unit.floorNumber"
+    },
+    {
+      "paragraph": 83,
+      "start": 56,
+      "end": 57,
+      "original": "…",
+      "replacement": "{{unit.area}}",
+      "key": "unit.area"
+    },
+    {
+      "paragraph": 85,
+      "start": 0,
+      "end": 15,
+      "original": "Balkonu/ Terasy",
+      "replacement": "{{unit.outdoorSpaceCase}}",
+      "key": "unit.outdoorSpaceCase"
+    },
+    {
+      "paragraph": 85,
+      "start": 46,
+      "end": 48,
+      "original": "……",
+      "replacement": "{{unit.outdoorSpaceArea}}",
+      "key": "unit.outdoorSpaceArea"
+    },
+    {
+      "paragraph": 86,
+      "start": 41,
+      "end": 47,
+      "original": "......",
+      "replacement": "{{unit.gardenArea}}",
+      "key": "unit.gardenArea"
+    },
+    {
+      "paragraph": 87,
+      "start": 30,
+      "end": 32,
+      "original": "P…",
+      "replacement": "{{unit.outdoorParkingCode}}",
+      "key": "unit.outdoorParkingCode"
+    },
+    {
+      "paragraph": 90,
+      "start": 95,
+      "end": 104,
+      "original": "1.PP/1.NP",
+      "replacement": "{{unit.garageFloor}}",
+      "key": "unit.garageFloor"
+    },
+    {
+      "paragraph": 90,
+      "start": 354,
+      "end": 356,
+      "original": "P…",
+      "replacement": "{{unit.garageCode}}",
+      "key": "unit.garageCode"
+    },
+    {
+      "paragraph": 92,
+      "start": 20,
+      "end": 22,
+      "original": "S…",
+      "replacement": "{{unit.cellarCode}}",
+      "key": "unit.cellarCode"
+    },
+    {
+      "paragraph": 92,
+      "start": 157,
+      "end": 166,
+      "original": "1.PP/1.NP",
+      "replacement": "{{unit.cellarFloor}}",
+      "key": "unit.cellarFloor"
+    },
+    {
+      "paragraph": 112,
+      "start": 133,
+      "end": 134,
+      "original": "…",
+      "replacement": "{{contract.totalPriceAmount}}",
+      "key": "contract.totalPriceAmount"
+    },
+    {
+      "paragraph": 112,
+      "start": 146,
+      "end": 147,
+      "original": "…",
+      "replacement": "{{contract.totalPriceWords}}",
+      "key": "contract.totalPriceWords"
+    },
+    {
+      "paragraph": 116,
+      "start": 18,
+      "end": 27,
+      "original": "250.000,-",
+      "replacement": "{{payment.reservationFeePaidAmount}}",
+      "key": "payment.reservationFeePaidAmount"
+    },
+    {
+      "paragraph": 117,
+      "start": 18,
+      "end": 19,
+      "original": "…",
+      "replacement": "{{payment.firstInstallmentAmount}}",
+      "key": "payment.firstInstallmentAmount"
+    },
+    {
+      "paragraph": 117,
+      "start": 143,
+      "end": 144,
+      "original": "…",
+      "replacement": "{{unit.variableSymbol}}",
+      "key": "unit.variableSymbol"
+    },
+    {
+      "paragraph": 118,
+      "start": 17,
+      "end": 18,
+      "original": "…",
+      "replacement": "{{payment.finalInstallmentAmount}}",
+      "key": "payment.finalInstallmentAmount"
+    },
+    {
+      "paragraph": 118,
+      "start": 141,
+      "end": 142,
+      "original": "…",
+      "replacement": "{{unit.variableSymbol}}",
+      "key": "unit.variableSymbol"
+    },
+    {
+      "paragraph": 124,
+      "start": 276,
+      "end": 277,
+      "original": "…",
+      "replacement": "{{unit.variableSymbol}}",
+      "key": "unit.variableSymbol"
+    },
+    {
+      "paragraph": 221,
+      "start": 0,
+      "end": 21,
+      "original": "………………………………………………………",
+      "replacement": "{{buyer.deliveryAddress}}",
+      "key": "buyer.deliveryAddress"
+    },
+    {
+      "paragraph": 217,
+      "start": 0,
+      "end": 97,
+      "original": "Rohanské nábřeží 693/ 10, kancelářská budova Rustonka R2, kanceláře IMMO Business a.s., 4. patro.",
+      "replacement": "{{seller.deliveryAddress}}",
+      "key": "seller.deliveryAddress"
+    },
+    {
+      "paragraph": 252,
+      "start": 12,
+      "end": 19,
+      "original": "…………………",
+      "replacement": "{{contract.sellerPlannedDate}}",
+      "key": "contract.sellerPlannedDate"
+    },
+    {
+      "paragraph": 252,
+      "start": 32,
+      "end": 40,
+      "original": "……………………",
+      "replacement": "{{contract.buyerPlannedDate}}",
+      "key": "contract.buyerPlannedDate"
+    },
+    {
+      "paragraph": 259,
+      "start": 0,
+      "end": 26,
+      "original": "Rezidence Dejvice 2 s.r.o.",
+      "replacement": "{{seller.name}}",
+      "key": "seller.name"
+    },
+    {
+      "paragraph": 260,
+      "start": 0,
+      "end": 32,
+      "original": "Ing. Jaroslav Žahourek, jednatel",
+      "replacement": "{{seller.signatureName}}",
+      "key": "seller.signatureName"
+    }
+  ],
+  "preserveOnlyParts": {
+    "[Content_Types].xml": "33a86c11ab3c0b16c3941d9152fddca960517c66c8ebb3dea6979f3a1c7f851d",
+    "_rels/.rels": "c30fe099dbcfed4ecc4ae544ccf82f432c8d3bb665e2a301df283738b196d803",
+    "word/document.xml": "671b5a1d1232dd6f304f2b3b00c5ef33b0675c1915f490d0adaf1d704fecfc59",
+    "word/_rels/document.xml.rels": "fec70bec609e9d8f24e5428b53ef6d298d3e777bdc00df0f16b95d3c8e7bb645",
+    "word/footnotes.xml": "d019c15c9cd5ab5c29aa475461284a9c3220d0e1d08a15bf688f6726e9b80d4c",
+    "word/endnotes.xml": "c703230668b1089ac1257271b9e68c45e800ef2daefe37eda071d9cb00d1aa3e",
+    "word/header1.xml": "8b638339bf28c275f5e1285e6e400cfcad3d1d71d13c89a1caeac3e64192134c",
+    "word/footer1.xml": "743a040d2cdddb2e6016cf8d7cd860e30254b3d878291fda68666ac160940ca5",
+    "word/footer2.xml": "436c45ce84fb2f5bb15cfce72a6e8819af8e8eeb20af79940a201771ca46e5d1",
+    "word/theme/theme1.xml": "3e60f56e15c1da35ce54c3d1c638dfcab3ef798422e5e1dc3643a77b7f557f2d",
+    "word/settings.xml": "0571ff77e138f2f61ae2bc1ab50d0fc43ed9253d16839117e8a5bf928857c9a1",
+    "customXml/item1.xml": "480547554adf5e13a92fdfe595840516c1df1e242fd3dc39f6d89dfe06e1d381",
+    "customXml/itemProps1.xml": "c02528571c6c9d3adf18cbb970b0034114f96e73cacced5c3b907ffd0a2cd003",
+    "customXml/item2.xml": "5efcaf9ad70d9c29f406ee438f8f428b021a881d2c5afff0e53b00b1f67ae51e",
+    "customXml/itemProps2.xml": "652508eaec6c9719c75aa3f1af0b3d54517c8a51fae83385db3e836558c5c5eb",
+    "customXml/item3.xml": "7fa2e2065c635674b9165e3cc53a91969c8cdc9ab6e79e07218ab20a05857329",
+    "customXml/itemProps3.xml": "2c878a4f8d285dd259a822bdc4c71a5ef479cdd0ce2f2d38ec2afa8a0d4f2e21",
+    "customXml/item4.xml": "b9a06f1b3b84034d2125023651cce968563ed095317077cf187e08f768235072",
+    "customXml/itemProps4.xml": "9eec2199526dddbd6b7a8334f632781815aaeab40dd809f0767cc8e1647d776c",
+    "word/numbering.xml": "1a907c936b5c1a16707cb6a031a75a979b8977563939b14aafd915f7be22a534",
+    "word/styles.xml": "e67e03371d9dc5406c3451f2f419a25c0ee056b2851d1698dfb33d4bdfcfdfb2",
+    "word/webSettings.xml": "f2f6fe7679634963bf49bae65f941f41934de42ceeb3a806afac4bab92274853",
+    "word/fontTable.xml": "7f41acd4f620ad209e134e6e14e2f8dbba73a6ba18a3c6ad266a1c07577a7192",
+    "docProps/core.xml": "421fb3466b9b53ac0f267d2c0b54f3ad88e1d8a197057d60696a0e4ab4f9dcc4",
+    "docProps/app.xml": "162fc852f75388388540cabf4de6754455979e806e6f446321c2c830d07728f6",
+    "docProps/custom.xml": "eca69bf6955fb348516af6bb3df74a9a7e2c2e7f40e1edf243ab80efb34645a8",
+    "customXml/_rels/item1.xml.rels": "80482f86e196171d66001e0e74d1900408a3aaf2463e54005d251b5f2db9a0b0",
+    "customXml/_rels/item2.xml.rels": "2a6aee4c8a9714223a3568077411a0c82d11b484b1c9ab93a19d50b99c57baa5",
+    "customXml/_rels/item3.xml.rels": "3aa4054f7f463c6d441102c960783aa7f937d6945a0a885b624a66aafaeedb6c",
+    "customXml/_rels/item4.xml.rels": "3c0d4d955517fe8112c945b1e56f63d5bef3c0005ccb627e40acda432e1cdc1d"
+  },
+  "sourceStructureSha256": "0ff3b3065f2ed239aabfff51392922bd4bc6ff99be8d5a438c0519d3cf9f22c3",
+  "sourceParagraphTextSha256": [
+    "85aaf44c4c850c78c4982bb79cacb1b1e864289f7a67c666aab964a72e0f5b96",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "8d7c1b1c5c5777fa4119d700ea7c54f954e4fa21065b499a191937ba406845ed",
+    "b277874b8d2769df149fee590c3d106b6e0e18853db5192c55279c29ac572f9d",
+    "17d74377c91ca9049296d50357eb5fb148827ab0ddcf9a0498489bbaa82b0af6",
+    "130488cacce63118bb6d3c2fba8b594e12b6f7ae9682b3aff62fd5c1fe1c4bd7",
+    "2480eac183c0dc83175def858048d4fd323c1587cc26841773d5ea61900da51c",
+    "92e18770bfc93e8e490f831f8aa1396f95bf9f391a4a185dfbbef150df695393",
+    "bfd294e2574802b7991b41a9c1be8e4f823070a5b8907e8d1dd85ae0fc7a94e8",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "e00ce0232d7c7e186d7158528476c7c564364e82b8871bd1a957729ca7864467",
+    "445f6b49a261edc7909f115e3dd3e732fff10e1b44896a6981ccc45e4269eaf6",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "bf411419adaab6ac6cf552b7a0e39c5f27e55dde8e2eeddf3d2c929af99d7b9f",
+    "3c77b5c4af8f866b6f131d0b8d147661c079983a4bace27d9e4ec553ba4b5f8f",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "8454106b70e2651897b170c507dc2c66e6b31cc114d1ee0448d45b6471ca8812",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "9e7f443ba5ba17e4cdcb89d8394a3f6ec2a85f5526aed97b4f8440c0fd3713c6",
+    "c260d0dc6010a32174afa3c9a8c760e0eabf9d8fc112b50e6fe23dbe6fa3e111",
+    "62069093b7502448444654e6efcf205da6034639802b192953ac347945365b63",
+    "25f7928eb774f96eff85f499064350830c6bcec1d00aa8be93a571ccc77d58b7",
+    "dd376d7acc1db3e71987da118b3d3162193d141cfa72fded73f284653f7c001a",
+    "0365e4e0d774738bf406ed0bcb1f90aae321e0e091f2c4d208d3f8698aff7abc",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "5aedf900c6e69fd2e2238fa7f40751c0d3e78589811145c093b570d960715277",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "8922cdd4726d10eaca510fc185bdafb169158edd8f55336f72416cdd31e2bbe1",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "83beaaf42027c24384fd4bc48365e38b1fef8379df5a47335694e757e2d0f6fc",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "7f78fcce8c47a634c2d8b7db609d3beac3442da9e09b9477fd69131df5223fbb",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "26e1506965887a8cf00c552ed251b09b88962a6ced50bfc1bec0d718a2ceff19",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "08d141debbf9d516545dc4790ac1e80b7cc2e46d95f410332fb23b2a43626ac2",
+    "7e9947294647ec68da84880fc6dd21393c32f2045e23aebffe169d8d545b52dd",
+    "131b01632b1f91941c09abe5f96b362b3d1b4c613e1b2aeae8e98d01d8dd9f0c",
+    "ef71e99847d171be9130d08bfc70aa2ca152909679eb9b6f4d018ddbc76dcef6",
+    "d94f595d8dc4f133359fc55e8c3c509001517b8826e9bc94effb0be990d947f2",
+    "e13b7902165ec701b6c9fedd5a8cdf8041527f70f80bb441e248a02aa436c396",
+    "2d8f4ad86b2943bf552663eb7e4b2286f013eb814fbc831cab08a71d279a66e0",
+    "c02ee0fdfa9f7e4817523579bbd286d6e11a5586f7e7226a97b918520df220ca",
+    "508e576a9fe2cc46f164d1e4a9b72c6e43900df26786afcd93926a45493ab264",
+    "6cef6739bf2fb6448d566767b9ce3b3e8eb5497f0aa107d198f737ae51438b63",
+    "35817b17c8e2ba3f3eb13f5370617f98ab7fcb08360dd0570cec4df2cf08d0fe",
+    "e1748a402e43909ed912419fb9240e313ecf2996e1f353cc42e8f708674d721b",
+    "caa3c3611f9739f09d65dcae0bd67854549b0ea5b55b163a5723a08fb93587fd",
+    "2f8d45a99ccf82165eea8dfd464330d515c1f65c47c3d740c794b9d6e3d8f2e7",
+    "4f52d65b85842c982a7cef1c1ebea5f5893255df43d81a8c576c285be224d342",
+    "e9a05166a5dc7556dde555c5097affe770d633e1914c3001b21eab56201fe248",
+    "8d26af91057ed011936ee52629975b3069e26ec0e3cbd6304f758f261547e065",
+    "19c663208565bf91f247c88fc74218eb7fd116cf0e9dae9c6c590392143ecf29",
+    "1c5a741a936191ea1f4a52da47391671af6e897606ec522309fadca82d2737c3",
+    "ce6ea406265a4caec6fa949612082d0ac697a8c9b0afdc1c94eb7f2c92ed319e",
+    "5abf8d880a7e1615be8c23b735e8fe17695ba1ce8aafffbbd58f18cc2a5c62f7",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "53be980d52bc580ebf10933ff4aca4499d84c4c49dcaec5b33bc5065e838ee61",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "9df7a4ae84ff5d0f2683aebe2178dadf83090cef119f8d478b7da7ae4692f88b",
+    "f13cf52dfe7b801a55e66cc952fedc690dafb282a505793265d56ae678b0f320",
+    "f6448c5d05a0294538e75abd5aed4fdacd5fd32f20f47d351c6ee955458dbc67",
+    "e5a2737adcea262694e6ab64c1dccc4bb828ca8d8b780a302d3c192dab753d1f",
+    "f9ed44e28bb5deedae91cce6385bb15b55af1fdfbbb8e0045ac8ea3ad5f2cd79",
+    "abdab829a456d129329458a4a59564273d022e9a47e95098634f1b78281fa96d",
+    "cafb3995783a1fda2798b26d2e17db198d51d6fb80a5caef8dff3c36182d3e1d",
+    "bd82185e8a1b8f8b59cc6a583115ca89929cc4c7dc0241dca3b4a7a37a291395",
+    "1b0ce13e0422883d0b5ecb136f438e00c53e92a07782c647e54f7aa082256b01",
+    "22da9af7c9da0a682d79a0242ff521bf10e65e7e2b14b7627563f998d91f7a23",
+    "e461dc0ec9393ef8dd2ee8d08eb42e1b6b376f106299929b643385fe87a7fd21",
+    "46a7932fef79c00b8345ae5820438449da4cdfc138eb62c14071ce9fd13131eb",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "456654c3bf25fc9eb104979764f843a0b7574bf58a5ef4262740fe76e4ec2768",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "86c398fd668db1cec93a2d12af0910f33ee485e9efd8a3e07f0f25089c58a7b0",
+    "7c66391132bb9e897800b46e8c05eaedb6ed929e6bab93ab11df8a90a772a092",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "7533d161420564162cc81a435eb727f0c037de6d904f09910d2269258150e6d8",
+    "edb7d9b9e4b3b277821ec01041ad87c96be6d964857961a09c5d46cfe358d873",
+    "306e9a79a5cbcb8129a9e575e33eb64d62f5742782245081ad48d215b5c2b9a7",
+    "fcf23ccc23875c52434a184b6351e0ecfc34bb968b2ae89620f4957a23deebc3",
+    "c43960392102e3144112fda29e183d9700003360b695cae7586960cc0b834015",
+    "4fc097d8d9cb63a1c7f66d3dd4a61bfcb27746959c9827f694bdbd5475e61e57",
+    "2800f74e5e2020cd72f5d5cb81d55432ecee91c1f6f8c3198ad2afc9e1f2adff",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "ca8d5d6a2ea27b647efe39ba3686706f8f2a598a83143982bc6af4dbc00392ef",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "5ddf47900e0b1ffbe4886ffb5f4bc169b31e2fe196089d344cfaa9afd732be8c",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "c4caf230e26d3a9e9f77a87a8c8cf559ea029f608b3c3580492afd1d52c3f8b5",
+    "cf57b1a90a64a1833c34bdbdbdcb2d13f3bd5ce06d041500e1a44b40c4b9ef26",
+    "566db4a50abadd8df1c732ecc2fee9e00b2d97c6fc9b96c94b8dcbe84288cb5c",
+    "84a342a6e60a75861fc061720730d645af3c0676fdb3c8b7f33272200759ffec",
+    "0199c4cd102f55993fed7fb7cc8717568f7cdb05c259d240b862d2438a6cac6c",
+    "65778f9df43fa3c67e1306b11d585384e4aeac24bb35aa8df48245f25e866b56",
+    "6ba69fb5788a9fae507892067ca98cf0861bbfcc950b34be852c3c80af5b0bad",
+    "dd5ab12dabdbe203ab731b1f7dade93917646a0990c509fa708c4fdd0d9f958d",
+    "58e6c270e638f54a1cde315bd91fe32217afe23d6f8ebac878c51d594190450c",
+    "8c9472d475845dad37c5e980c49a33bf5498f7cb825c91612fda2ceec2be6b50",
+    "df12c196607e904474197ef2affe253662de9cac5f7275b0728c6c399ddd39e5",
+    "da401a44a7fcf6e4cf79c2874aea3b3c0dc5f0949fdecbd665ad3a4710d9437c",
+    "30cb5e31a0aeb3b44ecd918da4de3c5274cdf3c1e66d26b4d14b53fab36c8441",
+    "d424389e87288b74f9b61cb7cfe692e61d343fa2ffae3d25bd6412731a37de7c",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "faadcbe5f767dfebcbcf450200f80f2e8039e6fb9f654dfe4bbcb5069b128787",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "9e4c2f992a9442ac6a4da9ed83928e2199bb9bd19d6507c667f1d5ea2dfe35f7",
+    "580279cb1296a55e9ea507ddc23e8f5096cccc94e83fe2e0c979ae143c84e6d0",
+    "c5cd0b359b7e23f6e4b2de6f21f899b42d2e175e37473716b020089d16ba34e8",
+    "b431db6bb073fc20f0397682bb5bf0f0afa0121f41349101df5d6d12fb636f34",
+    "503391695cfb3863922551c5d06c7b4f90f6dbf16a43a740b76857af1a18689b",
+    "94173da9a997ed99580d9a970a4df04dc96f8f4a4542170d8d3362b21160da43",
+    "64029ebbd6764af15a80b584353ceda6ce1ed18f567fb1d0824be4cf83bbd9b5",
+    "70af5440c8382ad3abd11429109ec4e94fddc72fa650dbb824ac271d4ecb6b00",
+    "474f48aad27ddad8602b183000e39792918f3b147543e8f224600a3bc7319c05",
+    "1eb29440273b90532f100171348d3ad399fc347d08272b5282f696a93b095031",
+    "95f872e7d36802d699d3edbfbbdeb55db784c43869daee68326c1eab91d23d5a",
+    "d616f49fbdec95a182ea31f34af84c39965246ec66d6e52717780194ce7836e6",
+    "824a671a6d6385113196b214c9613ce49cd46aaa80f5b1a00aae47d6a0fd2a69",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "11f4de2e1c24579cd52f0179e78fa22b304d5291f26a48eace73ab5fa9c79d2c",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "dcec9de9315b21410ab7b33b3c1d1881f519d42bb4f6758a056a290fab81b1a0",
+    "0ae36e28d71075ebfac33337ed3a5aca4d3b0111affb07f9132bbf0e7c415c8c",
+    "afd932893bff6bb956bddc091b0853c0b3d77b4b6238de3423915bee78fd9d24",
+    "9467677654bd544d85ed33b093104efd2e427df9eb51da07d37df51e970e11aa",
+    "eda687a0ed3c922167469aacdd537eb98fa13af7a326cc9f94bd66d2bbca85ef",
+    "24dbe31f73273d123f811cac63193e802ab69304cb3b7f6517ad5a095094b641",
+    "af17c0cb74edd5f0f887e65c45ce7703ceb44c96edb749570ecd650f417a720f",
+    "c97bb08e845a08c65d0c87ffc71be3a401ed7b3c4d69c8a230c0ee706b564fe6",
+    "ed4c2306ed9dcee237f5c45553edae0c87155b483a0846aef596932f77fd227f",
+    "d58c03dc7761d9a399b019f097ef016851f722bb5edd3f79f7c7672eaa52bfb4",
+    "732af8289db9d4f717cff04be48057119ffb01f98ce247796b97c4b42ac9d6cb",
+    "934bc2cd8789a3ba29a8197f6c26a71736a445f169ca559d8830593d678b6c1c",
+    "50d26fb41c76cb244f02790283b94824ced32e96ba4cd89dfd85f12bc1d2e1e3",
+    "81617cf9fee647d7c4d3c875765f5a55b0c72b5b4c25419a74e715c890a4d386",
+    "f6afaf8d488bc7e6bcbb9742f3b927a30b7cf248de2b3399c52fa55e5af03f45",
+    "3033965ba63ad959419eccdd24f5def11d7a3e689ec7efbb5a757c40e04296d0",
+    "69cc81d743c63c99178d12aeb1fe6042bb60c0fc648ac8451ea5eb06e5d50c35",
+    "51f677a22c12f0e4c4952fbaec728e3f84e0ef97b29054879d4761b23e0ec745",
+    "af17c0cb74edd5f0f887e65c45ce7703ceb44c96edb749570ecd650f417a720f",
+    "9822f57e9ce2347d60be4887ef9594a3e5fa82cf0235ebd514ca774b4505ae63",
+    "ea02cb35af8d334a19e157f7546cbef5c6583d50c7b9bdad26f1f31c4f731cc0",
+    "0c843d365e51a150bc15fbf23c6913147cf8d2df86247f3246101ccd528fb9b1",
+    "3fd8bafb86e1f142876da0c6512860f2ede758c7ec4751620285b400c2cfe37c",
+    "27b3b9b63c3a1543720b34e3875afbc1649eab96f8ba1c74f3c182b017a660f7",
+    "895581a92222b2f314257454a35da591a8c17c09740a771412731e07b4c2fb41",
+    "b2470598b8c5d90877e38c6bb1767df34dd6ac12414a83c4172cbb3de8942356",
+    "07da05f72815e56a431b2860fc7083d2a3d85ab8f922dc6257dcd2c32346a5dc",
+    "42fba71bc0b8c631f0e8a89bb43fdf8414968aa55b4dd4a4bfde3b744cf59d85",
+    "55d86ed3d435db5cd808c8525e568a8b03df7ae5d14a77f5d54e67b44e05f751",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "0f6279b57b2baa989102fff6f67090727513cae09c728c3798d77fe724d53160",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "31e268bfb5c79c5da0cf11812dcb1fc5a7e266089ebb96d8c6d9bcc63b1e4d7d",
+    "4f793bff856db551fd17b7a3876e88a81d1b1acadf276a70cbfe64d4057b82d5",
+    "73688fc226b94f0b0ec21848c6befd36775d481d5e17937d3c4fe65f2720f8e7",
+    "b5e5fe2117af67c7daf369f32e9bc2fadff24e64a6e743434170d412ad63e52e",
+    "45c05cf14dacbc17e8e8dda1391723a43ca96f5ceabf6604b79088b548a3a752",
+    "6c801540d18c4aa0f49f3b8a9e8977d3cf253e1ae579a26120a3f5897c07721b",
+    "f1a76399ce0a53f7ab6393bf3e9f5da0c34f2945450764a428f9bc3189150928",
+    "7a42d2dbb2e967382bd8c697de293ecbe5d16c84dcb752ee58d931be827de2bb",
+    "5f5680b69b9cf1c75b3c50f3dbdf790f7ce62c85b0ceeaf135eeb78663871542",
+    "f94d2f3b0e13894cd17261ffc950bb4a0b5f70f48121db8e823a7c196a69b32c",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "ed2d2512d2a62d8c5235db4bbce88c4f8b6788db523170dfa5670f1cbc1ac54a",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "0b8909c9b1ffab33f32d22563685431c1ffc4d0a220bb2270924bf7bc0bfd44a",
+    "0e0ba4d5929434bb7dfb58dc017a7b9b74dd904eb99a0dd9a270ab396324b368",
+    "7f3c872a72c2c80fbf56ea0f9f65623e34b8026f38f1002131e37c12a70ee409",
+    "bffa54a469459067e53779eef6a445afc05a39488cffda474d3d64a6de453c64",
+    "4ddc28a8fec8efa25cb28ca996269231e4403babb083219aeb758c7ff623d999",
+    "3b3ca066ac8cc290120bf0264acf7e8842f9b113f649056dc7fea25e94e7e91e",
+    "7d2bba86bf12c8b07d5e2fdc04d9cbcd23784ad60f6201cdffb3e1fa9ce1b487",
+    "d29ac69f9bb9a8c88b7a301d51087d72148ebdf8b35f4ec738900d66194bc2f1",
+    "f4785b47c48037822927f4a34c363a22f2efb3a74b78a2eca9b3e89cdfafed5d",
+    "cbef7027667492d5c8153941bf8d47f19089813d4b13d0753421ddf922818312",
+    "6165ee266f897b48c12c01a6574f2afe40f5f5aced27fadeef934056958f68ac",
+    "6dfc2a771a7430b7cff1e6b87d057dc2c3f8bc0da73f91b7f7f4703ca3e20e3a",
+    "7ffe569907881c8cab7d05372f780d533ce9934b3b20cf188cefbe389170c6b8",
+    "864ca166aaa9d275877027ea47416a36b3c4629d9a62e4d62885f06e49a7093a",
+    "a396adfe17bd56a4abd60e18f4019db7ac682bc6fbe41f891ccb0dae9e3ffeeb",
+    "adf52b1be1d625ff819a2b06a7494fbf9911c2adef27f408921dd6deb2912bc2",
+    "8b7d844d8eea5693fd88ce19210f9e0c853af8bb35b9aee51cbcbe154b48c2fb",
+    "da8d7ea0cf2e57a8ab88520268063e33ad884e7f4b8e59c174ebf0aef56c4918",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "89a7c703dc5898f73cfb8e9eaf7acb2670fa25688fcc21968e1d2c61add7605a",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "49ae1cc06d29f4abacf5329a678356eafb94dda90df4e598b2c502e186ec81ea",
+    "6f6930907ba799ccd4bb851b27bdad5dfb0bb50b1991a389444f8826a8be6031",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "da53bb6655918f921a29a56432eba3215891d678741a4532ae708340dff83935",
+    "37f4dbc1da23db764d122ffaea72025acf4678f2ef80cb941e999049d57cd753",
+    "27015a1dbf4adc6feef50f7cac11a861ee09a3c4b8c6e4d3892873b58e1a07a6",
+    "bba8778dadc84d1822a104ceea61fcd10f07fe3c567ec61b166ee7797a2930b8",
+    "f7419791fdbde1f77ec4dece765ef1efdcd14ce7c45f9cdd430bb3497f8425b2",
+    "455b8400706e5f7556b9b61b6ba86ef147828c568b6dca70de73cbb592997dc2",
+    "a2b1e82d76de03dd34a8e79033c6a6244d72a5a1e195662f73bbcbaced62c08d",
+    "1ef5107273b4d78c78de1113c0b7cec55743924c25d85eb48f07463f4e340039",
+    "9e674efdff73304368c08ffd2b49e7933c896c88372e81060b6d1069b80b6a07",
+    "8336d81a461d28bf6382ac9f33a7bbb8a5271856fb01b75f3889fbf1831d2896",
+    "8b3c4e4821f1392c3d729fc7e2ca3f43b5f41c22fde844ca3b84dfb345962137",
+    "be3d3b3221070c2d02499a4f661fdd9f732b54368dcaa40c73a6823d6b9ed14d",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "ef67c09426abe6d689c71b4781bc4da2ad19798063e191fe539c3cf5e9215efa",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "ecc676dc62cc35277ef7e74f43ab78cd0291c2d602fdb726619b3446660dc893",
+    "c1bff9159265913df6261b73cfba4913d42e7bed209390e45c1031b2bd956e87",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "526b23aab7f6a6ef79cb7a848d6520cc6094104bd2b5e859641c04df89753dfe",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "e47d71861aa881606b19ca7fe4caef815a309fe4c0fcbb2b8eaf3fec698e7dc4",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "b938f8617223529dde84c0a2daa9718022f3a1720e7af56b9b3e90b3fa026e9c",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "bf20acc114a88644b8a2e3147a59b7551def3890231812087af826cda9848bdb",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "929b55884751932caf5eda1c49da4c110e6ed6f51227957206888818dea57f2f",
+    "9fb6ac727d5c3a45977775c2a586694213dd4eba804f6cd36fad687a0784e0d2",
+    "4dd29eeed5845ae465e4487bf0ab687d38d282f59e485ddac9b91959c09807d9",
+    "25bfb338323f1408e2237e3e62d4e912d16441343008a0eb3c070e4bee3f24b1",
+    "ebb02e4c8dc93e728005d7949ca77c1ab76b8d4c9dadc720df6f16ab8ff5cb2e",
+    "1cbbb5cef0a44dfd0b5b7534edbad675908b2c528adc2ec05b3492949d9f8232",
+    "2e7f20f15211137ec62b53836b4eb7452bcc3a235a006b741d1371d712f488f1",
+    "6d91111d641b1388171c959c7d41635f1cbb456a24e5d3e49bd5e4c923c88895",
+    "eb2fbd9b7de114abda17643ba0eb1b92269d7452336c3e329c5d9222effef6a3",
+    "14bd3e96b35e8ed6417fdc1270a383055bce9316e6c0e625a486c69593f1e868",
+    "c7069b8a201c3bf94e725ac57264e78b5263115b56a727b7df5974fb44eb7fe5",
+    "4f151a09244dd5d914119c58c4da71a78d92f17287a020edb9ee45d7ac51e824",
+    "277c52ff6c18f1729494598bac779ba5dd1323bbe3ca8e991e843e66a5c416f2",
+    "5ffef5eb54080f64e5c9e0bf782eb9b12821ebed7287218f176c7f9765d1e796",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "d91749c42965005ea38c9bad655631b307f44b55c627b619ff9937aa8360ddd9",
+    "97f02faf6d764e3cd0beb362a62e827317fd3b1697ade986329ac39e20dd9355",
+    "f5f8c4a33453f6c233657d936d83d2f13a5f25c80f57d0fdbc2df59c4aa48d7f",
+    "e2c5b838b1fcf606790254e1597917ab8a8250a111c4e419d2b7caae88e203ab",
+    "99cf9936d67d06c4c17d0ee0fa8c626551e8e09f9a3b8c57fc7a4b8a28ea8c36",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "6812ad3fdb5147ab2f3a5b70a9c4c96b8b79d4ec135655903db04369708439b3",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "06e85155ad0b52321d764520509438fe301e05d355cfe92083ce4ba3857a385c",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "0bffeeb3d244c575e8feaecbe8b1d919de0eb29ca15c901cd265c0ad7a178eed",
+    "a8c64360f0530df13826e3c54161b3fc5ba4022d963c3d6d77751d291cb817fb",
+    "7fe01137e47c55a3973c4a45e45e6e095d09946a17da410e537c9e372add0804"
+  ],
+  "scope": {
+    "project": "Rezidence Dejvice",
+    "buyerVariant": "one_individual",
+    "accessoryVariant": "all_source_accessories_present",
+    "buyerIdentifier": "date_of_birth",
+    "staticProjectLegalFactsPinnedToSource": true
+  },
+  "knownGates": [
+    "content_review",
+    "runtime_field_mapping",
+    "appendices",
+    "signature_based_due_date",
+    "accessory_variants",
+    "source_bound_lender_and_project_legal_facts"
+  ],
+  "profileKey": "dejvice-original-dob-delivery-v2"
+}

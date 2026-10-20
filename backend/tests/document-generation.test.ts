@@ -6,7 +6,7 @@ import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { DocumentTemplateGenerationService, DocumentGenerationError } from "../src/documents/template-generation-service.js";
 import { DocumentTemplateGenerationRepository } from "../src/documents/template-generation-repository.js";
 import { DocxTemplateError, inspectDocxTemplate } from "../src/documents/docx-template.js";
-import {ORIGINAL_DOB_FULL_VARIANT} from '../src/documents/template-catalog.js';
+import {ORIGINAL_DOB_FULL_VARIANT,SBK_DOB_DELIVERY_VARIANT} from '../src/documents/template-catalog.js';
 
 const context={tenantId:"10000000-0000-4000-8000-000000000001",userId:"20000000-0000-4000-8000-000000000001",membershipId:"30000000-0000-4000-8000-000000000001"};
 const projectId="40000000-0000-4000-8000-000000000001";const templateVersionId="50000000-0000-4000-8000-000000000001";
@@ -31,9 +31,9 @@ function harness(options:{source?:Uint8Array;snapshot?:Record<string,string>;upl
 }
 
 test('obecný generation endpoint nemůže obejít review-only profil právní RS/SBK',async()=>{
-  for(const outputTypeCode of ['reservation_contract','future_purchase_contract']){
+  for(const [outputTypeCode,variantKey] of [['reservation_contract',ORIGINAL_DOB_FULL_VARIANT],['future_purchase_contract',ORIGINAL_DOB_FULL_VARIANT],['future_purchase_contract',SBK_DOB_DELIVERY_VARIANT]]){
     const h=harness();const original=await h.repository.getTemplate();
-    h.repository.getTemplate=async()=>({...original,outputTypeCode,variantKey:ORIGINAL_DOB_FULL_VARIANT});
+    h.repository.getTemplate=async()=>({...original,outputTypeCode,variantKey});
     await assert.rejects(h.service.generate({...context,projectId,templateVersionId,idempotencyKey:'review-only-generation',contractId:'contract',snapshot:{}}),
       (error:unknown)=>error instanceof DocumentGenerationError&&error.code==='template_generation_not_ready');
     assert.equal(h.uploads,0);
