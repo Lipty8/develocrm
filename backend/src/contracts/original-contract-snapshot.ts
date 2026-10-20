@@ -2,7 +2,7 @@ import type {RsSource,RsAccessory} from './rs-generation-repository.js';
 import {ORIGINAL_DOB_FULL_VARIANT,ORIGINAL_TEMPLATE_CATALOGS} from '../documents/template-catalog.js';
 import {originalPaymentPlan} from './original-payment-plan.js';
 import {originalMoney} from './original-money.js';
-import {signingPlanDay} from '../shared/contract-signing-plan.js';
+import {signingPlanDay,ContractSigningPlanValidationError} from '../shared/contract-signing-plan.js';
 import {originalAccessoryKind} from '../shared/accessory-legal-details.js';
 import {originalAccessoryIssues} from './original-contract-readiness.js';
 
@@ -52,7 +52,13 @@ export function buildOriginalContractSnapshot(source:RsSource):Record<string,str
   const total=money(source.totalPrice,'contract.totalPrice'),fee=money(source.reservationFee,'payment.reservationFee');
   if(fee.minor>total.minor)return fail('payment.reservationFee');
   const plan=source.signingPlan;
-  if(!plan||!signingPlanDay(plan.sellerPlannedOn)||!signingPlanDay(plan.buyerPlannedOn))return fail('contract.signingDates');
+  if(!plan)return fail('contract.signingDates');
+  try{
+    if(!signingPlanDay(plan.sellerPlannedOn)||!signingPlanDay(plan.buyerPlannedOn))return fail('contract.signingDates');
+  }catch(error){
+    if(error instanceof ContractSigningPlanValidationError)return fail('contract.signingDates');
+    throw error;
+  }
   const result:Record<string,string>={
     'seller.name':text(seller.name,'seller.name'),'seller.address':text(seller.address,'seller.address'),
     'seller.registryEntry':text(seller.registryEntry,'seller.registryEntry'),'seller.registrationNumber':text(seller.registrationNumber,'seller.registrationNumber'),

@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {unzipSync} from 'fflate';
 import {inspectDocxTemplate,renderDocxTemplate} from '../src/documents/docx-template.js';
 import {buildOriginalContractSnapshot,OriginalContractSnapshotError} from '../src/contracts/original-contract-snapshot.js';
-import {buildSnapshot,RsGenerationService} from '../src/contracts/rs-generation-service.js';
+import {buildSnapshot,RsGenerationService,RsGenerationError} from '../src/contracts/rs-generation-service.js';
 import type {RsSource} from '../src/contracts/rs-generation-repository.js';
 import {ORIGINAL_DOB_FULL_VARIANT,ORIGINAL_TEMPLATE_CATALOGS} from '../src/documents/template-catalog.js';
 import {originalMoney} from '../src/contracts/original-money.js';
@@ -48,6 +48,7 @@ test('nejednoznačná, externí nebo nesrovnatelná RS se nevydává za shodu',(
   (s:RsSource)=>{s.precedingRsEvidence!.profile='default';},(s:RsSource)=>{delete s.precedingRsEvidence!.snapshot!['buyer.name'];},
   (s:RsSource)=>{s.precedingRsEvidence!.buyerPartyId=null;},
   (s:RsSource)=>{s.buyers[0].address=null;},(s:RsSource)=>{s.paidReservationFee=1;},
+  (s:RsSource)=>{s.signingPlan!.sellerPlannedOn='2026-02-30';},
  ]){const source=successor();mutate(source);const value=precedingRsComparison(source)!;assert.equal(value.status,'unavailable');assert.deepEqual(value.differences,[]);assert.equal(value.comparedFields,0);}
  assert.equal(precedingRsComparison(fixture()),undefined);
 });
@@ -153,6 +154,36 @@ test('platné haléřové částky a chybějící hodnoty zachovají existujíc�
   assert.ok(missing.issues.some(item=>item.code==='price'));assert.ok(missing.issues.some(item=>item.code==='reservation_fee'));
   assert.ok(!missing.issues.some(item=>['contract_price','contract_fee'].includes(item.code)));
  }
+});
+for(const type of ['rs','sbk'] as const)test(`${type}: připravenost používá stejnou striktní kontrolu údajů jako skutečné mapování`,async()=>{
+ const input={tenantId:'technical-tenant',userId:'technical-user',membershipId:'technical-member',contractId:'technical-contract'};
+ const cases:Array<{change:(source:RsSource)=>void;field:string;label:string;privateValue?:string}>=[
+  {change:s=>{s.buyers[0].birthDate='1990-02-30';},field:'buyer.birthDate',label:'Datum narození',privateValue:'1990-02-30'},
+  {change:s=>{s.buyers[0].address='   ';},field:'buyer.address',label:'Bydliště kupujícího'},
+  {change:s=>{s.buyers[0].firstName='Testovací {{nepovoleno}}';},field:'buyer.firstName',label:'Jméno kupujícího',privateValue:'{{nepovoleno}}'},
+  {change:s=>{s.settings!.name='Prodávající {{nepovoleno}}';},field:'project.seller.name',label:'Prodávající',privateValue:'{{nepovoleno}}'},
+  {change:s=>{s.variableSymbol='   ';},field:'contract.payment',label:'Variabilní symbol'},
+  {change:s=>{s.signingPlan!.sellerPlannedOn='2026-02-30';},field:'contract.signingDates',label:'Plánovaná data podpisu'},
+  {change:s=>{s.gardenM2=NaN;},field:'unit.garden',label:'Plocha předzahrádky'},
+ ];
+ if(type==='sbk')cases.push({change:s=>{s.areaM2=55.555;},field:'unit.area',label:'Podlahová plocha'});
+ for(const scenario of cases){
+  const source=fixture(type);scenario.change(source);let generationCalls=0;
+  const service=new RsGenerationService({load:async()=>source} as never,{generate:async()=>{generationCalls++;}} as never);
+  assert.throws(()=>buildSnapshot(source),OriginalContractSnapshotError);
+  const readiness=await service.readiness(input);
+  const found=readiness.issues.find(item=>item.code==='invalid_contract_value');
+  assert.ok(found,scenario.field);assert.equal(found.field,scenario.field);assert.ok(found.message.includes(scenario.label));
+  if(scenario.privateValue)assert.ok(!JSON.stringify(readiness.issues).includes(scenario.privateValue));
+  if(scenario.field.startsWith('buyer.'))assert.ok(found.action?.href.startsWith('/clients/technical-buyer?'));
+  if(scenario.field.startsWith('project.'))assert.ok(found.action?.href.startsWith('/projects/technical-project?'));
+  assert.equal(readiness.ready,false);assert.ok(readiness.issues.some(item=>item.code==='original_profile_review'));
+  await assert.rejects(service.generate({...input,idempotencyKey:'technical-invalid-source'}),
+   (error:unknown)=>error instanceof RsGenerationError&&error.code==='not_ready'&&error.issues.some(item=>item.code==='invalid_contract_value'));
+  assert.equal(generationCalls,0);
+ }
+ const valid=await new RsGenerationService({load:async()=>fixture(type)} as never,{} as never).readiness(input);
+ assert.ok(!valid.issues.some(item=>item.code==='invalid_contract_value'));
 });
 for(const type of ['rs','sbk'] as const)test(`skutečná neaktivní ${type.toUpperCase()} šablona přijme serverové scalar mapování a zachová ostatní části Wordu`,async()=>{
  const template=await readFile(new URL(`../templates/review/${type}-dejvice-original-review.docx`,import.meta.url));

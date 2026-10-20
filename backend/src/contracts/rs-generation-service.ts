@@ -4,10 +4,10 @@ import {RsGenerationRepository,type RsSource,type RsAccessory} from "./rs-genera
 
 import type {RsReadiness,RsReadinessIssue} from '../shared/rs-readiness.js';
 import {sellerSettingFields} from '../shared/project-contract-settings.js';
-import {ORIGINAL_DOB_FULL_VARIANT} from '../documents/template-catalog.js';
+import {ORIGINAL_DOB_FULL_VARIANT,templateCatalog} from '../documents/template-catalog.js';
 import {originalContractIssues} from './original-contract-readiness.js';
 import {ORIGINAL_CONTRACT_TERMS} from './original-payment-plan.js';
-import {buildOriginalContractSnapshot} from './original-contract-snapshot.js';
+import {buildOriginalContractSnapshot,OriginalContractSnapshotError} from './original-contract-snapshot.js';
 import {originalMoney} from './original-money.js';
 import {signaturePaymentTerms} from './signature-payment-terms.js';
 import {precedingRsComparison} from './preceding-rs-comparison.js';
@@ -94,6 +94,25 @@ function validate(source:RsSource):RsReadinessIssue[]{
   if(source.reservationFee==null)issues.push(issue("reservation_fee","contract.reservationFee","Smlouva nemá nastavený rezervační poplatek."));
   if(!original&&(!Number.isInteger(source.reservationFeeDueDays)||source.reservationFeeDueDays<1))issues.push(issue("reservation_fee_due","contract.reservationFeeDueDays","Smlouva nemá platnou splatnost rezervačního poplatku."));
   if(source.accessories.some(accessory=>accessory.type==='wallbox'))issues.push(issue("unsupported_wallbox","unit.accessories","Tato verze šablony neumí bezpečně popsat wallbox. Použijte schválenou rozšířenou šablonu."));
+  // Approval/payment preparation are independent gates. Once the business
+  // facts are present, preflight the exact mapper even while those gates are
+  // closed. This prevents readiness accepting a value the renderer rejects.
+  if(source.templateVariant===ORIGINAL_DOB_FULL_VARIANT&&issues.every(item=>
+    ['approved_template','ambiguous_template','original_profile_review','contract_payment_terms'].includes(item.code))){
+    try{buildOriginalContractSnapshot(source);}
+    catch(error){
+      if(!(error instanceof OriginalContractSnapshotError))throw error;
+      const catalog=templateCatalog(source.contractType==='sbk'?'future_purchase_contract':'reservation_contract',source.templateVariant);
+      const label=catalog?.fields[error.field]?.label??({
+        'contract.signingDates':'Plánovaná data podpisu','unit.area':'Podlahová plocha',
+        'unit.garden':'Plocha předzahrádky','unit.floorNumber':'Nadzemní podlaží',
+        'buyer.firstName':'Jméno kupujícího','buyer.lastName':'Příjmení kupujícího',
+      } as Record<string,string>)[error.field]??'Údaj pro smlouvu';
+      const field=error.field==='unit.variableSymbol'?'contract.payment':error.field.startsWith('seller.')?`project.${error.field}`:
+        error.field.startsWith('contract.')&&error.field.endsWith('PlannedDate')?'contract.signingDates':error.field;
+      issues.push(issue('invalid_contract_value',field,`Zkontrolujte údaj „${label}“. Hodnota není platná pro připravovanou smlouvu.`));
+    }
+  }
   return issues;
 }
 function validPaymentTerms(source:RsSource){
