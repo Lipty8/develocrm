@@ -60,3 +60,31 @@ comparison panel:
 
 The existing templates, legal text, source hashes, Word outputs and actual pilot
 business records were not changed by this package.
+
+## Deployment and live read-only verification
+
+- Source commit `081ff88d460b6b61015d0ecb5763fe348cda844b`, pushed to GitHub main.
+- ACR run `cg4e` succeeded in 2m19s. Context 404.469 KiB: committed backend
+  source, migrations needed by the existing Dockerfile, and package/build files
+  only. No local secrets, DOCX originals, attachments, tests or pilot data.
+- API image `develocrm-api:original-preflight-081ff88`, deployed by immutable
+  digest `sha256:7e298985d317f7db8f35e21c118d2d5b10c4495ca7b523e449fa8532021d2643`.
+- Revision `ca-develocrm-api-pilot--preflight-081ff88`: Healthy, Running,
+  Provisioned, 1 replica, latest-ready and 100% latest traffic verified.
+- Liveness `/health` and readiness `/ready` retained; both HTTP 200.
+- No migration ran. Previous healthy `sbk-compare-2be37a3` remains available.
+- Frontend stays Sites 156: no frontend assets or API shape changed in this
+  backend-only package. A compatible frontend production build passed locally;
+  no redundant Sites publication is claimed.
+- Authenticated browser as Adam: full reload of existing technical
+  `TECH60-BLOCKED-SBK`, then the actual `Znovu zkontrolovat` control. Both
+  preparation requests reached the new revision and returned HTTP 200:
+  `req-r` (124 ms), `req-v` (114 ms). Context and missing-data messages remain
+  correct, no generation/signature action was offered for the incomplete case.
+- Browser console warning/error capture empty. Initial post-start 10-minute
+  query: 78 log rows, 0 detected HTTP 5xx and 0 detected DB/RLS errors. This is
+  a limited deployment smoke window, not a claim of comprehensive monitoring.
+- No form saved, contract generated, signature recorded or financial operation
+  performed. Negative invalid-value branches were exercised in isolated tests,
+  not by writing invalid facts into pilot records. Live smoke proves compatible
+  authenticated preparation, not live original-profile legal generation.
