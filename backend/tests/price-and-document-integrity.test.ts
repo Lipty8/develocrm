@@ -259,6 +259,48 @@ for(const usePostgres of [false,true])test(`price creation and signed document i
       await assert.rejects(f.database.withContext(f.context,client=>client.query("UPDATE accessories SET coownership_denominator=24 WHERE id=$1",[id])),/COMMAND_REQUIRED/);
       await assert.rejects(f.database.withContext(f.context,client=>client.query('SELECT app.set_accessory_legal_details($1,$2,$3::jsonb,$4)',[f.context.tenantId,id,JSON.stringify({...details,shareDenominator:9999999999}),f.context.membershipId])),/ACCESSORY_LEGAL_INVALID/);
     });
+    await t.test('accessory location uses canonical inventory, preserves omitted values and rolls back invalid edits',async()=>{
+      const repository=new InventoryRepository(f.database);
+      const created=await repository.createAccessory({...f.context,projectId:f.projectId,category:'cellar',code:'LOCATION-TECH',areaM2:5,amount:1000});
+      const input={...f.context,accessoryId:created.id,code:'LOCATION-TECH',areaM2:5,amount:1000,floorLabel:'  1. PP  '};
+      const read=async()=>(await f.db.query<{floor_label:string|null}>('SELECT floor_label FROM accessories WHERE id=$1',[created.id])).rows[0].floor_label;
+      const count=async()=>(await f.db.query<{audit:number;outbox:number;prices:number}>("SELECT (SELECT count(*)::int FROM audit_log WHERE entity_id=$1 AND action='accessory.location_updated') audit,(SELECT count(*)::int FROM outbox_events WHERE aggregate_id=$1 AND event_type='accessory.location_updated.v1') outbox,(SELECT count(*)::int FROM accessory_price_history WHERE accessory_id=$1) prices",[created.id])).rows[0];
+      await repository.updateAccessory(input);await repository.updateAccessory(input);
+      assert.equal(await read(),'1. PP');assert.deepEqual(await count(),{audit:1,outbox:1,prices:1});
+      assert.equal((await repository.getCatalog(f.context)).accessories.find(a=>a.id===created.id)?.location,'1. PP');
+      await repository.updateAccessory({...input,floorLabel:undefined});assert.equal(await read(),'1. PP');
+      await assert.rejects(repository.updateAccessory({...input,tenantId:randomUUID()}),/tenant context/);
+      await assert.rejects(repository.updateAccessory({...input,membershipId:randomUUID()}),/permission/);
+      await assert.rejects(repository.updateAccessory({...input,accessoryId:randomUUID()}),/permission/);
+      await assert.rejects(repository.updateAccessory({...input,floorLabel:'x'.repeat(121)}),/Umístění/);
+      await assert.rejects(repository.updateAccessory({...input,floorLabel:'2. PP',amount:-1,legalDetails:{legalForm:'cellar_unit',shareNumerator:null,shareDenominator:null}}),/invalid accessory data/);
+      assert.equal(await read(),'1. PP');assert.deepEqual(await count(),{audit:1,outbox:1,prices:1});
+      assert.equal((await f.db.query<{legal_form:string|null}>('SELECT legal_form FROM accessories WHERE id=$1',[created.id])).rows[0].legal_form,null,'earlier legal change rolled back too');
+      const sql='SELECT app.update_project_accessory($1,$2,$3,5,1000,NULL,$4,$5,$6::text)';
+      for(const invalid of ['x'.repeat(121),'1. PP\n2. PP'])await assert.rejects(f.database.withContext(f.context,c=>c.query(sql,[f.context.tenantId,created.id,input.code,'Technical',f.context.membershipId,invalid])),/ACCESSORY_LOCATION_INVALID/);
+      const restrictedUser=randomUUID(),restrictedMember=randomUUID();
+      await f.db.query("INSERT INTO users(id,entra_issuer,entra_subject,email,display_name) VALUES($1,'technical-issuer',$2,'location@example.test','Location scope')",[restrictedUser,randomUUID()]);
+      await f.db.query("INSERT INTO tenant_memberships(id,tenant_id,user_id,status,accepted_at) VALUES($1,$2,$3,'active',now())",[restrictedMember,f.context.tenantId,restrictedUser]);
+      const other=await repository.createProject({...f.context,name:'Location scope',code:'LOC-SCOPE',slug:'loc-scope',constructionStatus:'preparation',defaultCurrency:'CZK'});
+      await f.db.query("INSERT INTO project_custom_access(tenant_id,project_id,membership_id,area,access_level,assigned_by_user_id) VALUES($1,$2,$3,'units','edit',$4)",[f.context.tenantId,other.id,restrictedMember,f.context.userId]);
+      for(const actor of [restrictedMember,f.context.membershipId])await assert.rejects(f.database.withContext(f.context,async c=>{
+        await c.query("SELECT set_config('app.user_id',$1,true)",[restrictedUser]);await c.query('SET LOCAL ROLE develocrm_app');
+        return c.query(sql,[f.context.tenantId,created.id,input.code,'Technical',actor,'2. PP']);
+      }),/permission/,'project scope and actor identity are both enforced');
+      await repository.updateAccessory({...input,floorLabel:null});assert.equal(await read(),null);
+      assert.deepEqual(await count(),{audit:2,outbox:2,prices:1});
+    });
+    if(f.connectionUrl)await t.test('parallel PostgreSQL location edits serialize without duplicate location events or price rows',async()=>{
+      if(!f.connectionUrl)throw new Error('PostgreSQL concurrency fixture missing');
+      const runtime=new Database(f.connectionUrl);
+      try{
+        const repository=new InventoryRepository(runtime);
+        const created=await repository.createAccessory({...f.context,projectId:f.projectId,category:'parking',code:'LOCATION-CONCURRENT',amount:1000});
+        await Promise.all(Array.from({length:8},()=>repository.updateAccessory({...f.context,accessoryId:created.id,code:'LOCATION-CONCURRENT',amount:1000,floorLabel:'1. PP'})));
+        const result=(await f.db.query<{floor_label:string;audit:number;outbox:number;prices:number}>("SELECT floor_label,(SELECT count(*)::int FROM audit_log WHERE entity_id=a.id AND action='accessory.location_updated') audit,(SELECT count(*)::int FROM outbox_events WHERE aggregate_id=a.id AND event_type='accessory.location_updated.v1') outbox,(SELECT count(*)::int FROM accessory_price_history WHERE accessory_id=a.id) prices FROM accessories a WHERE id=$1",[created.id])).rows[0];
+        assert.deepEqual(result,{floor_label:'1. PP',audit:1,outbox:1,prices:1});
+      }finally{await runtime.close();}
+    });
     if(f.connectionUrl)await t.test('parallel PostgreSQL updates serialize on the same accessory without duplicate legal events',async()=>{
       if(!f.connectionUrl)throw new Error('PostgreSQL concurrency fixture missing');
       const runtime=new Database(f.connectionUrl);

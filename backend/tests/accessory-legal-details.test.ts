@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {normalizeAccessoryLegalDetails as normalize,originalAccessoryKind} from '../src/shared/accessory-legal-details.js';
+import {normalizeAccessoryLegalDetails as normalize,originalAccessoryKind,normalizeAccessoryLocation} from '../src/shared/accessory-legal-details.js';
+test('accessory location is explicit text, trimmed, optional and never inferred',()=>{
+ assert.equal(normalizeAccessoryLocation('  1. PP  '),'1. PP');assert.equal(normalizeAccessoryLocation(''),null);assert.equal(normalizeAccessoryLocation(null),null);
+ for(const value of [undefined,{},42,'x'.repeat(121),'1. PP\n2. PP','\u0000','\u007f'])assert.throws(()=>normalizeAccessoryLocation(value),/Umístění/);
+});
 test('legal details validate complete fractions without guessing unknown rights',()=>{
  assert.deepEqual(normalize({legalForm:null}),{legalForm:null,shareNumerator:null,shareDenominator:null});
  assert.deepEqual(normalize({legalForm:'garage_coownership',shareNumerator:1,shareDenominator:25}),{legalForm:'garage_coownership',shareNumerator:1,shareDenominator:25});

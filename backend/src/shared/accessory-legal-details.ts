@@ -1,7 +1,12 @@
 /** Contractual rights are separate from physical inventory category and price. */
 export type AccessoryLegalForm='cellar_unit'|'outdoor_parking_use_right'|'garage_coownership';
 export type AccessoryLegalDetails={legalForm:AccessoryLegalForm|null;shareNumerator:number|null;shareDenominator:number|null};
-export type AccessoryUpdateInput={accessoryId:string;code:string;areaM2?:number|null;amount:number;amountNet?:number|null;reason?:string;legalDetails?:AccessoryLegalDetails};
+export type AccessoryUpdateInput={accessoryId:string;code:string;areaM2?:number|null;floorLabel?:string|null;amount:number;amountNet?:number|null;reason?:string;legalDetails?:AccessoryLegalDetails};
+export function normalizeAccessoryLocation(value:unknown):string|null{
+  if(value===null)return null;
+  if(typeof value!=='string'||value.length>120||/[\u0000-\u001f\u007f]/.test(value))throw new Error('Umístění musí být text do 120 znaků bez řídicích znaků.');
+  return value.trim()||null;
+}
 export class AccessoryLegalDetailsError extends Error{
   constructor(){super('Zkontrolujte smluvní vymezení příslušenství a spoluvlastnický podíl.');this.name='AccessoryLegalDetailsError';}
 }

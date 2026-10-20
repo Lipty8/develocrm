@@ -1,7 +1,7 @@
 "use client";
 
 import {AccessoryLegalFields,accessoryLegalLabel} from "./components/AccessoryLegalFields";
-import {normalizeAccessoryLegalDetails,type AccessoryLegalDetails} from "../backend/src/shared/accessory-legal-details";
+import {normalizeAccessoryLegalDetails,normalizeAccessoryLocation,type AccessoryLegalDetails} from "../backend/src/shared/accessory-legal-details";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -1228,8 +1228,16 @@ function AccessoryDetailModal({item,unit,close,openUnit,openClient,canManage,ass
 
 export function EditAccessoryModal({item,close,save}:{item:CatalogAccessoryRecord;close:()=>void;save:(value:import('../backend/src/shared/accessory-legal-details').AccessoryUpdateInput)=>Promise<void>}){
   const [code,setCode]=useState(item.code);const [area,setArea]=useState(item.areaM2?.toString()??"");const [amount,setAmount]=useState(String(item.amount??0));const [reason,setReason]=useState("");
+  const [location,setLocation]=useState(item.location??"");
   const [legalDetails,setLegalDetails]=useState<AccessoryLegalDetails>(item.legalDetails??{legalForm:null,shareNumerator:null,shareDenominator:null});
-  return <FormModal title={`Upravit ${item.type.toLocaleLowerCase("cs-CZ")} ${item.code}`} close={close} onSave={async()=>{const parsed=Number(amount.replace(/\s/g,"").replace(",","."));const areaValue=area?Number(area.replace(",",".")):null;if(!code.trim())throw new Error("Doplňte označení příslušenství");if(!Number.isFinite(parsed)||parsed<0)throw new Error("Doplňte platnou cenu");if(area&&(!Number.isFinite(areaValue)||Number(areaValue)<=0))throw new Error("Doplňte platnou výměru");await save({accessoryId:item.id,code:code.trim(),areaM2:areaValue,amount:parsed,amountNet:item.amountNet,reason:reason.trim()||"Úprava příslušenství",legalDetails:normalizeAccessoryLegalDetails(legalDetails)});}}><div className="form-row"><label><span>Označení</span><input value={code} onChange={event=>setCode(event.target.value)}/></label>{item.category==="cellar"&&<label><span>Výměra m²</span><input inputMode="decimal" value={area} onChange={event=>setArea(event.target.value)}/></label>}<label><span>Aktuální cena</span><input inputMode="decimal" value={amount} onChange={event=>setAmount(event.target.value)}/></label></div><AccessoryLegalFields category={item.category} value={legalDetails} onChange={setLegalDetails}/><label><span>Důvod změny</span><textarea rows={2} value={reason} onChange={event=>setReason(event.target.value)} placeholder="Volitelné upřesnění pro audit"/></label><p className="form-help"><History size={14}/> Změna ceny vytvoří nový historický záznam; předchozí cena se nepřepisuje.</p></FormModal>;
+  return <FormModal title={`Upravit ${item.type.toLocaleLowerCase("cs-CZ")} ${item.code}`} close={close} onSave={async()=>{
+    const parsed=Number(amount.replace(/\s/g,"").replace(",","."));const areaValue=area?Number(area.replace(",",".")):null;
+    if(!code.trim())throw new Error("Doplňte označení příslušenství");if(!Number.isFinite(parsed)||parsed<0)throw new Error("Doplňte platnou cenu");
+    if(area&&(!Number.isFinite(areaValue)||Number(areaValue)<=0))throw new Error("Doplňte platnou výměru");
+    await save({accessoryId:item.id,code:code.trim(),areaM2:areaValue,floorLabel:normalizeAccessoryLocation(location),amount:parsed,amountNet:item.amountNet,reason:reason.trim()||"Úprava příslušenství",legalDetails:normalizeAccessoryLegalDetails(legalDetails)});
+  }}><div className="form-row"><label><span>Označení</span><input value={code} onChange={event=>setCode(event.target.value)}/></label>{item.category==="cellar"&&<label><span>Výměra m²</span><input inputMode="decimal" value={area} onChange={event=>setArea(event.target.value)}/></label>}<label><span>Aktuální cena</span><input inputMode="decimal" value={amount} onChange={event=>setAmount(event.target.value)}/></label></div>
+    <label><span>Podlaží / umístění</span><input value={location} maxLength={120} onChange={event=>setLocation(event.target.value)} placeholder="Např. 1. PP"/></label>
+    <AccessoryLegalFields category={item.category} value={legalDetails} onChange={setLegalDetails}/><label><span>Důvod změny</span><textarea rows={2} value={reason} onChange={event=>setReason(event.target.value)} placeholder="Volitelné upřesnění pro audit"/></label><p className="form-help"><History size={14}/> Změna ceny vytvoří nový historický záznam; předchozí cena se nepřepisuje.</p></FormModal>;
 }
 
 function CreateUnitModal({project,close,save}:{project:ProjectRecord;close:()=>void;save:(row:InventoryImportRow)=>Promise<void>}){

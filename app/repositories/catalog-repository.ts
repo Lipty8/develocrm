@@ -96,7 +96,7 @@ export class ApiCatalogRepository implements CatalogRepository {
     const preview=await requestJson(`/api/catalog/accessories/${encodeURIComponent(input.accessoryId)}`,"PATCH",input);
     if(preview&&typeof window!=="undefined"){
       const edits=JSON.parse(localStorage.getItem("develocrm.accessory.edits")||"{}");
-      edits[input.accessoryId]={...(edits[input.accessoryId]||{}),code:input.code,areaM2:input.areaM2??null,amount:input.amount,amountNet:input.amountNet??null,...(input.legalDetails===undefined?{}:{legalDetails:input.legalDetails})};
+      edits[input.accessoryId]={...(edits[input.accessoryId]||{}),code:input.code,areaM2:input.areaM2??null,amount:input.amount,amountNet:input.amountNet??null,...(input.legalDetails===undefined?{}:{legalDetails:input.legalDetails}),...(input.floorLabel===undefined?{}:{location:input.floorLabel})};
       localStorage.setItem("develocrm.accessory.edits",JSON.stringify(edits));
     }
   }

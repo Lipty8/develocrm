@@ -1,5 +1,5 @@
 import type { Database } from "../database.js";
-import {normalizeAccessoryLegalDetails,type AccessoryUpdateInput} from '../shared/accessory-legal-details.js';
+import {normalizeAccessoryLegalDetails,normalizeAccessoryLocation,type AccessoryUpdateInput} from '../shared/accessory-legal-details.js';
 import {archiveReadSql} from './project-visibility.js';
 import {validateProjectContractSettings,type ProjectContractSettings} from '../shared/project-contract-settings.js';
 
@@ -319,11 +319,12 @@ export class InventoryRepository {
   }
   async updateAccessory(input:AccessoryUpdateInput&{tenantId:string;userId:string;membershipId:string}){
     const legalDetails=input.legalDetails===undefined?undefined:normalizeAccessoryLegalDetails(input.legalDetails);
+    const location=input.floorLabel===undefined?undefined:normalizeAccessoryLocation(input.floorLabel);
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
       if(legalDetails!==undefined)await client.query('SELECT app.set_accessory_legal_details($1,$2,$3::jsonb,$4)',[input.tenantId,input.accessoryId,JSON.stringify(legalDetails),input.membershipId]);
       return(await client.query<{id:string}>(
-      "SELECT app.update_project_accessory($1,$2,$3,$4,$5,$6,$7,$8) id",
-      [input.tenantId,input.accessoryId,input.code,input.areaM2??null,input.amount,input.amountNet??null,input.reason??"Úprava příslušenství",input.membershipId],
+      location===undefined?"SELECT app.update_project_accessory($1,$2,$3,$4,$5,$6,$7,$8) id":"SELECT app.update_project_accessory($1,$2,$3,$4,$5,$6,$7,$8,$9::text) id",
+      [input.tenantId,input.accessoryId,input.code,input.areaM2??null,input.amount,input.amountNet??null,input.reason??"Úprava příslušenství",input.membershipId,...(location===undefined?[]:[location])],
     )).rows[0];});
   }
   async removeOrArchiveAccessory(input:{tenantId:string;userId:string;membershipId:string;accessoryId:string;reason:string}){
