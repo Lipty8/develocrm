@@ -193,3 +193,22 @@ have identical source tree `4efba981122bdd09acd8e873b4c976b54eca0108`.
 Backend remains `signature-payments-44a77fd`; `/ready` returned 200 after
 publication. No additional migration, image build, permission change, audience
 change or pilot business mutation was performed for this frontend follow-up.
+
+### 20 October: signature/payment E2E completed
+
+The outstanding RS confirmation was completed by the user. Actual stored
+signature day is **19 October**, not the previously intended backdated 16 October;
+RS due day is correctly **22 October**. Signed history was not rewritten.
+
+Private Sites **154**, source `68b1605`, replaces the redundant native confirmation
+with an explicit exact-version/date-bound checkbox in the existing signature
+modal. Authenticated negative/positive confirmation checks passed. SBK was signed
+on **20 October** in the same technical case; first installment **2,000,000 CZK**
+is due **27 October**. Only after technical delivery evidence on **20 October**
+did the **7,800,000 CZK** final installment materialize, due **19 November**.
+Reload, unit timeline/payment view, downloaded exact SharePoint file hash and
+read-only DB audit/outbox checks agree. See
+`docs/signature-e2e-2026-10-20.md` for exact versions/executions and limitations.
+Backend and migration remain 44a77fd / 0066. No original legal template was
+approved or activated. Technical records only; no real money transfer or
+historical pilot mutation.
