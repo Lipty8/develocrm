@@ -80,6 +80,11 @@ for(const usePostgres of [false,true])test(`contract preparation source (${usePo
       const result=await repository.load({...context,contractId:sbk});assert.ok(result);
       assert.equal(result.contractType,'sbk');assert.equal(result.salesCaseId,c.caseId);assert.equal(result.unitId,c.unitId);
       assert.equal(result.signedRsCount,1);assert.equal(result.reservationFee,250000);assert.equal(result.paidReservationFee,0);
+      assert.equal(result.precedingRsEvidence?.contractId,c.contract_id);
+      assert.equal(result.precedingRsEvidence?.versionId,c.version_id);
+      assert.equal(result.precedingRsEvidence?.versionCount,1);
+      assert.equal(result.precedingRsEvidence?.verifiedGeneration,false);
+      assert.equal(result.precedingRsEvidence?.snapshot,null); // External PDF: never fabricate comparable values.
       assert.equal(result.approvedTemplateCount,0);
       assert.ok(result.signingPlan?.versionId);assert.equal(result.signingPlan.sellerPlannedOn,null);assert.equal(result.signingPlan.buyerPlannedOn,null);assert.equal(result.signingPlan.editable,true);
       const signingPlan={...context,contractId:sbk,versionId:result.signingPlan.versionId,sellerPlannedOn:'2026-11-02',buyerPlannedOn:'2026-11-03'};

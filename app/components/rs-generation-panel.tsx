@@ -84,6 +84,16 @@ export function RsGenerationPanel({contractId,contractType='rs',canGenerate,onCh
         <div><dt>{summary.template?.approvalStatus&&summary.template.approvalStatus!=='approved'?'Šablona ke kontrole':'Schválená šablona'}</dt><dd>{summary.template?`${summary.template.name} · ${summary.template.version}`:'Není dostupná'}</dd></div>
         {summary.template?.effectiveFrom&&<div><dt>Šablona účinná od</dt><dd>{formatPragueDate(summary.template.effectiveFrom)}</dd></div>}
       </dl>}
+      {summary?.precedingRsComparison&&<div className="contract-payment-terms" aria-label="Porovnání s podepsanou RS">
+        <h3>Porovnání s podepsanou RS</h3><p>{summary.precedingRsComparison.message}</p>
+        {summary.precedingRsComparison.contractId&&<p><Link href={`/contracts/${summary.precedingRsComparison.contractId}`}>Otevřít {summary.precedingRsComparison.reference??'podepsanou RS'} · verze {summary.precedingRsComparison.contractVersion}</Link></p>}
+        {summary.precedingRsComparison.buyerChanged&&<p>Kupující je jiný klientský záznam než při vytvoření RS. Ověřte návaznost změny kupujícího a smluvních stran.</p>}
+        {summary.precedingRsComparison.differences.length>0&&<div className="unit-table-wrap"><table className="data-table"><thead><tr><th>Údaj</th><th>Podepsaná RS</th><th>Připravovaná SBK</th></tr></thead><tbody>
+          {summary.precedingRsComparison.differences.map(item=><tr key={item.field}><th scope="row">{item.label}</th><td>{item.previous}</td><td>{item.current}</td></tr>)}
+        </tbody></table></div>}
+        {summary.precedingRsComparison.differences.some(item=>item.valuesRestricted)&&<p>Podrobné osobní údaje ověřte na kartě kupujícího a v podepsané RS; tento přehled zobrazuje pouze jejich změnu.</p>}
+        {summary.precedingRsComparison.status==='compared'&&<p>Porovnáno {summary.precedingRsComparison.comparedFields} údajů. SBK používá údaje své připravované verze; z RS se nic automaticky nepřepisuje.</p>}
+      </div>}
       {summary?.paymentPlan&&<div className="contract-payment-terms" aria-label="Platební plán smlouvy"><h3>Platební plán</h3>
         <dl className="rs-preparation-summary">{summary.paymentPlan.rows.map(row=><div key={row.key}>
           <dt>{row.key==='rs_fee'?'Rezervační poplatek':row.key==='sbk_first'?'První splátka SBK':'Doplatek SBK'}</dt>

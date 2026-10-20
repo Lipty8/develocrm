@@ -8,6 +8,7 @@ import {buildSnapshot,RsGenerationService} from '../src/contracts/rs-generation-
 import type {RsSource} from '../src/contracts/rs-generation-repository.js';
 import {ORIGINAL_DOB_FULL_VARIANT,ORIGINAL_TEMPLATE_CATALOGS} from '../src/documents/template-catalog.js';
 import {originalMoney} from '../src/contracts/original-money.js';
+import {precedingRsComparison} from '../src/contracts/preceding-rs-comparison.js';
 
 function fixture(type:'rs'|'sbk'='rs'):RsSource{return{
  contractId:'technical-contract',projectId:'technical-project',projectName:'Technical project',projectCode:'TECH',completionYear:'2028',
@@ -22,6 +23,40 @@ function fixture(type:'rs'|'sbk'='rs'):RsSource{return{
  templateVersionId:'technical-template-version',templateHash:'sha256:technical',templateApprovalStatus:'draft',approvedTemplateCount:0,documentId:null,documentVersionId:null,webUrl:null,contractVersion:null,
 };}
 const normalized=(value:string)=>value.replace(/\u00a0/g,' ');
+function successor():RsSource{
+ const rs=fixture(),source=fixture('sbk');source.signedRsContractId='signed-rs';
+ source.precedingRsEvidence={contractId:'signed-rs',reference:'TECH-RS',versionId:'signed-rs-version',versionNumber:2,documentVersionId:'exact-signed-document',
+  versionCount:1,profile:ORIGINAL_DOB_FULL_VARIANT,verifiedGeneration:true,buyerPartyId:rs.buyers[0].id,snapshot:buildSnapshot(rs)};
+ return source;
+}
+test('SBK porovná pouze konkrétní podepsanou RS a nemění zdrojové snapshoty',()=>{
+ const source=successor(),before=JSON.stringify(source);const equal=precedingRsComparison(source)!;
+ assert.equal(equal.status,'compared');assert.equal(equal.comparedFields,20);assert.deepEqual(equal.differences,[]);
+ assert.equal(equal.documentVersionId,'exact-signed-document');assert.equal(equal.contractVersion,2);assert.equal(JSON.stringify(source),before);
+ source.buyers[0].address='Nová autorizovaná adresa';source.totalPrice=5100000.03;
+ const changed=precedingRsComparison(source)!;assert.deepEqual(changed.differences.map(row=>row.field),['buyer.address','contract.totalPriceAmount']);
+ assert.equal(changed.differences[0].valuesRestricted,true);assert.equal(changed.differences[0].previous,'Údaj v podepsané RS');assert.equal(changed.differences[0].current,'Změněný údaj v SBK');
+ assert.ok(!JSON.stringify(changed).includes('Nová autorizovaná adresa'));
+ assert.ok(!JSON.stringify(changed).includes('buyer.phone'));assert.equal(source.precedingRsEvidence!.snapshot!['buyer.address'],'Testovací bydliště 1, Praha, CZ');
+ source.buyers[0].id='different-buyer';assert.equal(precedingRsComparison(source)?.buyerChanged,true);
+});
+test('nejednoznačná, externí nebo nesrovnatelná RS se nevydává za shodu',()=>{
+ for(const mutate of [
+  (s:RsSource)=>{s.signedRsCount=2;},(s:RsSource)=>{s.precedingRsEvidence=null;},
+  (s:RsSource)=>{s.precedingRsEvidence!.contractId='other-contract';},(s:RsSource)=>{s.precedingRsEvidence!.versionCount=2;},
+  (s:RsSource)=>{s.precedingRsEvidence!.documentVersionId=null;},(s:RsSource)=>{s.precedingRsEvidence!.verifiedGeneration=false;},
+  (s:RsSource)=>{s.precedingRsEvidence!.profile='default';},(s:RsSource)=>{delete s.precedingRsEvidence!.snapshot!['buyer.name'];},
+  (s:RsSource)=>{s.precedingRsEvidence!.buyerPartyId=null;},
+  (s:RsSource)=>{s.buyers[0].address=null;},(s:RsSource)=>{s.paidReservationFee=1;},
+ ]){const source=successor();mutate(source);const value=precedingRsComparison(source)!;assert.equal(value.status,'unavailable');assert.deepEqual(value.differences,[]);assert.equal(value.comparedFields,0);}
+ assert.equal(precedingRsComparison(fixture()),undefined);
+});
+test('porovnání osobních údajů nevrací jejich staré ani nové hodnoty do přehledu',()=>{
+ const source=successor();Object.assign(source.buyers[0],{birthDate:'1991-02-03',email:'changed@example.test',phone:'+420 777 999 888'});
+ const result=precedingRsComparison(source)!;assert.equal(result.status,'compared');assert.equal(result.differences.length,3);
+ assert.ok(result.differences.every(row=>row.valuesRestricted));
+ const output=JSON.stringify(result);for(const value of ['1990','1991','changed@example.test','buyer@example.test','777 999 888','777 000 701'])assert.ok(!output.includes(value));
+});
 
 test('originálová RS mapuje přesně svých 32 scalar polí bez skládání právních odstavců',()=>{
  const source=fixture();const result=buildOriginalContractSnapshot(source);

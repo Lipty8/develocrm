@@ -11,6 +11,7 @@ export type RsAccessory={id?:string;legalForm?:import('../shared/accessory-legal
 export type RsSource={contractId:string;projectId:string;projectName:string;projectCode:string;completionYear:string|null;unitId:string;unitCode:string;
   contractType?:'rs'|'sbk';floorNumber?:number|null;templateVariant?:string;templateApprovalStatus?:string;approvedTemplateCount?:number;
   variableSymbol?:string|null;signedRsCount?:number;signedRsContractId?:string|null;paidReservationFee?:number|null;
+  precedingRsEvidence?:{contractId:string;reference:string;versionId:string;versionNumber:number;documentVersionId:string|null;buyerPartyId:string|null;versionCount:number;profile:string|null;verifiedGeneration:boolean;snapshot:Record<string,string>|null}|null;
   signingPlan?:ContractSigningPlan|null;
   paymentTerms?:unknown;
   hasPaymentObligations?:boolean;
@@ -58,6 +59,7 @@ export class RsGenerationRepository{
           CASE WHEN contract.contract_type='sbk' THEN preceding_rs.reservation_fee_amount ELSE contract.reservation_fee_amount END reservation_fee_amount,
           contract.reservation_fee_due_days,COALESCE(settings.reservation_period_days,30) reservation_period_days,
           preceding_rs.signed_count,preceding_rs.signed_rs_id,preceding_rs.paid_reservation_fee,
+          previous_document.evidence preceding_rs_evidence,
           COALESCE(plan.payment_terms_snapshot->>'variableSymbol',(SELECT CASE WHEN count(DISTINCT NULLIF(btrim(obligation.variable_symbol),''))=1 THEN min(NULLIF(btrim(obligation.variable_symbol),'')) END
              FROM payment_obligations obligation WHERE obligation.tenant_id=contract.tenant_id AND obligation.contract_id=contract.id
                AND obligation.project_id=contract.project_id AND obligation.sales_case_id=contract.sales_case_id AND obligation.cancelled_at IS NULL)) variable_symbol,
@@ -104,6 +106,21 @@ export class RsGenerationRepository{
             WHERE obligation.tenant_id=rs.tenant_id AND obligation.contract_id=rs.id AND obligation.obligation_type='reservation_fee' AND obligation.cancelled_at IS NULL)) paid_reservation_fee
           FROM contracts rs WHERE rs.tenant_id=contract.tenant_id AND rs.project_id=contract.project_id AND rs.unit_id=contract.unit_id
             AND rs.sales_case_id=contract.sales_case_id AND rs.contract_type='rs' AND rs.current_status='signed') preceding_rs ON true
+        LEFT JOIN LATERAL(SELECT jsonb_build_object('contractId',rs.id,'reference',rs.reference,
+          'versionId',v.id,'versionNumber',v.version_number,'documentVersionId',v.document_version_id,
+          'versionCount',count(*) OVER(),'profile',t.variant_key,'verifiedGeneration',g.id IS NOT NULL,'buyerPartyId',g.party_id,
+          'snapshot',CASE WHEN g.id IS NOT NULL THEN v.generation_payload ELSE NULL END) evidence
+          FROM contracts rs JOIN contract_versions v ON v.tenant_id=rs.tenant_id AND v.project_id=rs.project_id AND v.contract_id=rs.id AND v.version_status='signed'
+          LEFT JOIN document_template_versions tv ON tv.tenant_id=v.tenant_id AND tv.project_id=v.project_id AND tv.id=v.template_version_id
+          LEFT JOIN document_templates t ON t.tenant_id=tv.tenant_id AND t.id=tv.template_id AND t.contract_type='rs'
+          LEFT JOIN document_generation_operations g ON g.tenant_id=v.tenant_id AND g.project_id=v.project_id AND g.id=v.generation_operation_id
+            AND g.contract_id=rs.id AND g.sales_case_id=rs.sales_case_id AND g.unit_id=rs.unit_id AND g.state='completed'
+            AND g.output_document_id=v.document_id AND g.output_document_version_id=v.document_version_id
+            AND g.template_version_id=v.template_version_id AND g.generation_snapshot=v.generation_payload
+          WHERE contract.contract_type='sbk' AND preceding_rs.signed_count=1 AND rs.id::text=preceding_rs.signed_rs_id
+            AND rs.tenant_id=contract.tenant_id AND rs.project_id=contract.project_id AND rs.unit_id=contract.unit_id
+            AND rs.sales_case_id=contract.sales_case_id AND rs.contract_type='rs' AND rs.current_status='signed'
+          ORDER BY v.version_number DESC LIMIT 1) previous_document ON true
         LEFT JOIN LATERAL(${projectContractTemplateSelectionSql}) template_version ON true
         LEFT JOIN LATERAL(SELECT version.id,version.document_id,version.document_version_id,version.version_number FROM contract_versions version
           WHERE version.tenant_id=contract.tenant_id AND version.contract_id=contract.id AND version.document_id IS NOT NULL ORDER BY version.version_number DESC LIMIT 1) latest ON true
@@ -184,6 +201,7 @@ function mapSource(row:Record<string,unknown>):RsSource{
     contractType:row.contract_type==='sbk'?'sbk':'rs',floorNumber:row.floor_number==null?null:Number(row.floor_number),templateVariant:row.variant_key?String(row.variant_key):'default',templateApprovalStatus:row.approval_status?String(row.approval_status):undefined,approvedTemplateCount:Number(row.approved_count??0),
     signedRsCount:Number(row.signed_count??0),signedRsContractId:row.signed_rs_id?String(row.signed_rs_id):null,paidReservationFee:row.paid_reservation_fee==null?null:Number(row.paid_reservation_fee),variableSymbol:row.variable_symbol?String(row.variable_symbol):null,
     paymentTerms:row.payment_terms_snapshot??null,
+    precedingRsEvidence:row.preceding_rs_evidence as RsSource['precedingRsEvidence']??null,
     hasPaymentObligations:row.has_payment_obligations===true,
     signingPlan:row.plan_version_id?{versionId:String(row.plan_version_id),sellerPlannedOn:row.seller_planned_on?String(row.seller_planned_on):null,buyerPlannedOn:row.buyer_planned_on?String(row.buyer_planned_on):null,editable:row.plan_editable===true}:null,
     caseStatus:row.case_status?String(row.case_status):undefined,terraceM2:row.terrace_m2==null?null:Number(row.terrace_m2),templateName:row.template_name?String(row.template_name):null,templateVersionLabel:row.version_label?String(row.version_label):null,templateEffectiveFrom:row.effective_from?String(row.effective_from):null,contractVersionId:row.contract_version_id?String(row.contract_version_id):null,

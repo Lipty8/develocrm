@@ -10,6 +10,7 @@ import {ORIGINAL_CONTRACT_TERMS} from './original-payment-plan.js';
 import {buildOriginalContractSnapshot} from './original-contract-snapshot.js';
 import {originalMoney} from './original-money.js';
 import {signaturePaymentTerms} from './signature-payment-terms.js';
+import {precedingRsComparison} from './preceding-rs-comparison.js';
 export type {RsReadiness,RsReadinessIssue} from '../shared/rs-readiness.js';
 export class RsGenerationError extends Error{constructor(readonly code:string,readonly issues:RsReadinessIssue[]=[]){super("Rezervační smlouvu se nepodařilo vytvořit.");this.name="RsGenerationError";}}
 
@@ -30,7 +31,7 @@ export class RsGenerationService{
     const paymentPlan=validPaymentTerms(source);
     return{ready:issues.length===0,issues,contractType:source.contractType??'rs',contractId:source.contractId,projectId:source.projectId,templateVersionId:source.templateVersionId,
       summary:{project:{id:source.projectId,label:source.projectName},unit:{id:source.unitId,label:source.unitCode},buyers:source.buyers.map(b=>({id:b.id,label:b.displayName})),
-        seller:source.settings?.name??null,unitPrice:source.unitPrice,totalPrice:source.totalPrice,reservationFee:source.reservationFee,
+        seller:source.settings?.name??null,unitPrice:source.unitPrice,totalPrice:source.totalPrice,reservationFee:source.reservationFee,precedingRsComparison:precedingRsComparison(source),
         reservationFeeDueDays:original?ORIGINAL_CONTRACT_TERMS.rsFeeWorkingDays:source.reservationFeeDueDays,
         reservationPeriodDays:original?ORIGINAL_CONTRACT_TERMS.reservationCalendarDays:source.reservationPeriodDays,accessories:source.accessories.map(a=>a.code),signingPlan:original||source.contractType==='sbk'?source.signingPlan:undefined,
         paymentTimingLabel:original?(source.contractType==='sbk'?`První splátka: ${ORIGINAL_CONTRACT_TERMS.sbkFirstWorkingDays} pracovních dnů od účinného podpisu. Doplatek: ${ORIGINAL_CONTRACT_TERMS.sbkFinalCalendarDays} dnů od doručení výzvy.`:`${ORIGINAL_CONTRACT_TERMS.rsFeeWorkingDays} pracovní dny od podpisu poslední smluvní strany`):undefined,

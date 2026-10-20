@@ -52,6 +52,25 @@ test('návrat k existující smlouvě neumožňuje externí URL ani jinou cestu'
   const view=render(<RsPreparationReturn search={`?returnTo=${encodeURIComponent(`/contracts/${contractId}`)}`}/>);assert.equal(screen.getByRole('link').getAttribute('href'),`/contracts/${contractId}`);
   view.rerender(<RsPreparationReturn search='?returnTo=https%3A%2F%2Fexample.test'/>);assert.equal(screen.queryByRole('link'),null);
 });
+test('SBK ukáže rozdíl proti přesné podepsané RS bez nabídky přepsání historie',async()=>{
+ const value=ready();value.ready=false;value.summary!.precedingRsComparison={status:'compared',message:'Ověřte schválenou změnu.',contractId:'signed-rs',reference:'RS-TEST',contractVersion:2,documentVersionId:'exact',comparedFields:20,buyerChanged:true,
+  differences:[{field:'contract.totalPriceAmount',label:'Kupní cena',previous:'5 000 000',current:'5 100 000'}]};
+ mock.method(commercialRepository,'getRsReadiness',async()=>value);
+ render(<RsGenerationPanel contractId={contractId} contractType='sbk' canGenerate onChanged={()=>{}}/>);
+ await screen.findByRole('heading',{name:'Porovnání s podepsanou RS'});
+ assert.ok(screen.getByRole('columnheader',{name:'Podepsaná RS'}));assert.ok(screen.getByRole('columnheader',{name:'Připravovaná SBK'}));
+ assert.ok(screen.getByRole('cell',{name:'5 000 000'}));assert.ok(screen.getByRole('cell',{name:'5 100 000'}));
+ assert.equal(screen.getByRole('link',{name:'Otevřít RS-TEST · verze 2'}).getAttribute('href'),'/contracts/signed-rs');
+ assert.ok(screen.getByText(/jiný klientský záznam/));assert.equal(screen.queryByRole('button',{name:'Vygenerovat SBK'}),null);
+ assert.equal(screen.queryByRole('button',{name:/Převzít|Přepsat/}),null);
+});
+test('externí RS jasně vyžaduje ruční porovnání, nikoli falešnou shodu',async()=>{
+ const value=ready();value.summary!.precedingRsComparison={status:'unavailable',message:'Porovnejte podepsaný dokument ručně.',comparedFields:0,differences:[]};
+ mock.method(commercialRepository,'getRsReadiness',async()=>value);
+ render(<RsGenerationPanel contractId={contractId} contractType='sbk' canGenerate={false} onChanged={()=>{}}/>);
+ await screen.findByText('Porovnejte podepsaný dokument ručně.');assert.equal(screen.queryByRole('table'),null);
+ assert.equal(screen.queryByText(/Porovnáno/),null);
+});
 test('platební plán ukáže částky včetně haléřů, ale nevymýšlí datum splatnosti',async()=>{
   const value=ready();value.summary!.paymentPlan={versionId:'cv',variableSymbol:'417',rows:[
     {key:'sbk_first',amount:'1500000.03',anchor:'effective_signature',days:5,calendar:'czech_working_days'},
