@@ -23,6 +23,7 @@ import {DocumentTemplateManagementRepository} from "./documents/template-managem
 import {DocumentTemplateManagementService,TemplateManagementError} from "./documents/template-management-service.js";
 import {RsGenerationRepository} from "./contracts/rs-generation-repository.js";
 import {ContractSigningPlanValidationError} from './shared/contract-signing-plan.js';
+import {ContractAppendixValidationError} from './shared/contract-appendices.js';
 import {RsGenerationError,RsGenerationService} from "./contracts/rs-generation-service.js";
 import {ContractDocumentEvidenceService,ContractDocumentError} from "./contracts/document-evidence-service.js";
 import { HandoverRepository } from "./handovers/repository.js";
@@ -683,6 +684,21 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
       return{readiness:await rsGeneration.readiness({...context,contractId:request.params.contractId})};
     }catch(error){request.log.warn({event:"contract.readiness_failed",correlationId:request.id,contractId:request.params.contractId,errorName:error instanceof Error?error.name:"Error"},"contract readiness failed");
       return reply.code(permissionError(error)?403:409).send({error:permissionError(error)?"Nemáte oprávnění zobrazit připravenost smlouvy.":"Připravenost smlouvy se nepodařilo ověřit.",correlationId:request.id});}
+  });
+  app.post<{Params:{contractId:string};Body:unknown}>("/v1/contracts/:contractId/appendices",async(request,reply)=>{
+    try{
+      const context=await sessionContext(request,dependencies.verifier,repository);
+      if(!context)return reply.code(403).send({error:'Workspace není uživateli přístupný'});
+      if(!rsGeneration)return reply.code(503).send({error:'Příprava smluv není v tomto prostředí dostupná.'});
+      return await rsGeneration.setAppendix({...context,contractId:request.params.contractId},request.body);
+    }catch(error){
+      const appendixCode=error instanceof Error?error.message.match(/^CONTRACT_APPENDIX_[A-Z_]+$/)?.[0]:undefined;
+      request.log.warn({event:'contract.appendix_failed',correlationId:request.id,errorName:error instanceof Error?error.name:'Error',errorCode:appendixCode},'contract appendix failed');
+      const status=error instanceof ContractAppendixValidationError?422:appendixCode?409:permissionError(error)?403:
+        error instanceof RsGenerationError&&error.code==='contract_not_found'?404:409;
+      return reply.code(status).send(mapApiError(appendixCode?{code:appendixCode}:error instanceof ContractAppendixValidationError?error:
+        {error:status===403?'Nemáte oprávnění upravit přílohy smlouvy.':status===404?'Smlouva nebyla nalezena.':'Přílohu nelze změnit. Ověřte aktuální verzi smlouvy a dokumentu.'},status,request.id));
+    }
   });
   app.post<{Params:{contractId:string};Body:{versionId:string}}>("/v1/contracts/:contractId/payment-terms",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:'Workspace není uživateli přístupný'});

@@ -4,6 +4,7 @@ import type {ProjectContractSettings} from '../shared/project-contract-settings.
 import {signingPlanDay,type ContractSigningPlan} from '../shared/contract-signing-plan.js';
 import {originalContractDate} from './original-contract-snapshot.js';
 import {projectContractTemplateSelectionSql} from './project-template-selection.js';
+import type {ContractAppendixInput,ContractAppendixSelection} from '../shared/contract-appendices.js';
 
 export type RsBuyer={id:string;partyType:"individual"|"organization";displayName:string;salutation:string|null;firstName:string|null;lastName:string|null;
   birthDate:string|null;registrationNumber:string|null;address:string|null;email:string|null;phone:string|null;dataBox:string|null;deliveryAddress?:string|null};
@@ -13,6 +14,8 @@ export type RsSource={contractId:string;projectId:string;projectName:string;proj
   variableSymbol?:string|null;signedRsCount?:number;signedRsContractId?:string|null;paidReservationFee?:number|null;
   precedingRsEvidence?:{contractId:string;reference:string;versionId:string;versionNumber:number;documentVersionId:string|null;buyerPartyId:string|null;versionCount:number;profile:string|null;verifiedGeneration:boolean;snapshot:Record<string,string>|null}|null;
   signingPlan?:ContractSigningPlan|null;
+  appendixSelections?:ContractAppendixSelection[];
+  appendixEditable?:boolean;
   paymentTerms?:unknown;
   hasPaymentObligations?:boolean;
   layout:string|null;floorLabel:string|null;areaM2:number;balconyM2:number|null;gardenM2:number|null;unitPrice:number|null;totalPrice:number|null;
@@ -23,6 +26,12 @@ export type RsSource={contractId:string;projectId:string;projectName:string;proj
 
 export class RsGenerationRepository{
   constructor(private readonly database:Database){}
+
+  async setAppendix(input:DocumentContext&ContractAppendixInput&{contractId:string}){
+    return this.database.withContext(input,async client=>(await client.query<{linkId:string|null}>(
+      'SELECT app.set_contract_appendix($1,$2,$3,$4,$5,$6,$7,$8) "linkId"',
+      [input.tenantId,input.contractId,input.versionId,input.number,input.documentId,input.documentVersionId,input.membershipId,input.expectedDocumentVersionId])).rows[0]);
+  }
 
   async preparePaymentTerms(input:DocumentContext&{contractId:string;versionId:string}){
     return this.database.withContext(input,async client=>{
@@ -96,7 +105,32 @@ export class RsGenerationRepository{
           latest.id contract_version_id,latest.document_id,latest.document_version_id,document.mime_type document_mime_type,document.web_url,latest.version_number contract_version,
           EXISTS(SELECT 1 FROM payment_obligations p WHERE p.tenant_id=contract.tenant_id AND p.contract_id=contract.id) has_payment_obligations,
           plan.id plan_version_id,plan.payment_terms_snapshot,plan.seller_planned_signing_on::text seller_planned_on,plan.buyer_planned_signing_on::text buyer_planned_on,
-          (plan.version_status='working' AND plan.document_version_id IS NULL AND plan.locked_at IS NULL AND sales_case.status='active' AND sales_case.closed_at IS NULL) plan_editable
+          COALESCE((SELECT jsonb_agg(jsonb_build_object('number',link.appendix_number,
+            'documentId',CASE WHEN visibility.allowed THEN appendix.id END,
+            'documentVersionId',CASE WHEN visibility.allowed THEN appendix_version.id END,
+            'name',CASE WHEN visibility.allowed THEN appendix.name END,
+            'version',CASE WHEN visibility.allowed THEN appendix_version.version_label END,
+            'available',visibility.allowed AND appendix.archived_at IS NULL AND appendix.storage_provider='sharepoint'
+              AND appendix_version.status_code IN ('ready','sent','negotiation','signed')
+              AND appendix_version.content_hash~'^sha256:[a-f0-9]{64}$'
+              AND NULLIF(btrim(appendix_version.external_version_id),'') IS NOT NULL
+              AND EXISTS(SELECT 1 FROM document_upload_operations upload WHERE upload.tenant_id=contract.tenant_id
+                AND upload.project_id=contract.project_id AND upload.document_id=appendix.id
+                AND upload.document_version_id=appendix_version.id AND upload.state='completed'
+                AND upload.graph_drive_id=appendix.external_drive_id AND upload.graph_item_id=appendix.external_item_id
+                AND upload.content_hash=appendix_version.content_hash)) ORDER BY link.appendix_number)
+            FROM contract_documents link
+            LEFT JOIN documents appendix ON appendix.tenant_id=link.tenant_id AND appendix.project_id=link.project_id AND appendix.id=link.document_id
+            LEFT JOIN document_versions appendix_version ON appendix_version.tenant_id=link.tenant_id AND appendix_version.project_id=link.project_id
+              AND appendix_version.document_id=link.document_id AND appendix_version.id=link.document_version_id
+            CROSS JOIN LATERAL(SELECT app.has_project_permission(contract.tenant_id,$2,contract.project_id,'documents.view')
+              AND (appendix.sensitivity='normal' OR app.has_project_permission(contract.tenant_id,$2,contract.project_id,'documents.view_sensitive')) allowed) visibility
+            WHERE link.tenant_id=contract.tenant_id AND link.contract_id=contract.id AND link.project_id=contract.project_id
+              AND link.contract_version_id=plan.id AND link.appendix_number IS NOT NULL),'[]'::jsonb) appendix_selections,
+          (plan.version_status='working' AND plan.document_version_id IS NULL AND plan.locked_at IS NULL AND sales_case.status='active' AND sales_case.closed_at IS NULL) plan_editable,
+          (plan.version_status='working' AND plan.document_version_id IS NULL AND plan.locked_at IS NULL AND sales_case.status='active' AND sales_case.closed_at IS NULL
+            AND app.has_project_permission(contract.tenant_id,$2,contract.project_id,'contract.manage')
+            AND app.has_project_permission(contract.tenant_id,$2,contract.project_id,'documents.manage')) appendix_editable
         FROM contracts contract JOIN projects project ON project.tenant_id=contract.tenant_id AND project.id=contract.project_id
         JOIN units unit ON unit.tenant_id=contract.tenant_id AND unit.id=contract.unit_id
         JOIN sales_cases sales_case ON sales_case.tenant_id=contract.tenant_id AND sales_case.id=contract.sales_case_id AND sales_case.unit_id=contract.unit_id AND sales_case.project_id=contract.project_id
@@ -201,6 +235,8 @@ function mapSource(row:Record<string,unknown>):RsSource{
     contractType:row.contract_type==='sbk'?'sbk':'rs',floorNumber:row.floor_number==null?null:Number(row.floor_number),templateVariant:row.variant_key?String(row.variant_key):'default',templateApprovalStatus:row.approval_status?String(row.approval_status):undefined,approvedTemplateCount:Number(row.approved_count??0),
     signedRsCount:Number(row.signed_count??0),signedRsContractId:row.signed_rs_id?String(row.signed_rs_id):null,paidReservationFee:row.paid_reservation_fee==null?null:Number(row.paid_reservation_fee),variableSymbol:row.variable_symbol?String(row.variable_symbol):null,
     paymentTerms:row.payment_terms_snapshot??null,
+    appendixSelections:(row.appendix_selections as ContractAppendixSelection[])??[],
+    appendixEditable:row.appendix_editable===true,
     precedingRsEvidence:row.preceding_rs_evidence as RsSource['precedingRsEvidence']??null,
     hasPaymentObligations:row.has_payment_obligations===true,
     signingPlan:row.plan_version_id?{versionId:String(row.plan_version_id),sellerPlannedOn:row.seller_planned_on?String(row.seller_planned_on):null,buyerPlannedOn:row.buyer_planned_on?String(row.buyer_planned_on):null,editable:row.plan_editable===true}:null,

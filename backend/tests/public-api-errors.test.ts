@@ -4,6 +4,7 @@ import {mapApiError,withPublicValidationIssues} from '../src/http/api-error.js';
 import {buildApp} from '../src/app.js';
 import {IamRepository} from '../src/iam/repository.js';
 import {RsGenerationError,RsGenerationService} from '../src/contracts/rs-generation-service.js';
+import {ContractAppendixValidationError} from '../src/shared/contract-appendices.js';
 
 test('neplatná šablona neukazuje interní code ani detail v české hlášce',()=>{
   const result=mapApiError({error:'Šablona není platná. Zkontrolujte soubor a datová pole.',code:'invalid_template_fields',details:['unknown_placeholders']},422,'req-test');
@@ -30,6 +31,32 @@ test('missing contractual payment data is not misreported as a permission failur
     assert.equal(result.code,code);assert.doesNotMatch(result.message,/oprávnění|PAYMENT_TERMS|SELECT|undefined/);
     assert.deepEqual(mapApiError(result,409,'terms-test'),result);
   }
+});
+test('appendix conflicts retain safe Czech messages through repeated serialization',()=>{
+  for(const code of ['CONTRACT_APPENDIX_NEW_VERSION_REQUIRED','CONTRACT_APPENDIX_DOCUMENT_NOT_READY','CONTRACT_APPENDIX_CHANGED']){
+    const mapped=mapApiError({code},409,'appendix-test');assert.equal(mapped.code,code);
+    assert.doesNotMatch(mapped.message,/oprávnění|CONTRACT_APPENDIX|SELECT|undefined/);
+    assert.deepEqual(mapApiError(mapped,409,'appendix-test'),mapped);
+  }
+});
+
+test('actual appendix route separates stale-version conflict, permission denial and invalid input',async t=>{
+  const identity={issuer:'https://identity.test',subject:'subject',entraTenantId:'entra',email:'test@example.test',displayName:'Technical Test'};
+  const user={id:'user',email:identity.email,displayName:identity.displayName};
+  t.mock.method(IamRepository.prototype,'resolveUser',async()=>user);
+  t.mock.method(IamRepository.prototype,'getSession',async()=>({user,workspace:{tenantId:'tenant',tenantName:'Technical',tenantSlug:'test',membershipId:'member',roles:[],permissions:[]}}));
+  let failure='CONTRACT_APPENDIX_NEW_VERSION_REQUIRED';
+  t.mock.method(RsGenerationService.prototype,'setAppendix',async()=>{if(failure==='invalid')throw new ContractAppendixValidationError();throw new Error(failure);});
+  const app=buildApp({database:{} as never,verifier:{verify:async()=>identity} as never,microsoftGraphAdapter:{} as never,sharepointManagedIdentityClientId:'test-identity'});
+  t.after(()=>app.close());
+  const request=()=>app.inject({method:'POST',url:'/v1/contracts/test-contract/appendices',headers:{authorization:'Bearer test','x-tenant-id':'tenant'},payload:{}});
+  const conflict=await request();assert.equal(conflict.statusCode,409);assert.equal(conflict.json().code,failure);
+  assert.doesNotMatch(conflict.json().message,/oprávnění/);assert.equal(conflict.json().correlationId,conflict.headers['x-correlation-id']);
+  failure='contract.manage and documents.manage permissions required';
+  const denied=await request();assert.equal(denied.statusCode,403);assert.doesNotMatch(denied.body,/documents.manage|contract.manage/);
+  failure='duplicate key violates constraint "secret_appendix"';
+  const internal=await request();assert.equal(internal.statusCode,409);assert.doesNotMatch(internal.body,/secret_appendix|duplicate key/);
+  failure='invalid';const invalid=await request();assert.equal(invalid.statusCode,422);assert.equal(invalid.json().message,'Vyberte platnou přílohu a její konkrétní verzi.');
 });
 test('raw SQL ani diagnostický detail se nesmí dostat do veřejné chyby',()=>{
   const result=mapApiError({error:'Smlouvu nelze uložit.',detail:'duplicate key violates secret constraint after INSERT INTO contracts'},409,'req-test');

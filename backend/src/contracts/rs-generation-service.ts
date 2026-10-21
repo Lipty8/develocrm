@@ -11,12 +11,21 @@ import {buildOriginalContractSnapshot,OriginalContractSnapshotError} from './ori
 import {originalMoney} from './original-money.js';
 import {signaturePaymentTerms} from './signature-payment-terms.js';
 import {precedingRsComparison} from './preceding-rs-comparison.js';
+import {contractAppendixRequirements,contractAppendixInput,type ContractAppendixInput} from '../shared/contract-appendices.js';
 export type {RsReadiness,RsReadinessIssue} from '../shared/rs-readiness.js';
 export class RsGenerationError extends Error{constructor(readonly code:string,readonly issues:RsReadinessIssue[]=[]){super("Rezervační smlouvu se nepodařilo vytvořit.");this.name="RsGenerationError";}}
 
 export class RsGenerationService{
   constructor(private readonly repository:RsGenerationRepository,private readonly generator:DocumentTemplateGenerationService){}
   async setSigningPlan(input:Parameters<RsGenerationRepository['setSigningPlan']>[0]){return this.repository.setSigningPlan(input);}
+  async setAppendix(context:DocumentContext&{contractId:string},body:unknown){
+    const input:ContractAppendixInput=contractAppendixInput(body);
+    const source=await this.repository.load({...context,permission:'contract.manage'});
+    if(!source)throw new RsGenerationError('contract_not_found');
+    if(!contractAppendixRequirements(source.contractType??'rs',source.templateVariant).some(item=>item.number===input.number))
+      throw new RsGenerationError('appendix_not_supported');
+    return this.repository.setAppendix({...context,...input});
+  }
   async preparePaymentTerms(input:DocumentContext&{contractId:string;versionId:string}){
     const source=await this.repository.load({...input,permission:'contract.manage'});
     if(!source)throw new RsGenerationError('contract_not_found');
@@ -32,6 +41,12 @@ export class RsGenerationService{
     return{ready:issues.length===0,issues,contractType:source.contractType??'rs',contractId:source.contractId,projectId:source.projectId,templateVersionId:source.templateVersionId,
       summary:{project:{id:source.projectId,label:source.projectName},unit:{id:source.unitId,label:source.unitCode},buyers:source.buyers.map(b=>({id:b.id,label:b.displayName})),
         seller:source.settings?.name??null,unitPrice:source.unitPrice,totalPrice:source.totalPrice,reservationFee:source.reservationFee,precedingRsComparison:precedingRsComparison(source),
+        appendices:original?{contractVersionId:source.signingPlan?.versionId??null,editable:source.appendixEditable===true,
+          items:contractAppendixRequirements(source.contractType??'rs',source.templateVariant).map(required=>{
+            const selected=source.appendixSelections?.find(item=>item.number===required.number);
+            return{...required,documentId:selected?.documentId??null,documentVersionId:selected?.documentVersionId??null,
+              name:selected?.name??null,version:selected?.version??null,available:selected?.available===true};
+          })}:undefined,
         reservationFeeDueDays:original?ORIGINAL_CONTRACT_TERMS.rsFeeWorkingDays:source.reservationFeeDueDays,
         reservationPeriodDays:original?ORIGINAL_CONTRACT_TERMS.reservationCalendarDays:source.reservationPeriodDays,accessories:source.accessories.map(a=>a.code),signingPlan:original||source.contractType==='sbk'?source.signingPlan:undefined,
         paymentTimingLabel:original?(source.contractType==='sbk'?`První splátka: ${ORIGINAL_CONTRACT_TERMS.sbkFirstWorkingDays} pracovních dnů od účinného podpisu. Doplatek: ${ORIGINAL_CONTRACT_TERMS.sbkFinalCalendarDays} dnů od doručení výzvy.`:`${ORIGINAL_CONTRACT_TERMS.rsFeeWorkingDays} pracovní dny od podpisu poslední smluvní strany`):undefined,
@@ -72,6 +87,14 @@ function validate(source:RsSource):RsReadinessIssue[]{
     issues.push(issue("approved_template","template","Pro tento typ smlouvy není schválená účinná projektová šablona."));
   if((source.approvedTemplateCount??1)>1)issues.push(issue('ambiguous_template','template','Pro tento typ smlouvy je dostupných více účinných šablon. Je nutné jednoznačně určit odpovídající variantu.'));
   if(original){
+    const requiredAppendices=contractAppendixRequirements(source.contractType??'rs',source.templateVariant);
+    if(source.appendixSelections?.some(selected=>!requiredAppendices.some(required=>required.number===selected.number)))
+      issues.push(issue('contract_appendix_unexpected','contract.appendices','Seznam příloh neodpovídá vybrané variantě smlouvy. Před generováním jej zkontrolujte.'));
+    for(const required of requiredAppendices){
+      const selected=source.appendixSelections?.find(item=>item.number===required.number);
+      if(!selected?.available||!selected.documentId||!selected.documentVersionId)
+        issues.push(issue('contract_appendix',`contract.appendices.${required.number}`,`Příloha ${required.number}: ${required.label} nemá vybranou dostupnou verzi dokumentu.`));
+    }
     issues.push(...originalContractIssues(source));
     if(!validPaymentTerms(source))issues.push(issue('contract_payment_terms','contract.paymentTerms','Platební plán této verze smlouvy chybí nebo neodpovídá aktuálním údajům. Splatnost musí vycházet ze skutečného podpisu, nikoli z vytvoření smlouvy.'));
     issues.push(issue('original_profile_review','template','Tato varianta smlouvy ještě není připravena k běžnému použití. Zbývá dokončit kontrolu údajů a obsahové schválení.'));
@@ -98,7 +121,7 @@ function validate(source:RsSource):RsReadinessIssue[]{
   // facts are present, preflight the exact mapper even while those gates are
   // closed. This prevents readiness accepting a value the renderer rejects.
   if(isOriginalContractVariant(source.templateVariant)&&issues.every(item=>
-    ['approved_template','ambiguous_template','original_profile_review','contract_payment_terms'].includes(item.code))){
+    ['approved_template','ambiguous_template','original_profile_review','contract_payment_terms','contract_appendix'].includes(item.code))){
     try{buildOriginalContractSnapshot(source);}
     catch(error){
       if(!(error instanceof OriginalContractSnapshotError))throw error;

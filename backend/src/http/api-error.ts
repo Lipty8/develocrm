@@ -49,7 +49,20 @@ export function mapApiError(input: unknown, statusCode: number, correlationId: s
     message = publicText;
   }
   const paymentTermsCode=source.match(/\bPAYMENT_TERMS_[A-Z_]+\b/)?.[0];
-  if(paymentTermsCode){
+  const appendixCode=source.match(/\bCONTRACT_APPENDIX_[A-Z_]+\b/)?.[0];
+  if(appendixCode){
+    code=appendixCode;
+    const messages:Record<string,string>={
+      CONTRACT_APPENDIX_CHANGED:'Příloha byla mezitím změněna. Načtěte aktuální smlouvu a zkontrolujte výběr.',
+      CONTRACT_APPENDIX_NEW_VERSION_REQUIRED:'Tato verze již má dokument nebo není aktuální. Pro změnu příloh připravte novou pracovní verzi smlouvy.',
+      CONTRACT_APPENDIX_VERSION_IMMUTABLE:'Přílohy této verze již nelze měnit. Připravte novou verzi smlouvy.',
+      CONTRACT_APPENDIX_DOCUMENT_NOT_READY:'Vybraný dokument není dostupný jako připravená příloha tohoto projektu.',
+      CONTRACT_APPENDIX_DOCUMENT_ALREADY_LINKED:'Tento dokument je již v této verzi smlouvy použit. Zkontrolujte seznam příloh.',
+      CONTRACT_APPENDIX_CONTRACT_NOT_EDITABLE:'Ukončenou nebo podepsanou smlouvu nelze touto akcí upravit.',
+      CONTRACT_APPENDIX_INVALID_REQUEST:'Vyberte platnou přílohu a její konkrétní verzi.',
+    };
+    message=messages[code]??'Přílohu smlouvy nelze změnit. Zkontrolujte aktuální verzi smlouvy.';
+  }else if(paymentTermsCode){
     code=paymentTermsCode;
     const messages:Record<string,string>={
       PAYMENT_TERMS_TEMPLATE_CHANGED:'Platební podmínky projektu se změnily. Zavřete formulář a otevřete jej znovu.',

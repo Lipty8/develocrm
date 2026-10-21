@@ -10,6 +10,7 @@ export type UnitNextContractAction=NextContractAction&{unitId:string;unitCode:st
 export type ContractCreateResult={id:string;versionId:string;paymentObligationId:string|null;paymentAmount:number|null;type?:"rs"|"sbk"|"ks";reference?:string;title?:string};
 export type ContextualContractInput={unitId:string;type:"rs"|"sbk"|"ks";idempotencyKey:string;paymentTiming?:'fixed_date'|'signature';paymentCalculationType?:"percentage"|"fixed";paymentInputValue?:number;paymentDueAt?:string};
 import type {RsReadiness,RsReadinessIssue} from '../../backend/src/shared/rs-readiness';
+import type {ContractAppendixInput} from '../../backend/src/shared/contract-appendices';
 export type {RsReadiness,RsReadinessIssue} from '../../backend/src/shared/rs-readiness';
 
 export type CommercialSnapshot = {
@@ -39,6 +40,7 @@ export interface CommercialRepository {
   getRsReadiness(contractId:string,signal?:AbortSignal):Promise<RsReadiness>;
   setSigningPlan(contractId:string,value:{versionId:string;sellerPlannedOn:string|null;buyerPlannedOn:string|null}):Promise<void>;
   preparePaymentTerms(contractId:string,versionId:string):Promise<void>;
+  setContractAppendix(contractId:string,input:ContractAppendixInput):Promise<void>;
   generateContract(contractId:string,idempotencyKey:string):Promise<{operationId:string;documentId:string;documentVersionId:string;contractVersionId:string;contractVersion:number;replayed:boolean}>;
 }
 
@@ -168,6 +170,7 @@ class ApiCommercialRepository implements CommercialRepository {
   }
   async setSigningPlan(contractId:string,value:{versionId:string;sellerPlannedOn:string|null;buyerPlannedOn:string|null}){const response=await apiFetch(`/api/commercial/contracts/${encodeURIComponent(contractId)}/signing-plan`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(value)});if(response.ok)return;const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??'Plánovaná data podpisu se nepodařilo uložit.');}
   async preparePaymentTerms(contractId:string,versionId:string){const response=await apiFetch(`/api/commercial/contracts/${encodeURIComponent(contractId)}/payment-terms`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({versionId})});if(response.ok)return;const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??'Platební plán se nepodařilo připravit.');}
+  async setContractAppendix(contractId:string,input:ContractAppendixInput){const response=await apiFetch(`/api/commercial/contracts/${encodeURIComponent(contractId)}/appendices`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(input)});if(response.ok)return;const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??'Přílohu se nepodařilo uložit.');}
   async getRsReadiness(contractId:string,signal?:AbortSignal){const response=await apiFetch(`/api/commercial/contracts/${encodeURIComponent(contractId)}/preparation-readiness`,{signal,cache:"no-store"});const payload=await response.json().catch(()=>({})) as {readiness?:RsReadiness;error?:string};if(response.ok&&payload.readiness)return payload.readiness;throw new Error(payload.error??"Připravenost smlouvy nelze ověřit");}
   async generateContract(contractId:string,idempotencyKey:string){const response=await apiFetch(`/api/commercial/contracts/${encodeURIComponent(contractId)}/generate`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({idempotencyKey})});const payload=await response.json().catch(()=>({})) as {generation?:{operationId:string;documentId:string;documentVersionId:string;contractVersionId:string;contractVersion:number;replayed:boolean};error?:string;issues?:RsReadinessIssue[]};if(response.ok&&payload.generation)return payload.generation;throw new Error(payload.issues?.map(item=>item.message).join(" ")||payload.error||"Smlouvu nelze vytvořit");}
 }

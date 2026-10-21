@@ -5,6 +5,8 @@ import {JSDOM} from 'jsdom';
 import {RsGenerationPanel,RsPreparationReturn} from '../app/components/rs-generation-panel';
 import {commercialRepository,type RsReadiness} from '../app/repositories/commercial-repository';
 import {formatMoney} from '../app/crm-data';
+import {ContractAppendicesPanel} from '../app/components/contract-appendices-panel';
+import {documentRepository,type DocumentRecord} from '../app/repositories/document-repository';
 let render:typeof import('@testing-library/react').render,screen:typeof import('@testing-library/react').screen,cleanup:typeof import('@testing-library/react').cleanup,fireEvent:typeof import('@testing-library/react').fireEvent,waitFor:typeof import('@testing-library/react').waitFor;
 before(async()=>{const dom=new JSDOM('<!doctype html><html><body></body></html>',{url:'https://develocrm.test',pretendToBeVisual:true});Object.assign(globalThis,{self:dom.window,window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,Node:dom.window.Node});Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});({render,screen,cleanup,fireEvent,waitFor}=await import('@testing-library/react'));});
 afterEach(()=>{cleanup();mock.restoreAll();});
@@ -115,4 +117,41 @@ test('stávající předpisy nenabízejí jejich tichou změnu a bez oprávněn�
   view.rerender(<RsGenerationPanel contractId="another" canGenerate={false} onChanged={()=>{}}/>);
   await waitFor(()=>assert.equal(screen.queryByText(/Smlouva již má platební předpisy/),null));
   assert.equal(screen.queryByRole('button',{name:'Připravit platební plán'}),null);
+});
+
+function appendixDocument():DocumentRecord{return{id:'doc-one',projectId:'project-one',projectName:'Test',name:'Katalogový list technické jednotky',
+  category:'other',typeCode:'other',typeName:'Jiné',status:'ready',note:null,mimeType:'application/pdf',fileSize:100,
+  storageProvider:'sharepoint',webUrl:'https://sharepoint.example.test/test.pdf',etag:'e1',sensitivity:'normal',createdAt:'',updatedAt:'',author:null,version:'v2',
+  units:[],parties:[],contracts:[],salesCases:[],clientChanges:[],complaints:[],handovers:[],
+  versions:[{id:'exact-v1',identifier:'v1',label:'v1',status:'ready',note:null,fileSize:100,createdAt:'',author:null},
+    {id:'draft-v2',identifier:'v2',label:'v2',status:'draft',note:null,fileSize:100,createdAt:'',author:null}]};}
+test('výběr přílohy předá konkrétní verzi a zachová původní concurrency token',async()=>{
+  const doc=appendixDocument();mock.method(documentRepository,'listProject',async()=>({documents:[doc],connection:{status:'connected',syncStatus:'idle',lastSuccessfulSyncAt:null},source:'backend-api'}));
+  mock.method(documentRepository,'get',async()=>doc);const sent:unknown[]=[];let saved=0;
+  mock.method(commercialRepository,'setContractAppendix',async(...args:unknown[])=>{sent.push(args);});
+  render(<ContractAppendicesPanel contractId={contractId} projectId='project-one' summary={{contractVersionId:'working-version',editable:true,
+    items:[{number:1,label:'Katalogový list Bytu',documentId:'old-doc',documentVersionId:'old-exact',name:'Předchozí katalog',version:'v1',available:true}]}} disabled={false} onSaved={async()=>{saved++;}}/>);
+  fireEvent.click(screen.getByRole('button',{name:'Vybrat přílohu 1'}));
+  await screen.findByRole('option',{name:doc.name});
+  fireEvent.change(screen.getByLabelText('Dokument'),{target:{value:doc.id}});
+  await screen.findByRole('option',{name:'v1'});assert.equal(screen.queryByRole('option',{name:'v2'}),null);
+  assert.equal((screen.getByRole('button',{name:'Uložit přílohu'}) as HTMLButtonElement).disabled,true);
+  fireEvent.change(screen.getByLabelText('Verze dokumentu'),{target:{value:'exact-v1'}});
+  fireEvent.click(screen.getByRole('button',{name:'Uložit přílohu'}));
+  await waitFor(()=>assert.equal(saved,1));
+  assert.deepEqual(sent,[[contractId,{versionId:'working-version',number:1,documentId:doc.id,documentVersionId:'exact-v1',expectedDocumentVersionId:'old-exact'}]]);
+  assert.equal(screen.queryByRole('form',{name:'Výběr přílohy 1'}),null);
+});
+test('uzamčené přílohy nemají editaci; odmítnutý výběr zůstane viditelný pro opravu',async()=>{
+  const doc=appendixDocument();const summary={contractVersionId:'working-version',editable:true,items:[{number:1,label:'Katalogový list Bytu',documentId:null,documentVersionId:null,name:null,version:null,available:false}]};
+  mock.method(documentRepository,'listProject',async()=>({documents:[doc],connection:{status:'connected',syncStatus:'idle',lastSuccessfulSyncAt:null},source:'backend-api'}));
+  mock.method(documentRepository,'get',async()=>doc);
+  mock.method(commercialRepository,'setContractAppendix',async()=>{throw new Error('Příloha byla mezitím změněna.');});
+  const view=render(<ContractAppendicesPanel contractId={contractId} projectId='project-one' summary={{...summary,editable:false}} disabled={false} onSaved={async()=>assert.fail('neuloženo')}/>);
+  assert.equal(screen.queryByRole('button',{name:'Vybrat přílohu 1'}),null);
+  view.rerender(<ContractAppendicesPanel contractId={contractId} projectId='project-one' summary={summary} disabled={false} onSaved={async()=>assert.fail('neuloženo')}/>);
+  fireEvent.click(screen.getByRole('button',{name:'Vybrat přílohu 1'}));await screen.findByRole('option',{name:doc.name});
+  fireEvent.change(screen.getByLabelText('Dokument'),{target:{value:doc.id}});await screen.findByRole('option',{name:'v1'});
+  fireEvent.change(screen.getByLabelText('Verze dokumentu'),{target:{value:'exact-v1'}});fireEvent.click(screen.getByRole('button',{name:'Uložit přílohu'}));
+  await screen.findByRole('alert');assert.ok(screen.getByText('Příloha byla mezitím změněna.'));assert.equal((screen.getByLabelText('Verze dokumentu') as HTMLSelectElement).value,'exact-v1');
 });

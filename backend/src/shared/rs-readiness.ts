@@ -1,4 +1,5 @@
 import type {ContractSigningPlan} from './contract-signing-plan.js';
+import type {ContractAppendixSummary} from './contract-appendices.js';
 export type PrecedingRsComparison={status:'compared'|'unavailable';message:string;contractId?:string;reference?:string;contractVersion?:number;
   documentVersionId?:string;buyerChanged?:boolean;comparedFields:number;differences:Array<{field:string;label:string;previous:string;current:string;valuesRestricted?:boolean}>};
 export type RsReadinessIssue={code:string;field:string;message:string;action?:{href:string;label:string}};
@@ -7,6 +8,7 @@ export type RsPreparationSummary={
   seller:string|null;unitPrice:number|null;totalPrice:number|null;reservationFee:number|null;
   reservationFeeDueDays:number;reservationPeriodDays:number;accessories:string[];paymentTimingLabel?:string;
   signingPlan?:ContractSigningPlan|null;
+  appendices?:ContractAppendixSummary;
   precedingRsComparison?:PrecedingRsComparison;
   paymentPlan?:{versionId:string|null;variableSymbol:string;rows:Array<{key:'rs_fee'|'sbk_first'|'sbk_final';amount:string;anchor:'effective_signature'|'notice_delivery';days:number;calendar:'czech_working_days'|'calendar_days'}>};
   paymentPlanPreparation?:{versionId:string;canPrepare:boolean;hasExistingObligations:boolean};

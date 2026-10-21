@@ -6,6 +6,30 @@ import {RS_PLACEHOLDERS} from "../src/documents/template-generation-service.js";
 import {ORIGINAL_DOB_FULL_VARIANT} from '../src/documents/template-catalog.js';
 
 const context={tenantId:"10000000-0000-0000-0000-000000000001",userId:"10000000-0000-0000-0000-000000000002",membershipId:"10000000-0000-0000-0000-000000000003"};
+test('original readiness requires every numbered exact appendix and never treats a filename as evidence',async()=>{
+  let current=source({templateVariant:ORIGINAL_DOB_FULL_VARIANT,
+    signingPlan:{versionId:'working-version',sellerPlannedOn:null,buyerPlannedOn:null,editable:true}});
+  const service=new RsGenerationService({load:async()=>current} as never,{} as never);
+  let result=await service.readiness({...context,contractId:current.contractId});
+  assert.equal(result.issues.filter(item=>item.code==='contract_appendix').length,6);
+  assert.equal(result.summary?.appendices?.items.length,6);assert.equal(result.summary?.appendices?.contractVersionId,'working-version');
+  const selections=Array.from({length:6},(_,index)=>({number:index+1,documentId:`doc-${index}`,documentVersionId:`exact-${index}`,name:'Explicitly selected document',version:'v1',available:true}));
+  current=source({...current,appendixSelections:selections});
+  result=await service.readiness({...context,contractId:current.contractId});
+  assert.equal(result.issues.filter(item=>item.code==='contract_appendix').length,0);
+  assert.equal(result.ready,false);assert.ok(result.issues.some(item=>item.code==='original_profile_review'));
+  current=source({...current,appendixSelections:[...selections.slice(0,5),{...selections[5],available:false}]});
+  result=await service.readiness({...context,contractId:current.contractId});
+  assert.deepEqual(result.issues.filter(item=>item.code==='contract_appendix').map(item=>item.field),['contract.appendices.6']);
+});
+test('appendix updates preserve authorized context, exact version and optimistic token',async()=>{
+  const current=source({templateVariant:ORIGINAL_DOB_FULL_VARIANT});let forwarded:unknown;
+  const body={versionId:context.tenantId,number:1,documentId:context.userId,documentVersionId:context.membershipId,expectedDocumentVersionId:null};
+  const service=new RsGenerationService({load:async()=>current,setAppendix:async(input:unknown)=>{forwarded=input;return{linkId:'link'};}} as never,{} as never);
+  await service.setAppendix({...context,contractId:current.contractId},body);
+  assert.deepEqual(forwarded,{...context,contractId:current.contractId,...body});
+  await assert.rejects(service.setAppendix({...context,contractId:current.contractId},{...body,number:7}),error=>error instanceof RsGenerationError&&error.code==='appendix_not_supported');
+});
 test('original preparation requires a current payment plan but never activates the legal template',async()=>{
   const base=source();const paymentTerms={version:1,profile:ORIGINAL_DOB_FULL_VARIANT,calendarPolicy:'cz-2026-v1',signatureAnchor:'last_required_signature',contractType:'rs',
     totalPrice:'22000000.00',reservationFee:'250000',paidReservationFee:'0',precedingRsContractId:null,buyerPartyId:base.buyers[0].id,variableSymbol:'417',
