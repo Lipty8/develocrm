@@ -49,3 +49,31 @@ is retained; the legal original is not rewritten by this package. Updated RS
 content requires separate review. The complete accessory variant, project legal
 facts and referenced appendix package also require their existing content/data
 checks before activation. No approval blocker is bypassed.
+
+## Deployment and live verification
+
+- Implementation: `f5ed2b27f180fe5d6b37befedf02137dbc9d18a3`, pushed to private
+  GitHub main. Unrelated pre-existing untracked reports were not included.
+- ACR run `cg4j` succeeded. Backend image `develocrm-api:validation-f5ed2b2`,
+  immutable digest `sha256:5ade2f2275fc18106a026908008690c60e69d5176c1b4974b87bd5fbff05362a`.
+- Revision `ca-develocrm-api-pilot--validation-f5ed2b2`: active, Healthy, Running,
+  latestReady; liveness/readiness enabled. `/health` and `/ready` both HTTP 200.
+  Previous healthy revision retained. No migration executed; latest schema 0067
+  is not changed by this package.
+- Official Sites helper built and pushed `db930d620a3d9c548a2b5a9b4583fabb4cb7ba45`.
+  All 527 tracked files match implementation; both Git trees are
+  `7f9c3ae883864a75e2a0ca0812df04627f7859ef`. Archive-backed private publication
+  succeeded as Sites 158, deployment `appgdep_6ad864b9d4e08191a63f7089b994a19f`.
+  Owner-only custom access remains unchanged, zero external viewers.
+- Authenticated read-only browser smoke on existing technical SBK
+  `TECH60-BLOCKED-SBK`: detail/reload, repeated readiness check, concrete missing
+  fields, internal buyer correction link and return-to-contract link. No generate,
+  signature, payment, upload, approval or business-record mutation was submitted.
+  The original profile is intentionally unready: the generation-POST 422 and
+  stale-ready transition are proven by actual-route/interaction regressions,
+  not falsely claimed as a production generation E2E.
+- First bounded 15-minute new-revision log query: 28 completed requests, zero
+  queried HTTP 5xx, DB/RLS or startup errors. This is not a lifetime-error claim.
+
+The broader RS/SBK production-readiness goal remains open. Legal-template
+activation and complete original-profile generation/signature E2E are not done.
