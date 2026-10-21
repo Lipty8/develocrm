@@ -58,3 +58,31 @@ parser inside PostgreSQL. No claim of preventing every possible legal error.
 
 Original RS/SBK remain review-only. Appendix package completion, original legal
 content approval and full production legal-generation/signature E2E remain open.
+
+## Pilot deployment and actual negative smoke
+
+- GitHub implementation `d4279c9e81ce981cd57323fc4da5d35b79645f35` pushed to main.
+- ACR `cg4k` succeeded (2m20s); image `develocrm-api:final-docx-d4279c9`,
+  digest `sha256:17bf0927205c841af0aa6fe0811647a008b8f608a357bd343793a06b079de69a`.
+- API `ca-develocrm-api-pilot--final-docx-d4279c9`: Healthy, Running, latestReady;
+  liveness/readiness active; health/ready HTTP 200. Previous healthy revision
+  retained. No migration or database backfill ran.
+- Matching official-helper Sites source
+  `5ba5fd3f7924c4a8d10e38d6ea87aa5d6611f405`, 529 exact matching tracked files,
+  shared tree `d11b6b2b4294a4c7ecc5822d0336cac1c94c53e0`. Sites 159 private
+  deployment `appgdep_6ad86b055dac819185f9c77072411be0` succeeded; owner-only
+  custom audience unchanged, zero external viewers.
+- Authenticated browser on existing technical `TECH60-BLOCKED-SBK`: selected
+  the repository review DOCX containing unresolved fields and submitted the
+  actual external-upload form. Browser -> BFF -> API returned HTTP 409;
+  correlation `a95cbb40-5155-4962-a317-e13303428b74`. UI displayed:
+  `Dokument obsahuje nevyplněná pole. Doplňte je a nahrajte finální verzi.`
+  This is a refused upload, not a newly stored/signed legal document. The
+  pre-upload validator runs before DB/storage work; malformed/legacy marker
+  variants are additionally covered by the isolated regressions, not claimed
+  as separately uploaded pilot files. No signature or financial action used.
+- Reload confirms the same technical contract still has one version, no final
+  document or Word-download action, and empty file selection. Browser warnings /
+  errors empty. Initial new-revision 15-minute query: 37 completed requests,
+  one expected unresolved-fields rejection, zero queried 5xx, DB/RLS or startup
+  errors. These are bounded smoke observations, not a lifetime guarantee.
