@@ -5,6 +5,7 @@ import { PGlite } from "@electric-sql/pglite";
 import type { Database } from "../src/database.js";
 import { SharePointConnectionService, SharePointConnectionValidationError } from "../src/documents/connection-service.js";
 import { EntraMicrosoftGraphAdapter, MicrosoftGraphRequestError, type MicrosoftGraphAdapter } from "../src/documents/graph-adapter.js";
+import {PDF_DOCUMENT_MAX_BYTES} from '../src/documents/file-limits.js';
 import { DocumentRepository, type DocumentContext } from "../src/documents/repository.js";
 import { bootstrapIds, bootstrapPilotWorkspace, normalizeBootstrapInput } from "../src/iam/pilot-bootstrap.js";
 
@@ -87,6 +88,25 @@ test("current driveItem version falls back from Graph 400 to current content",as
       "https://graph.microsoft.com/beta/drives/drive/items/item/versions/1.0/content",
       "https://graph.microsoft.com/v1.0/drives/drive/items/item/content",
     ]);
+  }finally{globalThis.fetch=originalFetch;}
+});
+
+test('Graph content streams accept large appendices and cancel oversized responses',async()=>{
+  const originalFetch=globalThis.fetch;
+  const adapter=new EntraMicrosoftGraphAdapter({getAccessToken:async()=> 'token'});
+  try{
+    const bytes=new Uint8Array(10*1024*1024);
+    globalThis.fetch=async()=>new Response(bytes);
+    assert.equal((await adapter.downloadFile({siteId:'site',driveId:'drive'},'item','1.0')).byteLength,bytes.length);
+    for(const advertised of [true,false]){
+      let cancelled=false;
+      const stream=new ReadableStream<Uint8Array>({pull(controller){controller.enqueue(new Uint8Array(1024*1024));},cancel(){cancelled=true;}});
+      globalThis.fetch=async()=>new Response(stream,{headers:advertised?{'content-length':String(PDF_DOCUMENT_MAX_BYTES+1)}:{}});
+      await assert.rejects(adapter.downloadFile({siteId:'site',driveId:'drive'},'item'),e=>e instanceof MicrosoftGraphRequestError&&e.status===413);
+      assert.equal(cancelled,true);
+    }
+    globalThis.fetch=async()=>new Response(new Uint8Array());
+    await assert.rejects(adapter.downloadFile({siteId:'site',driveId:'drive'},'empty'),MicrosoftGraphRequestError);
   }finally{globalThis.fetch=originalFetch;}
 });
 

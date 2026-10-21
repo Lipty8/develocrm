@@ -16,6 +16,7 @@ import { DocumentRepository } from "./documents/repository.js";
 import type { MicrosoftGraphAdapter } from "./documents/graph-adapter.js";
 import { SharePointConnectionService, SharePointConnectionValidationError } from "./documents/connection-service.js";
 import { SharePointDocumentUploadService, SharePointUploadError } from "./documents/upload-service.js";
+import { DEFAULT_DOCUMENT_MAX_BYTES, DOCUMENT_UPLOAD_BODY_LIMIT, documentMaxBytes } from "./documents/file-limits.js";
 import { DocumentTemplateGenerationRepository, type PlaceholderSchema } from "./documents/template-generation-repository.js";
 import { DocumentGenerationError, DocumentTemplateGenerationService } from "./documents/template-generation-service.js";
 import { DocxTemplateError } from "./documents/docx-template.js";
@@ -603,12 +604,12 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
   });
   app.post<{Body:{projectId:string;idempotencyKey:string;documentId?:string;typeCode?:string;documentName:string;fileName:string;mimeType:string;
     contentBase64:string;versionLabel:string;status?:"draft"|"ready"|"sent"|"negotiation"|"signed"|"archived";note?:string;
-    unitId?:string;partyId?:string;contractId?:string;salesCaseId?:string}}>("/v1/documents/sharepoint-upload",{bodyLimit:6*1024*1024},async(request,reply)=>{
+    unitId?:string;partyId?:string;contractId?:string;salesCaseId?:string}}>("/v1/documents/sharepoint-upload",{bodyLimit:DOCUMENT_UPLOAD_BODY_LIMIT},async(request,reply)=>{
     try{
       const context=await sessionContext(request,dependencies.verifier,repository);
       if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});
       if(!sharePointUploads)return reply.code(503).send({error:"SharePoint integrace není v tomto prostředí nakonfigurovaná"});
-      const bytes=decodeBase64(request.body.contentBase64);
+      const bytes=decodeBase64(request.body.contentBase64,documentMaxBytes(request.body.mimeType,request.body.fileName));
       const result=await sharePointUploads.upload({...context,...request.body,bytes});
       return reply.code(result.replayed?200:201).send({upload:result});
     }catch(error){
@@ -618,7 +619,7 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
       const status=permissionError(error)?403:uploadError?.code==="connection_unavailable"?503:
         uploadError&&uploadError.code.startsWith("invalid_")||uploadError?.code==="document_type_required"?400:
           uploadError?.code==="graph_not_found"||uploadError?.code==="document_item_missing"?404:uploadError?502:409;
-      return reply.code(status).send({error:status===403?"Nemáte oprávnění nahrát dokument.":status===400?"Zkontrolujte název a obsah souboru.":
+      return reply.code(status).send({error:status===403?"Nemáte oprávnění nahrát dokument.":uploadError?.code==="invalid_file_size"?"Soubor je příliš velký.":status===400?"Zkontrolujte název a obsah souboru.":
         status===503?"SharePoint není pro tento pracovní prostor dostupný.":"Dokument se nepodařilo uložit do SharePointu."});
     }
   });
@@ -792,9 +793,12 @@ function templateErrorReply(request:FastifyRequest,reply:FastifyReply,error:unkn
   const status=permissionError(error)||code==="permission_required"?403:code?.includes("not_found")?404:code?.startsWith("invalid_")||code==="unsupported_template_type"||error instanceof DocxTemplateError?422:409;
   const message=status===403?"Nemáte oprávnění provést tuto změnu šablony.":status===404?"Šablona nebo její verze nebyla nalezena.":status===422?"Šablona není platná. Zkontrolujte soubor a datová pole.":code==='template_generation_not_ready'?"Tuto šablonu zatím nelze schválit pro generování smluv.":code==='template_content_hash_mismatch'?"Obsah souboru neodpovídá uložené verzi šablony. Kontaktujte správce.":"Změnu šablony se nepodařilo dokončit.";
   return reply.code(status).send({error:message,code,details:error instanceof TemplateManagementError||error instanceof DocxTemplateError?error.details:[],correlationId:request.id});}
-function decodeBase64(value:string):Uint8Array{
-  if(typeof value!=="string"||!value.length||value.length>5_600_000||!/^[A-Za-z0-9+/]*={0,2}$/.test(value)||value.length%4!==0)throw new SharePointUploadError("invalid_content");
+function decodeBase64(value:string,maxBytes=DEFAULT_DOCUMENT_MAX_BYTES):Uint8Array{
+  if(typeof value!=="string"||!value.length)throw new SharePointUploadError("invalid_content");
+  if(value.length>4*Math.ceil(maxBytes/3))throw new SharePointUploadError("invalid_file_size");
+  if(!/^[A-Za-z0-9+/]*={0,2}$/.test(value)||value.length%4!==0)throw new SharePointUploadError("invalid_content");
   const decoded=Buffer.from(value,"base64");
+  if(decoded.length>maxBytes)throw new SharePointUploadError("invalid_file_size");
   if(!decoded.length||decoded.toString("base64").replace(/=+$/," ").trim()!==value.replace(/=+$/," ").trim())throw new SharePointUploadError("invalid_content");
   return decoded;
 }

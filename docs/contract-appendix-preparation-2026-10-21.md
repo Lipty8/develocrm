@@ -1,5 +1,48 @@
 # RS/SBK appendix preparation — technical package deployed, legal activation pending
 
+## Follow-up: source appendices and PDF transport (21 October)
+
+- The matching API `appendix-unlink-42f476f` is ready, digest
+  `sha256:bd3bf7a2f038ea3cb7286dbc4be9256118af75f0df78ae2cd93f5ffd76bc6423`;
+  `/health` and `/ready` both returned 200. Sites 160 is unchanged because
+  this follow-up did not change frontend sources.
+- Read-only readiness execution `job-develocrm-hold-expiry-vobxvag` completed
+  with a failing consistency gate, not an infrastructure failure. Migration
+  hashes, health/readiness, Sites.Selected, configured SharePoint read and
+  frontend compatibility passed. The remaining critical finding is the old
+  synthetic `TECH60-BLOCKED` reserved unit without an effective signed contract;
+  there are also eight legacy evidence exceptions and six warnings. No records
+  were repaired automatically. This is not proof of legal-template readiness.
+- The user authorized copying only approved appendices from the separate
+  `immobuilding / Dejvice TEST` source library to the configured
+  `DeveloCRM / Dejvice TEST` library, retaining originals and existing site grants.
+- Source inventory: 19 main unit catalogue PDFs plus a separate 519 sauna
+  supplement; 12 situation/floor-plan PDFs; one standards PDF. Names are only
+  inventory, not sufficient evidence for automatic contract/unit assignment.
+- The standards PDF has 20 pages and 10,183,053 bytes, SHA-256
+  `a79e5e7830b7fdd6f00a77b9c937c03194bd39c572d58833d1541b152844b4c0`.
+  Static parsing found no JavaScript, embedded files or opening action.
+  SharePoint's source preview failed with a generic warning, while normal
+  download and the details thumbnail worked. Static inspection is not an
+  antivirus verdict. The authorized copy was uploaded without overwrite into
+  the exact configured target library and returned the same byte count;
+  CRM ingestion, native-version hash verification and appendix selection remain
+  pending. No original was modified, and no template was activated.
+- This exposed three real limits: generic upload 4 MiB, JSON/base64 transport
+  sized for 4 MiB, and Graph readback 8 MiB. Migration 0071 and shared limits
+  support PDF documents up to 25 MiB (matching MIME and extension); other
+  uploads remain 4 MiB. PDF magic is checked in the service. Template and
+  external-signature endpoints retain their existing stricter limits.
+- Graph content reads are now bounded while streaming, with Content-Length
+  prechecks and cancellation on overflow. Exact native-version retrieval and
+  stored-byte SHA-256 validation remain unchanged.
+- Local verification: all 491 backend tests passed, including actual PostgreSQL
+  and concurrency coverage, plus a new HTTP transport test (>8 MiB accepted,
+  >25 MiB rejected, template endpoint still restricted). Backend production
+  build, frontend TypeScript and changed-file lint passed. Deployment of 0071
+  and a live >8 MiB pipeline smoke test are not yet claimed by this section.
+
+
 ## Scope and current state
 
 This package prepares explicit selection of exact appendix versions inside the

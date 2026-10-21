@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { MicrosoftGraphRequestError, type GraphConnection, type GraphFileMetadata, type MicrosoftGraphAdapter } from "./graph-adapter.js";
 import { SharePointFolderStrategy, type DocumentFolderKind } from "./folder-strategy.js";
 import { DocumentRepository, type DocumentContext, type DocumentListItem, type DocumentUploadReservation } from "./repository.js";
+import { documentMaxBytes } from "./file-limits.js";
 
 export type DocumentUploadInput=DocumentContext&{
   projectId:string;idempotencyKey:string;documentId?:string;typeCode?:string;documentName:string;fileName:string;mimeType:string;
@@ -132,7 +133,10 @@ export function validateUploadInput(input:Pick<DocumentUploadInput,"idempotencyK
   if(!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,159}$/.test(input.idempotencyKey))throw new SharePointUploadError("invalid_idempotency_key");
   if(!input.documentId&&!input.typeCode)throw new SharePointUploadError("document_type_required");
   if(!input.documentName.trim()||input.documentName.length>260)throw new SharePointUploadError("invalid_document_name");
-  if(input.bytes.byteLength<1||input.bytes.byteLength>4*1024*1024)throw new SharePointUploadError("invalid_file_size");
+  if(input.bytes.byteLength<1||input.bytes.byteLength>documentMaxBytes(input.mimeType,input.fileName))throw new SharePointUploadError("invalid_file_size");
+  if(input.mimeType==="application/pdf"&&!/\.pdf$/i.test(input.fileName))throw new SharePointUploadError("invalid_mime_type");
+  if(/\.pdf$/i.test(input.fileName)&&(input.mimeType!=="application/pdf"||
+    new TextDecoder().decode(input.bytes.subarray(0,5))!=="%PDF-"))throw new SharePointUploadError("invalid_mime_type");
   if(!input.mimeType.includes("/")||input.mimeType.length>120)throw new SharePointUploadError("invalid_mime_type");
   if(!input.versionLabel.trim()||input.versionLabel.length>80)throw new SharePointUploadError("invalid_version_label");
   validateFileName(input.fileName);

@@ -55,6 +55,16 @@ async function fixture(postgresUrl?:string){
 for(const native of [false,true])test(`exact appendix version binding (${native?'PostgreSQL':'PGlite'})`,{skip:native&&!process.env.WORKFLOW_TEST_DATABASE_URL},async t=>{
   const f=await fixture(native?process.env.WORKFLOW_TEST_DATABASE_URL:undefined);
   try{
+    await t.test('PDF upload size is enforced in the database, with idempotent reservation',async()=>{
+      const key=randomUUID();
+      const reserve=(size:number,mime='application/pdf',name='standards.pdf',idempotency=key)=>f.context(async c=>
+        (await c.query<{id:string}>("SELECT app.reserve_document_upload($1,$2,$3,$4,'create',NULL,'other','Technical large appendix',$5,$6,$7,$8,'v1','ready',NULL,NULL,NULL,NULL,NULL,$9) id",
+          [f.ids.tenantId,f.unit.project_id,idempotency,'c'.repeat(64),name,mime,size,`sha256:${'d'.repeat(64)}`,f.ids.membershipId])).rows[0].id);
+      const id=await reserve(10*1024*1024);assert.equal(await reserve(10*1024*1024),id);
+      await assert.rejects(reserve(25*1024*1024+1,undefined,undefined,randomUUID()),/invalid upload size/);
+      await assert.rejects(reserve(5*1024*1024,'text/plain','standards.pdf',randomUUID()),/invalid upload size/);
+      await assert.rejects(reserve(5*1024*1024,'application/pdf','standards.docx',randomUUID()),/invalid upload size/);
+    });
     const a=await f.document(),b=await f.document();
     await t.test('exact links, retry, replacement and removal preserve audit without document deletion',async()=>{
       const id=await f.set(1,a);assert.ok(id);assert.equal(await f.set(1,a),id);assert.deepEqual(await f.counts(),{links:1,audit:1,outbox:1});

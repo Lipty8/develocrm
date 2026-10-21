@@ -5,7 +5,8 @@ import {renderDocxTemplate} from '../src/documents/docx-template.js';
 import type { GraphFileMetadata, MicrosoftGraphAdapter } from "../src/documents/graph-adapter.js";
 import { MicrosoftGraphRequestError } from "../src/documents/graph-adapter.js";
 import type { DocumentUploadReservation } from "../src/documents/repository.js";
-import { SharePointDocumentUploadService, SharePointUploadError, validateFileName } from "../src/documents/upload-service.js";
+import { SharePointDocumentUploadService, SharePointUploadError, validateFileName, validateUploadInput } from "../src/documents/upload-service.js";
+import {PDF_DOCUMENT_MAX_BYTES,DEFAULT_DOCUMENT_MAX_BYTES} from '../src/documents/file-limits.js';
 
 const context={tenantId:"30000000-0000-4000-8000-000000000001",userId:"20000000-0000-4000-8000-000000000001",membershipId:"40000000-0000-4000-8000-000000000001"};
 const projectId="50000000-0000-4000-8000-000000000001";
@@ -91,4 +92,14 @@ test("Graph 403 a 404 se mapují na bezpečné upload chyby",async()=>{
 test("filename validation odmítá traversal a oddělovače cest",()=>{
   for(const name of["../secret.txt","folder/file.txt","folder\\file.txt",".."]){assert.throws(()=>validateFileName(name),SharePointUploadError);}
   assert.doesNotThrow(()=>validateFileName("Technický test 01.txt"));
+});
+
+test('PDF appendices support 25 MiB without increasing other file limits',()=>{
+  const pdf=new Uint8Array(PDF_DOCUMENT_MAX_BYTES);pdf.set(new TextEncoder().encode('%PDF-1.6'));
+  assert.doesNotThrow(()=>validateUploadInput(input({fileName:'Standardy.PDF',mimeType:'application/pdf',bytes:pdf})));
+  assert.throws(()=>validateUploadInput(input({fileName:'Standardy.pdf',mimeType:'application/pdf',bytes:new Uint8Array(PDF_DOCUMENT_MAX_BYTES+1)})),e=>e instanceof SharePointUploadError&&e.code==='invalid_file_size');
+  for(const [fileName,mimeType] of [['template.docx','application/vnd.openxmlformats-officedocument.wordprocessingml.document'],['fake.pdf','text/plain'],['fake.docx','application/pdf']])
+    assert.throws(()=>validateUploadInput(input({fileName,mimeType,bytes:pdf})),SharePointUploadError);
+  assert.throws(()=>validateUploadInput(input({fileName:'fake.pdf',mimeType:'application/pdf',bytes:new Uint8Array(100)})),e=>e instanceof SharePointUploadError&&e.code==='invalid_mime_type');
+  assert.throws(()=>validateUploadInput(input({bytes:new Uint8Array(DEFAULT_DOCUMENT_MAX_BYTES+1)})),e=>e instanceof SharePointUploadError&&e.code==='invalid_file_size');
 });

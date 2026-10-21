@@ -1,3 +1,5 @@
+import { PDF_DOCUMENT_MAX_BYTES } from "./file-limits.js";
+
 export type GraphConnection = {
   driveId: string;
   siteId: string;
@@ -129,9 +131,7 @@ export class EntraMicrosoftGraphAdapter implements MicrosoftGraphAdapter {
     // downloaded bytes against the immutable CRM SHA-256 before using them.
     if(versionId&&response.status===400)response=await this.raw(`/drives/${encodeURIComponent(connection.driveId)}/items/${encodeURIComponent(itemId)}/content`);
     if(!response.ok)throw graphRequestError(response);
-    const bytes=new Uint8Array(await response.arrayBuffer());
-    if(bytes.byteLength<1||bytes.byteLength>8*1024*1024)throw new MicrosoftGraphRequestError(413,response.headers.get("request-id"));
-    return bytes;
+    return readBoundedDocument(response);
   }
 
   async createFolder(connection: GraphConnection, parentItemId: string, folderName: string): Promise<GraphFileMetadata> {
@@ -187,6 +187,28 @@ export class EntraMicrosoftGraphAdapter implements MicrosoftGraphAdapter {
       headers: { authorization: `Bearer ${token}`, accept: "application/json", ...(init?.headers ?? {}) },
     });
   }
+}
+
+/** Bound the stream before buffering; Content-Length alone is not trustworthy. */
+async function readBoundedDocument(response: Response): Promise<Uint8Array> {
+  const tooLarge=()=>new MicrosoftGraphRequestError(413,response.headers.get("request-id"));
+  const length=Number(response.headers.get("content-length"));
+  if(length>PDF_DOCUMENT_MAX_BYTES){await response.body?.cancel();throw tooLarge();}
+  if(!response.body)throw tooLarge();
+  const reader=response.body.getReader();
+  const chunks:Uint8Array[]=[];let size=0;
+  try{
+    for(;;){
+      const {done,value}=await reader.read();if(done)break;
+      size+=value.byteLength;
+      if(size>PDF_DOCUMENT_MAX_BYTES){await reader.cancel();throw tooLarge();}
+      chunks.push(value);
+    }
+  }finally{reader.releaseLock();}
+  if(!size)throw tooLarge();
+  const result=new Uint8Array(size);let offset=0;
+  for(const chunk of chunks){result.set(chunk,offset);offset+=chunk.byteLength;}
+  return result;
 }
 
 function graphRequestError(response: Response): MicrosoftGraphRequestError {
