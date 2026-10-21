@@ -232,6 +232,9 @@ for(const [kind,outputTypeCode] of [['rs','reservation_contract'],['sbk','future
     const preview=await h.service.preview({...context,templateId,versionId});
     assert.deepEqual(inspectDocxTemplate(preview).tokens,[]);
     assert.match(strFromU8(unzipSync(preview)['word/document.xml']),/TESTOVACÍ KUPUJÍCÍ NEPODEPISOVAT/);
+    const archive=unzipSync(preview);
+    assert.match(strFromU8(archive[kind==='rs'?'word/_rels/document.xml.rels':'word/document.xml']),/mailto:prodavajici@example.test/);
+    assert.doesNotMatch(strFromU8(archive[kind==='rs'?'word/_rels/document.xml.rels':'word/document.xml']),/mailto:jaroslav.zahourek/);
     assert.equal((await h.service.list({...context}))[0].generationSupported,false);
     let approved=false;h.repository.approve=async()=>{approved=true;};
     await assert.rejects(h.service.approve({...context,templateId,versionId}),
@@ -257,6 +260,7 @@ test('doručovací SBK má samostatný draft, náhled a nesmí přepsat 37polov�
  assert.equal(catalog.generationSupported,false);assert.equal((await h.service.list(context))[0].generationSupported,false);
  const output=await h.service.preview({...context,templateId,versionId});assert.deepEqual(inspectDocxTemplate(output).tokens,[]);
  assert.match(strFromU8(unzipSync(output)['word/document.xml']),/Testovací doručování 62/);
+ assert.match(strFromU8(unzipSync(output)['word/document.xml']),/mailto:prodavajici@example.test/);
  await assert.rejects(h.service.approve({...context,templateId,versionId}),error=>error instanceof TemplateManagementError&&error.code==='template_generation_not_ready');
  const incompatible=harness(bytes);
  await assert.rejects(incompatible.service.upload({...uploadInput(bytes),outputTypeCode:'future_purchase_contract',variantKey:ORIGINAL_DOB_FULL_VARIANT}),

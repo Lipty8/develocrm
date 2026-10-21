@@ -55,7 +55,7 @@ export class DocumentTemplateGenerationService{
     const source=await this.graph.downloadFile({siteId:connection.siteId,driveId:connection.driveId},template.itemId,template.externalVersionId);
     if(`sha256:${hash(source)}`!==template.contentHash)throw new DocumentGenerationError("template_hash_mismatch");
     const required=Object.entries(template.schema.fields).filter(([,field])=>field.required).map(([token])=>token);
-    const rendered=renderDocxTemplate(source,operation.snapshot,{allowedTokens:Object.keys(template.schema.fields),requiredTokens:required});
+    const rendered=renderDocxTemplate(source,operation.snapshot,{allowedTokens:Object.keys(template.schema.fields),requiredTokens:required,mailToTokens:catalog.mailToTokens});
     const renderedHash=`sha256:${hash(rendered.bytes)}`;
     const stamp=operation.createdAt.replace(/[-:TZ.]/g,"").slice(0,14);const safeCode=template.templateCode.replace(/[^a-z0-9_-]/g,"-");
     const upload=await this.uploads.upload({...input,idempotencyKey:`generation:${operation.id}`,documentId:input.documentId,typeCode:template.outputTypeCode,

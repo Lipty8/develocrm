@@ -23,6 +23,15 @@ function fixture(type:'rs'|'sbk'='rs'):RsSource{return{
  templateVersionId:'technical-template-version',templateHash:'sha256:technical',templateApprovalStatus:'draft',approvedTemplateCount:0,documentId:null,documentVersionId:null,webUrl:null,contractVersion:null,
 };}
 const normalized=(value:string)=>value.replace(/\u00a0/g,' ');
+test('unsafe seller mailboxes block canonical snapshot and readiness before rendering',async()=>{
+ for(const email of ['a@example.test?bcc=b@example.test','a%0A@evil.test','a@bad..test','not-an-email','a\r\n@evil.test']){
+  const source=fixture();source.settings!.email=email;
+  assert.throws(()=>buildSnapshot(source),(error:unknown)=>error instanceof OriginalContractSnapshotError&&error.field==='seller.email');
+  const result=await new RsGenerationService({load:async()=>source} as never,{} as never).readiness({tenantId:'t',userId:'u',membershipId:'m',contractId:source.contractId});
+  assert.equal(result.ready,false);assert.ok(result.issues.some(issue=>issue.code==='invalid_contract_value'&&issue.field==='project.seller.email'));
+  assert.ok(!JSON.stringify(result).includes(email));
+ }
+});
 function successor():RsSource{
  const rs=fixture(),source=fixture('sbk');source.signedRsContractId='signed-rs';
  source.precedingRsEvidence={contractId:'signed-rs',reference:'TECH-RS',versionId:'signed-rs-version',versionNumber:2,documentVersionId:'exact-signed-document',

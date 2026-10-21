@@ -1,4 +1,5 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
+import { isDocumentMailbox } from "../shared/document-mailbox.js";
 
 export type DocxTemplateValue = string | number | boolean | null | undefined;
 
@@ -14,6 +15,8 @@ export type RenderDocxTemplateOptions = {
   requiredTokens?: readonly string[];
   /** Reject template tokens outside the approved field catalogue. */
   allowedTokens?: readonly string[];
+  /** Server-owned allowlist. Only a complete e-mail token may update a mailto link. */
+  mailToTokens?: readonly string[];
 };
 
 export type RenderedDocxTemplate = {
@@ -31,6 +34,7 @@ export type DocxTemplateErrorCode =
   | "unsafe_docx_archive"
   | "template_too_large"
   | "template_value_missing"
+  | "unsafe_template_link"
   | "unresolved_template_token";
 
 export class DocxTemplateError extends Error {
@@ -140,7 +144,10 @@ export function renderDocxTemplate(
 
   for (const name of inspection.xmlParts) {
     const xml = strFromU8(archive[name]);
-    archive[name] = strToU8(replaceTokensInXml(xml, values));
+    const linked = options.mailToTokens?.length
+      ? synchronizeMailToLinks(xml, name, archive, values, options.mailToTokens)
+      : xml;
+    archive[name] = strToU8(replaceTokensInXml(linked, values));
   }
 
   const rendered = zipSync(archive, { level: 6 });
@@ -153,6 +160,108 @@ export function renderDocxTemplate(
     );
   }
   return { bytes: rendered, usedTokens: inspection.tokens };
+}
+
+/** Do not template arbitrary URLs, relationship IDs, or executable Word fields. */
+function synchronizeMailToLinks(
+  xml: string, part: string, archive: Record<string, Uint8Array>,
+  values: Readonly<Record<string, DocxTemplateValue>>, allowed: readonly string[],
+): string {
+  const fail = (token: string): never => {
+    // Details contain only a catalogue key, never the address or field instruction.
+    throw new DocxTemplateError("unsafe_template_link", "E-mailový odkaz v šabloně nelze bezpečně doplnit.", [token]);
+  };
+  const binding = (block: string): { token: string; target: string } | null => {
+    const visible = extractVisibleText(`<w:p>${block}</w:p>`).trim();
+    const tokens = [...visible.matchAll(TOKEN_PATTERN)].map(match => match[1]).filter(token => allowed.includes(token));
+    if (!tokens.length) return null;
+    const token = tokens[0];
+    if (tokens.length !== 1 || visible.replace(TOKEN_PATTERN, "").trim()) fail(token);
+    const value = values[token];
+    // A single mailbox only: no URI scheme, headers, CRLF, quotes or field switches.
+    if (!isDocumentMailbox(value)) fail(token);
+    return { token, target: `mailto:${value}` };
+  };
+  const attribute = (tag: string, key: string): string | undefined => {
+    const matches = [...tag.matchAll(new RegExp(`\\s${key}=("[^"]*"|'[^']*')`, "g"))];
+    return matches.length === 1 ? decodeXml(matches[0][1].slice(1, -1)) : undefined;
+  };
+  const withAttribute = (tag: string, key: string, value: string): string =>
+    tag.replace(new RegExp(`(\\s${key}=)("[^"]*"|'[^']*')`), (_match, prefix: string) => `${prefix}"${escapeXml(value)}"`);
+  const links = new Map<string, { token: string; target: string; uses: number }>();
+  let result = xml.replace(/<w:hyperlink\b[^>]*>[\s\S]*?<\/w:hyperlink>/g, block => {
+    const bound = binding(block); if (!bound) return block;
+    const id = attribute(block.slice(0, block.indexOf(">") + 1), "r:id");
+    if (!id) return fail(bound.token);
+    const prior = links.get(id);
+    if (prior && prior.target !== bound.target) return fail(bound.token);
+    links.set(id, { ...bound, uses: (prior?.uses ?? 0) + 1 });
+    return block;
+  });
+  if (links.size) {
+    const file = part.slice(part.lastIndexOf("/") + 1);
+    const relsPath = `${part.slice(0, part.lastIndexOf("/"))}/_rels/${file}.rels`;
+    const rels = archive[relsPath];
+    for (const [id, bound] of links) {
+      const allUses = [...xml.matchAll(/\sr:id=("[^"]*"|'[^']*')/g)]
+        .filter(match => decodeXml(match[1].slice(1, -1)) === id).length;
+      if (!rels || allUses !== bound.uses) fail(bound.token);
+    }
+    let relationshipXml = strFromU8(rels);
+    for (const [id, bound] of links) {
+      let found = 0;
+      relationshipXml = relationshipXml.replace(/<Relationship\b[^>]*\/>/g, tag => {
+        if (attribute(tag, "Id") !== id) return tag;
+        found++;
+        if (attribute(tag, "Type") !== "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"
+          || attribute(tag, "TargetMode") !== "External"
+          || !/^mailto:[^\s?"<>]+@[^\s?"<>]+$/i.test(attribute(tag, "Target") ?? "")) fail(bound.token);
+        return withAttribute(tag, "Target", bound.target);
+      });
+      if (found !== 1) fail(bound.token);
+    }
+    archive[relsPath] = strToU8(relationshipXml);
+  }
+  const instruction = (old: string, target: string, token: string): string => {
+    // Only an existing plain mailto field. Never accept arbitrary HYPERLINK/INCLUDETEXT/DDE.
+    if (!/^\s*HYPERLINK\s+"mailto:[^\s?"<>]+@[^\s?"<>]+"\s*$/i.test(decodeXml(old))) fail(token);
+    return escapeXml(`HYPERLINK "${target}"`);
+  };
+  result = result.replace(/<w:fldSimple\b[^>]*>[\s\S]*?<\/w:fldSimple>/g, block => {
+    const bound = binding(block); if (!bound) return block;
+    const start = block.slice(0, block.indexOf(">") + 1);
+    const old = attribute(start, "w:instr");
+    if (!old) return fail(bound.token);
+    return withAttribute(start, "w:instr", decodeXml(instruction(escapeXml(old), bound.target, bound.token))) + block.slice(start.length);
+  });
+  // Locate complete fields, including nested fields, before deciding whether the
+  // supported single-mailbox shape is safe. PAGE/NUMPAGES and other fields stay intact.
+  const stack: number[] = [];
+  const ranges: Array<[number, number]> = [];
+  for (const match of result.matchAll(/<w:fldChar\b[^>]*>/g)) {
+    const type = attribute(match[0], "w:fldCharType");
+    if (type === "begin") stack.push(match.index);
+    if (type === "end" && stack.length) {
+      const start = stack.pop()!;
+      if (!stack.length) ranges.push([start, match.index + match[0].length]);
+    }
+  }
+  if (stack.length && binding(result.slice(stack[0]))) fail(allowed[0]);
+  for (const [start, end] of ranges.reverse()) {
+    const block = result.slice(start, end);
+    const bound = binding(block); if (!bound) continue;
+    const chars = [...block.matchAll(/<w:fldChar\b[^>]*>/g)].map(match => attribute(match[0], "w:fldCharType"));
+    if (chars.join(",") !== "begin,separate,end") fail(bound.token);
+    const parts = [...block.matchAll(/<w:instrText\b[^>]*>([\s\S]*?)<\/w:instrText>/g)];
+    if (!parts.length) fail(bound.token);
+    const updated = instruction(parts.map(match => match[1]).join(""), bound.target, bound.token);
+    let first = true;
+    const replacement = block.replace(/(<w:instrText\b[^>]*>)[\s\S]*?(<\/w:instrText>)/g, (_match, open: string, close: string) => {
+      const value = first ? updated : ""; first = false; return open + value + close;
+    });
+    result = result.slice(0, start) + replacement + result.slice(end);
+  }
+  return result;
 }
 
 function openDocx(bytes: Uint8Array): Record<string, Uint8Array> {

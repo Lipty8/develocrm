@@ -5,6 +5,7 @@ import {originalMoney} from './original-money.js';
 import {signingPlanDay,ContractSigningPlanValidationError} from '../shared/contract-signing-plan.js';
 import {originalAccessoryKind} from '../shared/accessory-legal-details.js';
 import {originalAccessoryIssues} from './original-contract-readiness.js';
+import {isDocumentMailbox} from '../shared/document-mailbox.js';
 
 export class OriginalContractSnapshotError extends Error{
   constructor(readonly field:string){super('Údaje pro smlouvu nejsou úplné nebo konzistentní.');this.name='OriginalContractSnapshotError';}
@@ -78,6 +79,7 @@ export function buildOriginalContractSnapshot(source:RsSource):Record<string,str
     'contract.sellerPlannedDate':originalContractDate(plan.sellerPlannedOn,'contract.sellerPlannedDate'),
     'contract.buyerPlannedDate':originalContractDate(plan.buyerPlannedOn,'contract.buyerPlannedDate'),
   };
+  if(!isDocumentMailbox(result['seller.email']))return fail('seller.email');
   if(sbk){
     if(source.signedRsCount!==1)return fail('contract.predecessor');
     const paid=money(source.paidReservationFee,'payment.reservationFeePaid');

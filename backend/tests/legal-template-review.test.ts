@@ -4,6 +4,7 @@ import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 import {strFromU8, unzipSync} from 'fflate';
 import {DocxTemplateError, inspectDocxTemplate, renderDocxTemplate} from '../src/documents/docx-template.js';
+import {templateCatalog, ORIGINAL_DOB_FULL_VARIANT, SBK_DOB_DELIVERY_VARIANT} from '../src/documents/template-catalog.js';
 
 type Manifest = {
   contractType: string; status: string; activationAllowed: boolean; sampleIsSynthetic: boolean;
@@ -24,6 +25,38 @@ const decode = (text: string) => text.replace(/&lt;/g, '<').replace(/&gt;/g, '>'
 const paragraphs = (xml: string) => [...xml.matchAll(/<w:p(?:\s[^>]*)?>[\s\S]*?<\/w:p>/g)]
   .map(p => [...p[0].matchAll(/<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/g)].map(t => decode(t[1])).join(''));
 const structure = (xml: string) => xml.replace(/(<w:t(?:\s[^>]*)?>)[\s\S]*?(<\/w:t>)/g, '$1$2');
+
+test('original RS and both SBK profiles synchronize seller email without rewriting source versions', async () => {
+  for (const [kind, file, variant] of [
+    ['rs', 'rs-dejvice-original-review.docx', ORIGINAL_DOB_FULL_VARIANT],
+    ['sbk', 'sbk-dejvice-original-review.docx', ORIGINAL_DOB_FULL_VARIANT],
+    ['sbk', 'sbk-dejvice-original-delivery-review.docx', SBK_DOB_DELIVERY_VARIANT],
+  ]) {
+    const catalog = templateCatalog(kind === 'rs' ? 'reservation_contract' : 'future_purchase_contract', variant)!;
+    assert.equal(catalog.generationSupported, false);
+    const source = await readFile(new URL(`../templates/review/${file}`, import.meta.url));
+    const beforeHash = digest(source);
+    const values = Object.fromEntries(Object.entries(catalog.fields).map(([key, field]) => [key, field.sample]));
+    values['seller.email'] = 'novy.prodavajici@example.test';
+    const result = renderDocxTemplate(source, values, {allowedTokens: Object.keys(catalog.fields),
+      requiredTokens: Object.keys(catalog.fields), mailToTokens: catalog.mailToTokens}).bytes;
+    const a = unzipSync(source), b = unzipSync(result);
+    const before = strFromU8(a['word/document.xml']), after = strFromU8(b['word/document.xml']);
+    assert.deepEqual(paragraphs(after), paragraphs(before).map(p => p.replace(/{{([A-Za-z][A-Za-z0-9_.-]*)}}/g, (_, key: string) => values[key])));
+    const fields = (xml: string) => structure(xml).replace(/(<w:instrText\b[^>]*>)[\s\S]*?(<\/w:instrText>)/g, '$1$2');
+    assert.equal(fields(after), fields(before));
+    const rels = 'word/_rels/document.xml.rels';
+    if (kind === 'rs') {
+      assert.equal(strFromU8(b[rels]), strFromU8(a[rels]).replace('mailto:jaroslav.zahourek@immobuilding.cz', 'mailto:novy.prodavajici@example.test'));
+    } else {
+      assert.match(after, /HYPERLINK &quot;mailto:novy.prodavajici@example.test&quot;/);
+      assert.doesNotMatch(after, /mailto:jaroslav.zahourek/);
+    }
+    for (const part of Object.keys(a)) if (part !== 'word/document.xml' && !(kind === 'rs' && part === rels)) assert.equal(digest(a[part]), digest(b[part]), part);
+    assert.equal(digest(source), beforeHash);
+    assert.deepEqual(inspectDocxTemplate(result).tokens, []);
+  }
+});
 
 for (const kind of ['rs', 'sbk'] as const) {
   const base = new URL('../templates/review/', import.meta.url);

@@ -54,7 +54,7 @@ export class DocumentTemplateManagementService{
     if(!validation.valid)throw new TemplateManagementError("template_not_valid",validation.errors);
     if(`sha256:${hash(bytes)}`!==loaded.version.contentHash)throw new TemplateManagementError("template_content_hash_mismatch");
     const values=Object.fromEntries(Object.entries(catalog.fields).map(([token,field])=>[token,field.sample]));
-    return renderDocxTemplate(bytes,values,{allowedTokens:Object.keys(catalog.fields),requiredTokens:Object.entries(catalog.fields).filter(([,field])=>field.required).map(([token])=>token)}).bytes;}
+    return renderDocxTemplate(bytes,values,{allowedTokens:Object.keys(catalog.fields),requiredTokens:Object.entries(catalog.fields).filter(([,field])=>field.required).map(([token])=>token),mailToTokens:catalog.mailToTokens}).bytes;}
 
   async source(input:DocumentContext&{templateId:string;versionId:string}){const loaded=await this.load(input,"documents.view");return{bytes:await this.download({...input,projectId:loaded.template.projectId},loaded.version),fileName:loaded.version.sourceFileName};}
   async approve(input:DocumentContext&{templateId:string;versionId:string;correlationId?:string}){

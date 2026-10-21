@@ -15,6 +15,70 @@ function text(bytes: Uint8Array, part = "word/document.xml"): string {
   return strFromU8(unzipSync(bytes)[part]);
 }
 
+const mailOptions = { allowedTokens: ['seller.email'], mailToTokens: ['seller.email'] };
+const mailbox = { 'seller.email': 'novy.prodavajici+rs@example.test' };
+const mailLink = '<w:hyperlink r:id="rIdMail"><w:r><w:t>{{seller.</w:t></w:r><w:r><w:t>email}}</w:t></w:r></w:hyperlink>';
+const relsPath = 'word/_rels/document.xml.rels';
+function linkedDocx(body = mailLink, target = 'mailto:old@example.test'): Uint8Array {
+  const archive = unzipSync(docx(`<w:p>${body}</w:p>`));
+  archive[relsPath] = strToU8(`<Relationships><Relationship Id="rIdMail" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" TargetMode="External" Target="${target}"/><Relationship Id="rIdOther" Type="other" Target="styles.xml"/></Relationships>`);
+  return zipSync(archive);
+}
+function emailField(instruction = 'HYPERLINK &quot;mailto:old@example.test&quot;', nested = ''): string {
+  return `<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText>${instruction}</w:instrText></w:r>`
+    + `<w:r><w:fldChar w:fldCharType="separate"/></w:r>${nested}<w:r><w:t>{{seller.email}}</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>`;
+}
+
+test('mailbox rendering is opt-in; default renderer still leaves relationships untouched', () => {
+  const source = linkedDocx();
+  const plain = renderDocxTemplate(source, mailbox).bytes;
+  assert.equal(text(plain, relsPath), text(source, relsPath));
+  const result = renderDocxTemplate(source, mailbox, mailOptions).bytes;
+  assert.match(text(result), /novy.prodavajici\+rs@example.test/);
+  assert.equal(text(result, relsPath), text(source, relsPath).replace('mailto:old@example.test', 'mailto:novy.prodavajici+rs@example.test'));
+  // Input bytes are never mutated, and identical inputs produce identical output.
+  assert.match(text(source, relsPath), /mailto:old@example.test/);
+  assert.deepEqual(result, renderDocxTemplate(source, mailbox, mailOptions).bytes);
+});
+
+test('Word complex and simple email fields update only the instruction target and display text', () => {
+  for (const body of [emailField(), '<w:fldSimple w:instr="HYPERLINK &quot;mailto:old@example.test&quot;"><w:r><w:t>{{seller.email}}</w:t></w:r></w:fldSimple>']) {
+    const source = docx(`<w:p>${body}</w:p><w:p><w:r><w:instrText>PAGE</w:instrText></w:r><w:r><w:t>1</w:t></w:r></w:p>`);
+    const result = renderDocxTemplate(source, mailbox, mailOptions).bytes;
+    assert.doesNotMatch(text(result), /old@example.test/);
+    assert.equal(text(result).split('novy.prodavajici+rs@example.test').length - 1, 2);
+    assert.match(text(result), /<w:instrText>PAGE<\/w:instrText>/);
+    assert.deepEqual(inspectDocxTemplate(result).tokens, []);
+  }
+});
+
+test('split Word instructions and split visible tokens remain supported', () => {
+  const body = emailField().replace('HYPERLINK &quot;mailto:old@example.test&quot;', 'HYPER</w:instrText></w:r><w:r><w:instrText>LINK &quot;mailto:old@example.test&quot;')
+    .replace('{{seller.email}}', '{{seller.</w:t></w:r><w:r><w:t>email}}');
+  const result = renderDocxTemplate(docx(`<w:p>${body}</w:p>`), mailbox, mailOptions).bytes;
+  assert.match(text(result), /HYPERLINK &quot;mailto:novy.prodavajici\+rs@example.test&quot;/);
+  assert.doesNotMatch(text(result), /old@example.test/);
+});
+
+test('unsafe mailboxes, URL injection and ambiguous links fail without leaking addresses', () => {
+  for (const value of ['https://example.test', 'a@example.test?bcc=other@example.test', 'a%0D%0ABcc@evil.test', 'a\r\n@evil.test', 'a@example.test" \\t "x', 'a@example.test,b@example.test']) {
+    assert.throws(() => renderDocxTemplate(linkedDocx(), { 'seller.email': value }, mailOptions),
+      (error: unknown) => error instanceof DocxTemplateError && error.code === 'unsafe_template_link'
+        && error.details.join() === 'seller.email' && !error.message.includes(value));
+  }
+  const unsafe = [
+    linkedDocx(mailLink, 'https://example.test'),
+    linkedDocx(mailLink + '<w:hyperlink r:id="rIdMail"><w:r><w:t>Other</w:t></w:r></w:hyperlink>'),
+    linkedDocx(mailLink.replace('</w:hyperlink>', '<w:r><w:t> suffix</w:t></w:r></w:hyperlink>')),
+    docx(`<w:p>${mailLink}</w:p>`),
+    docx(`<w:p>${emailField('INCLUDETEXT &quot;file:///secret&quot;')}</w:p>`),
+    docx(`<w:p>${emailField('HYPERLINK &quot;mailto:old@example.test&quot; \\t &quot;x&quot;')}</w:p>`),
+    docx(`<w:p>${emailField(undefined, '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>')}</w:p>`),
+  ];
+  for (const source of unsafe) assert.throws(() => renderDocxTemplate(source, mailbox, mailOptions),
+    (error: unknown) => error instanceof DocxTemplateError && error.code === 'unsafe_template_link');
+});
+
 test("inspekce najde token rozdělený mezi Word runs i token v hlavičce", () => {
   const template = docx(
     "<w:p><w:r><w:t>{{project.</w:t></w:r><w:r><w:t>name}}</w:t></w:r></w:p>",
