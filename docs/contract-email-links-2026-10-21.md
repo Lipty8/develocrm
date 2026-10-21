@@ -97,3 +97,55 @@ native PostgreSQL suites skipped (413 total). Focused renderer/generation/real
 upload-service tests 34 passed, 0 skipped. Backend production build and lint
 passed. The prior frontend interaction/static/typecheck/build results still
 apply: this follow-up changes only ZIP package timestamps and backend tests.
+
+Read-only pilot operation audit used the existing migration/admin image and Key
+Vault reference, with startup explicitly overridden to a SELECT-only diagnostic
+inside `BEGIN READ ONLY` / `ROLLBACK`. Execution
+`caj-develocrm-migrations-pilot-ohqsx32` Succeeded. It returned exactly 7 generation
+operations, all `completed`, each linked upload also `completed`; no unfinished
+legacy generation/upload pair needs recovery at the audit time. No migration,
+stored fingerprint or business record was modified.
+
+## Deployment and authenticated verification
+
+Both implementation commits were pushed to private GitHub main:
+`8fd4aa70671caf2e2a701747d8dfbb25a57b1623` (email link integrity), then
+`73ab540` (deterministic output and stronger retry harness).
+
+- First ACR run `cg4g` Succeeded; image `develocrm-api:contract-mailto-8fd4aa7`,
+  digest `sha256:86cc2282c341caf2abbbbc9bef12dc560e0ec970820e4c4f92c66aa423ebc616`.
+  Revision `ca-develocrm-api-pilot--mailto-8fd4aa7` Healthy/Running; health/ready
+  HTTP 200. Authenticated original RS and delivery SBK previews had the correct
+  displayed mailbox and underlying target. All unrelated package parts retained.
+- Final ACR run `cg4h` Succeeded; image `develocrm-api:docx-retry-73ab540`,
+  immutable digest
+  `sha256:7f38a3b73fe9bdf4c8ed75c38482350c1a1129e0b03f44185b7ea78819b7fa43`.
+  Revision `ca-develocrm-api-pilot--docx-retry-73ab540` Healthy/Running,
+  latest-ready, 100% latest traffic; health/ready both HTTP 200. The deployment
+  CLI lost its connection while polling; independent show/revision/HTTP checks
+  confirmed the existing deployment, so it was not repeated.
+- No migration, database/secret/permission configuration change. Existing probes
+  preserved. No frontend/BFF behavior or request contract changes; compatible
+  private Sites **157** retained without an unnecessary frontend deployment.
+
+Authenticated browser tests used existing technical review templates only.
+`TECH67 DELIVERY SBK – NEAKTIVOVAT` remained Concept, 38 fields, exact source hash
+`sha256:7f66ea65d2903df78559898f1614afac35b9b227a16ea812336b9f83aa0060ef`;
+no approval action or active generation. Source template bytes/metadata were not
+changed. The original RS review also remained without activation.
+
+Two real SBK previews from the final revision, separated by full page reload,
+are byte-identical. Final SHA-256
+`c865cc791cbc03cb5ce29476b5318b85734a8ddb85bfd85a9d5fdae7e59b65a3`.
+All 34 package timestamps are fixed; every Word part still matches the corrected
+pre-retry-fix preview. Mailto target is the catalog's synthetic contact, not the
+original recipient. Zero unresolved placeholders. This tests Graph source
+readback → strict renderer → browser download, not an activated legal contract
+or a write into a real sales case. No uploads, signatures or payments were made.
+
+Browser warning/error capture was empty. Final bounded 15-minute query for the
+new revision returned 37 completed requests, 0 HTTP 5xx, 0 queried DB/RLS patterns
+and 0 startup-error matches. This is a bounded smoke observation, not a claim of
+complete monitoring coverage. No actual pilot business record or existing
+document was modified. Full original RS/SBK generation/signature rollout remains
+open behind the documented legal, variant/appendix and runtime gates.
