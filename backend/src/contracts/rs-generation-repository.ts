@@ -130,7 +130,9 @@ export class RsGenerationRepository{
           (plan.version_status='working' AND plan.document_version_id IS NULL AND plan.locked_at IS NULL AND sales_case.status='active' AND sales_case.closed_at IS NULL) plan_editable,
           (plan.version_status='working' AND plan.document_version_id IS NULL AND plan.locked_at IS NULL AND sales_case.status='active' AND sales_case.closed_at IS NULL
             AND app.has_project_permission(contract.tenant_id,$2,contract.project_id,'contract.manage')
-            AND app.has_project_permission(contract.tenant_id,$2,contract.project_id,'documents.manage')) appendix_editable
+            AND app.has_project_permission(contract.tenant_id,$2,contract.project_id,'documents.manage')
+            AND NOT EXISTS(SELECT 1 FROM document_generation_operations g WHERE g.tenant_id=contract.tenant_id
+              AND g.contract_id=contract.id AND g.contract_preparation_version_id=plan.id)) appendix_editable
         FROM contracts contract JOIN projects project ON project.tenant_id=contract.tenant_id AND project.id=contract.project_id
         JOIN units unit ON unit.tenant_id=contract.tenant_id AND unit.id=contract.unit_id
         JOIN sales_cases sales_case ON sales_case.tenant_id=contract.tenant_id AND sales_case.id=contract.sales_case_id AND sales_case.unit_id=contract.unit_id AND sales_case.project_id=contract.project_id
@@ -177,7 +179,7 @@ export class RsGenerationRepository{
           AND app.has_project_permission(tenant_id,$2,project_id,'contract.manage')
           AND EXISTS(SELECT 1 FROM sales_cases s WHERE s.tenant_id=contracts.tenant_id AND s.id=contracts.sales_case_id AND s.status='active' AND s.closed_at IS NULL) FOR UPDATE`,[input.tenantId,input.membershipId,input.contractId])).rows[0];
         if(!contract)throw new Error("contract.manage permission required");
-        const operation=(await client.query<{id:string}>(`SELECT g.id FROM document_generation_operations g
+        const operation=(await client.query<{id:string;contract_preparation_version_id:string|null}>(`SELECT g.id,g.contract_preparation_version_id FROM document_generation_operations g
           JOIN contracts c ON c.tenant_id=g.tenant_id AND c.project_id=g.project_id AND c.id=g.contract_id
           JOIN document_template_versions tv ON tv.tenant_id=g.tenant_id AND tv.project_id=g.project_id AND tv.id=g.template_version_id
           JOIN document_templates template ON template.tenant_id=tv.tenant_id AND template.id=tv.template_id AND template.contract_type=c.contract_type
@@ -187,6 +189,8 @@ export class RsGenerationRepository{
           [input.tenantId,contract.project_id,input.contractId,input.operationId,input.documentId,input.documentVersionId,input.templateVersionId,input.snapshot])).rows[0];
         if(!operation)throw new Error('CONTRACT_GENERATION_BINDING_MISMATCH');
         const previous=(await client.query<{id:string;version_number:number;source_type:string;document_id:string|null;seller_planned_on:string|null;buyer_planned_on:string|null}>(`SELECT id,version_number,source_type,document_id,seller_planned_signing_on::text seller_planned_on,buyer_planned_signing_on::text buyer_planned_on FROM contract_versions WHERE tenant_id=$1 AND contract_id=$2 ORDER BY version_number DESC LIMIT 1 FOR UPDATE`,[input.tenantId,input.contractId])).rows[0];
+        if(operation.contract_preparation_version_id&&operation.contract_preparation_version_id!==previous?.id)
+          throw new Error('CONTRACT_APPENDIX_CHANGED');
         if('contract.sellerPlannedDate' in input.snapshot||'contract.buyerPlannedDate' in input.snapshot){
           if(!previous?.seller_planned_on||!previous.buyer_planned_on
             ||input.snapshot['contract.sellerPlannedDate']!==originalContractDate(previous.seller_planned_on,'contract.sellerPlannedDate')

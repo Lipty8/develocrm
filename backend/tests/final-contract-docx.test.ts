@@ -38,6 +38,7 @@ test('pre-sign rechecks already stored unsigned bytes, preserving historical dow
   let signedAt:string|null=null;
   let bytes=docx('[doplnit]');
   t.mock.method(service,'exactFile',async()=>({bytes,evidence:{name:'final.docx',mimeType,signedAt}}));
+  t.mock.method(service,'appendixEvidence',async()=>[]);
   const input={tenantId:'tenant',userId:'user',membershipId:'member',contractId:'contract',versionId:'version'};
   await assert.rejects(service.signableFile(input),(e:unknown)=>e instanceof ContractDocumentError&&e.code==='unresolved_document_fields');
   assert.deepEqual((await service.exactFile(input)).bytes,bytes,'historical file remains retrievable');

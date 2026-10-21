@@ -8,6 +8,7 @@ import { inspectDocxTemplate } from "../src/documents/docx-template.js";
 import { TECHNICAL_PLACEHOLDERS,ORIGINAL_DOB_FULL_VARIANT,SBK_DOB_DELIVERY_VARIANT,templateCatalog } from "../src/documents/template-catalog.js";
 import { DocumentTemplateManagementService, TemplateManagementError } from "../src/documents/template-management-service.js";
 import type { TemplateValidationReport, TemplateView } from "../src/documents/template-management-repository.js";
+import {contractAppendixRequirements} from '../src/shared/contract-appendices.js';
 
 const context = {
   tenantId: "10000000-0000-4000-8000-000000000001",
@@ -226,7 +227,7 @@ for(const [kind,outputTypeCode] of [['rs','reservation_contract'],['sbk','future
     view.outputTypeCode=outputTypeCode;view.contractType=kind;view.variantKey=ORIGINAL_DOB_FULL_VARIANT;view.versions[0].schema=manifest.schema;
     h.repository.list=async()=>[view];
     await h.service.upload({...uploadInput(bytes),outputTypeCode,variantKey:ORIGINAL_DOB_FULL_VARIANT});
-    assert.deepEqual(h.created[0].schema,manifest.schema);
+    assert.deepEqual(h.created[0].schema,{...manifest.schema,appendices:contractAppendixRequirements(kind,ORIGINAL_DOB_FULL_VARIANT)});
     assert.equal(h.created[0].variantKey,ORIGINAL_DOB_FULL_VARIANT);
     assert.equal(h.created[0].contractType,kind);
     const preview=await h.service.preview({...context,templateId,versionId});

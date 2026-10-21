@@ -6,6 +6,7 @@ import {templateCatalog} from "./template-catalog.js";
 import type {DocumentTemplateGenerationRepository,PlaceholderSchema} from "./template-generation-repository.js";
 import type {SharePointDocumentUploadService} from "./upload-service.js";
 import {DocumentTemplateManagementRepository,type TemplateValidationReport} from "./template-management-repository.js";
+import {contractAppendixRequirements} from '../shared/contract-appendices.js';
 
 const DOCX_MIME="application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 export class TemplateManagementError extends Error{constructor(readonly code:string,readonly details:string[]=[]){super("Správu šablony se nepodařilo dokončit.");this.name="TemplateManagementError";}}
@@ -36,7 +37,9 @@ export class DocumentTemplateManagementService{
     const persistedValidation=preflight(persisted,Object.keys(catalog.fields));
     try{requireValid(persistedValidation);}
     catch(error){await this.repository.auditFailure({...input,action:"document_template.validation_failed",details:{fileName:input.fileName,errorCode:"invalid_persisted_template_fields"}});throw error;}
-    const schema:PlaceholderSchema={fields:Object.fromEntries(Object.entries(catalog.fields).map(([token,field])=>[token,{required:field.required}]))};
+    const appendices=catalog.contractType==='rs'||catalog.contractType==='sbk'?contractAppendixRequirements(catalog.contractType,input.variantKey):[];
+    const schema:PlaceholderSchema={fields:Object.fromEntries(Object.entries(catalog.fields).map(([token,field])=>[token,{required:field.required}])),
+      ...(appendices.length?{appendices}:{})};
     const registered=await this.repository.createDraft({...input,contractType:catalog.contractType,variantKey:input.variantKey??"default",sourceDocumentId:uploaded.documentId,
       sourceDocumentVersionId:uploaded.documentVersionId,contentHash:`sha256:${hash(persisted)}`,schema,effectiveFrom:input.effectiveFrom??new Date().toISOString().slice(0,10),validation:persistedValidation});
     return{...registered,validation:persistedValidation};

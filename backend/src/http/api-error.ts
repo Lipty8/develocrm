@@ -60,6 +60,10 @@ export function mapApiError(input: unknown, statusCode: number, correlationId: s
       CONTRACT_APPENDIX_DOCUMENT_ALREADY_LINKED:'Tento dokument je již v této verzi smlouvy použit. Zkontrolujte seznam příloh.',
       CONTRACT_APPENDIX_CONTRACT_NOT_EDITABLE:'Ukončenou nebo podepsanou smlouvu nelze touto akcí upravit.',
       CONTRACT_APPENDIX_INVALID_REQUEST:'Vyberte platnou přílohu a její konkrétní verzi.',
+      CONTRACT_APPENDIX_GENERATION_STARTED:'Generování této verze již bylo zahájeno. Přílohy nelze měnit; dokončete stejný požadavek nebo připravte novou verzi smlouvy.',
+      CONTRACT_APPENDIX_SCHEMA_REQUIRED:'Tato verze šablony nemá úplně určené přílohy. Je potřeba připravit novou zkontrolovanou verzi šablony.',
+      CONTRACT_APPENDIX_INCOMPLETE:'Doplňte všechny požadované přílohy smlouvy a jejich konkrétní verze.',
+      CONTRACT_APPENDIX_DOCUMENT_IN_USE:'Dokument je součástí připravované nebo podepsané smlouvy. Nelze jej archivovat ani změnit jeho umístění.',
     };
     message=messages[code]??'Přílohu smlouvy nelze změnit. Zkontrolujte aktuální verzi smlouvy.';
   }else if(paymentTermsCode){

@@ -9,6 +9,9 @@ import {bootstrapIds,bootstrapPilotWorkspace,normalizeBootstrapInput} from '../s
 import {importDejvice} from '../src/imports/dejvice.js';
 import {signatureDocument} from './helpers/signature-document.js';
 import {RsGenerationRepository} from '../src/contracts/rs-generation-repository.js';
+import {DocumentTemplateGenerationRepository,type TemplateSource} from '../src/documents/template-generation-repository.js';
+import {contractAppendixRequirements} from '../src/shared/contract-appendices.js';
+import {ORIGINAL_DOB_FULL_VARIANT} from '../src/documents/template-catalog.js';
 
 async function fixture(postgresUrl?:string){
   const memory=postgresUrl?null:new PGlite();const admin=postgresUrl?new Pool({connectionString:postgresUrl}):null;
@@ -105,8 +108,7 @@ for(const native of [false,true])test(`exact appendix version binding (${native?
         const race=await Promise.allSettled([
           f.context(c=>signatureDocument(c,f.ids.tenantId,f.ids.membershipId,f.contract.contract_id)),f.set(5,b),
         ]);
-        assert.equal(race[0].status,'fulfilled');
-        if(race[0].status!=='fulfilled')throw race[0].reason;
+        if(race[0].status==='rejected')throw race[0].reason;
         version=race[0].value;
         if(race[1].status==='rejected')assert.match(String(race[1].reason),/NEW_VERSION_REQUIRED/);
         // Whichever transaction won, the bound version cannot be edited now.
@@ -119,5 +121,56 @@ for(const native of [false,true])test(`exact appendix version binding (${native?
       await assert.rejects(f.client.query('DELETE FROM contract_documents WHERE contract_version_id=$1 AND appendix_number=1',[version]),/COMMAND_REQUIRED|IMMUTABLE/);
       await assert.rejects(f.client.query('UPDATE documents SET archived_at=now() WHERE id=$1',[a.document_id]),/SIGNED_DOCUMENT_IMMUTABLE/);
     });
+  }finally{await f.close();}
+});
+
+for(const native of [false,true])test(`generation pins the exact appendix bundle (${native?'PostgreSQL':'PGlite'})`,{skip:native&&!process.env.WORKFLOW_TEST_DATABASE_URL},async()=>{
+  const f=await fixture(native?process.env.WORKFLOW_TEST_DATABASE_URL:undefined);
+  try{
+    const documents:Awaited<ReturnType<typeof f.document>>[]=[];
+    for(let index=0;index<6;index++)documents.push(await f.document());
+    const spare=await f.document();
+    for(let index=0;index<documents.length;index++)await f.set(index+1,documents[index]);
+    const source=await f.document(),templateId=randomUUID(),templateVersionId=randomUUID();
+    const schema={fields:{'project.name':{required:true}},appendices:contractAppendixRequirements('rs',ORIGINAL_DOB_FULL_VARIANT)};
+    // Metadata-only synthetic template in a disposable DB, never a legal activation.
+    await f.client.query("INSERT INTO document_templates(id,tenant_id,project_id,code,name,output_type_code,contract_type,variant_key,created_by_membership_id) VALUES($1,$2,$3,'technical-appendix-test','Technical appendix test','reservation_contract','rs',$4,$5)",
+      [templateId,f.ids.tenantId,f.unit.project_id,ORIGINAL_DOB_FULL_VARIANT,f.ids.membershipId]);
+    await f.client.query("INSERT INTO document_template_versions(id,tenant_id,project_id,template_id,source_document_id,source_document_version_id,version_label,content_hash,placeholder_schema,approval_status,approved_at,approved_by_membership_id,created_by_membership_id,validation_result,validated_at,validated_by_membership_id) VALUES($1,$2,$3,$4,$5,$6,'technical-v1',$7,$8,'approved',now(),$9,$9,'{\"valid\":true,\"errors\":[]}',now(),$9)",
+      [templateVersionId,f.ids.tenantId,f.unit.project_id,templateId,source.document_id,source.document_version_id,`sha256:${'b'.repeat(64)}`,schema,f.ids.membershipId]);
+    const c=(await f.client.query<{sales_case_id:string}>('SELECT sales_case_id FROM contracts WHERE id=$1',[f.contract.contract_id])).rows[0];
+    const party=(await f.client.query<{party_id:string}>('SELECT party_id FROM sales_case_parties WHERE sales_case_id=$1 AND left_at IS NULL LIMIT 1',[c.sales_case_id])).rows[0];
+    const template:TemplateSource={templateId,templateVersionId,projectId:f.unit.project_id,templateCode:'technical-appendix-test',templateName:'Technical appendix test',outputTypeCode:'reservation_contract',
+      versionLabel:'technical-v1',contentHash:`sha256:${'b'.repeat(64)}`,schema,approvalStatus:'approved',effectiveFrom:'2026-01-01',driveId:'fixture-drive',itemId:'fixture-template',externalVersionId:'1.0',variantKey:ORIGINAL_DOB_FULL_VARIANT};
+    const database={withContext:(_input:unknown,work:(client:SqlClient)=>Promise<unknown>)=>f.context(work)};
+    const generation=new DocumentTemplateGenerationRepository(database as never),contracts=new RsGenerationRepository(database as never);
+    const selection={versionId:f.contract.version_id,items:documents.map((document,index)=>({number:index+1,documentId:document.document_id,documentVersionId:document.document_version_id}))};
+    const input={...f.ids,projectId:f.unit.project_id,template,idempotencyKey:randomUUID(),requestHash:'c'.repeat(64),unitId:f.unit.id,partyId:party.party_id,salesCaseId:c.sales_case_id,
+      contractId:f.contract.contract_id,snapshot:{'project.name':'Technical only'},contractAppendices:selection};
+    await assert.rejects(generation.reserve({...input,contractAppendices:{...selection,items:[...selection.items.slice(1)]}}),/CONTRACT_APPENDIX_CHANGED/);
+    const reserved=native?await Promise.all(Array.from({length:4},()=>generation.reserve(input))):[await generation.reserve(input)];
+    assert.equal(new Set(reserved.map(operation=>operation.id)).size,1);
+    const operation=reserved[0],retry=await generation.reserve(input);assert.equal(retry.id,operation.id);
+    const recorded=(await f.client.query<{appendix_snapshot:Array<Record<string,unknown>>;contract_preparation_version_id:string}>('SELECT appendix_snapshot,contract_preparation_version_id FROM document_generation_operations WHERE id=$1',[operation.id])).rows[0];
+    assert.equal(recorded.contract_preparation_version_id,f.contract.version_id);assert.equal(recorded.appendix_snapshot.length,6);
+    assert.deepEqual(recorded.appendix_snapshot.map(item=>({number:item.number,documentId:item.documentId,documentVersionId:item.documentVersionId})),selection.items);
+    for(const item of recorded.appendix_snapshot){assert.equal(item.hash,`sha256:${'b'.repeat(64)}`);assert.equal(item.externalVersionId,'1.0');}
+    await assert.rejects(f.set(1,spare,undefined,undefined,undefined,undefined,documents[0].document_version_id),/GENERATION_STARTED/);
+    await assert.rejects(f.client.query('UPDATE documents SET archived_at=now() WHERE id=$1',[documents[0].document_id]),/DOCUMENT_IN_USE/);
+    await assert.rejects(f.context(client=>client.query("UPDATE document_generation_operations SET appendix_snapshot='[]' WHERE id=$1",[operation.id])),/SNAPSHOT_IMMUTABLE/);
+    await assert.rejects(f.context(client=>signatureDocument(client,f.ids.tenantId,f.ids.membershipId,f.contract.contract_id)),/DOCUMENT_GENERATION_IN_PROGRESS|CONTRACT_APPENDIX_CHANGED/);
+    assert.equal((await generation.reserve(input)).id,operation.id,'failure before binding preserves the retry operation');
+    const final=await f.context(async client=>{
+      const op=(await client.query<{id:string}>("SELECT app.reserve_document_upload($1,$2,$3,$4,'create',NULL,'reservation_contract','Technical generated evidence','fixture.docx','application/vnd.openxmlformats-officedocument.wordprocessingml.document',16,$5,'v1','ready',NULL,$6,NULL,$7,$8,$9) id",
+        [f.ids.tenantId,f.unit.project_id,`generation:${operation.id}`,'a'.repeat(64),`sha256:${'b'.repeat(64)}`,f.unit.id,f.contract.contract_id,c.sales_case_id,f.ids.membershipId])).rows[0].id;
+      await client.query("SELECT app.record_document_graph_upload($1,$2,'fixture-drive',$3,'https://sharepoint.example.test/generated','etag','1.0',16,$4)",[f.ids.tenantId,op,randomUUID(),f.ids.membershipId]);
+      return(await client.query<{document_id:string;document_version_id:string}>('SELECT * FROM app.finalize_document_upload($1,$2,$3)',[f.ids.tenantId,op,f.ids.membershipId])).rows[0];
+    });
+    await generation.complete({...f.ids,operationId:operation.id,documentId:final.document_id,documentVersionId:final.document_version_id,renderedContentHash:`sha256:${'b'.repeat(64)}`});
+    const bind={...f.ids,contractId:f.contract.contract_id,operationId:operation.id,documentId:final.document_id,documentVersionId:final.document_version_id,templateVersionId,snapshot:input.snapshot};
+    const bound=await contracts.bind(bind);assert.equal(bound.versionId,f.contract.version_id);assert.deepEqual(await contracts.bind(bind),bound);
+    await f.context(client=>client.query('SELECT app.assert_contract_appendices($1,$2,$3)',[f.ids.tenantId,f.contract.contract_id,bound.versionId]));
+    await assert.rejects(f.set(1,spare,undefined,undefined,undefined,undefined,documents[0].document_version_id),/NEW_VERSION_REQUIRED|GENERATION_STARTED/);
+    assert.deepEqual((await f.client.query<{appendix_snapshot:unknown}>('SELECT appendix_snapshot FROM document_generation_operations WHERE id=$1',[operation.id])).rows[0].appendix_snapshot,recorded.appendix_snapshot);
   }finally{await f.close();}
 });

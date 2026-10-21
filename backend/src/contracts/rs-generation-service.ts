@@ -67,7 +67,12 @@ export class RsGenerationService{
     const source=await this.repository.load({...input,permission:"contract.manage"});if(!source)throw new RsGenerationError("contract_not_found");
     if(input.expectedContractType&&(source.contractType??'rs')!==input.expectedContractType)throw new RsGenerationError('contract_type_mismatch');
     const issues=validate(source).map(item=>({...item,action:issueAction(item,source)}));if(issues.length)throw new RsGenerationError("not_ready",issues);
-    const snapshot=buildSnapshot(source);const generated=await this.generator.generate({...input,projectId:source.projectId,templateVersionId:source.templateVersionId!,idempotencyKey:input.idempotencyKey,
+    const snapshot=buildSnapshot(source);const requiredAppendices=contractAppendixRequirements(source.contractType??'rs',source.templateVariant);
+    const contractAppendices=requiredAppendices.length?{versionId:source.signingPlan!.versionId,items:requiredAppendices.map(required=>{
+      const selected=source.appendixSelections!.find(item=>item.number===required.number)!;
+      return{number:required.number,documentId:selected.documentId!,documentVersionId:selected.documentVersionId!};
+    })}:undefined;
+    const generated=await this.generator.generate({...input,projectId:source.projectId,templateVersionId:source.templateVersionId!,idempotencyKey:input.idempotencyKey,contractAppendices,
       unitId:source.unitId,partyId:source.buyers[0].id,salesCaseId:source.salesCaseId,contractId:source.contractId,documentId:source.documentMimeType==='application/pdf'?undefined:source.documentId??undefined,documentName:`${source.contractType==='sbk'?'Smlouva o budoucí kupní smlouvě':'Rezervační smlouva'} ${source.reference}`,snapshot});
     if(!generated.documentId||!generated.documentVersionId)throw new RsGenerationError("generation_incomplete");
     const version=await this.repository.bind({...input,contractId:source.contractId,operationId:generated.operationId,documentId:generated.documentId,documentVersionId:generated.documentVersionId,templateVersionId:source.templateVersionId!,snapshot});

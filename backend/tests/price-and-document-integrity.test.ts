@@ -9,8 +9,8 @@ import {importDejvice} from "../src/imports/dejvice.js";
 import {InventoryImportService} from "../src/inventory/import-service.js";
 import {Database,type SqlClient} from "../src/database.js";
 import {DocumentRepository} from "../src/documents/repository.js";
-import {SharePointDocumentUploadService} from "../src/documents/upload-service.js";
-import {ContractDocumentEvidenceService} from "../src/contracts/document-evidence-service.js";
+import {SharePointDocumentUploadService,SharePointUploadError} from "../src/documents/upload-service.js";
+import {ContractDocumentEvidenceService,ContractDocumentError} from "../src/contracts/document-evidence-service.js";
 import type {MicrosoftGraphAdapter,GraphFileMetadata} from "../src/documents/graph-adapter.js";
 import {DocumentTemplateGenerationRepository} from "../src/documents/template-generation-repository.js";
 import {DocumentTemplateGenerationService} from "../src/documents/template-generation-service.js";
@@ -71,7 +71,7 @@ async function fixture(postgresUrl?:string){
   const templates=new DocumentTemplateGenerationService(new DocumentTemplateGenerationRepository(database),new DocumentRepository(database),uploads,graph);
   const management=new DocumentTemplateManagementService(new DocumentTemplateManagementRepository(database),new DocumentTemplateGenerationRepository(database),new DocumentRepository(database),uploads,graph);
   const rs=new RsGenerationService(new RsGenerationRepository(database),templates);
-  return{db,database,connectionUrl:url?.toString(),context,projectId,inventory,start,approve,sign,evidence,external,uploads,files,fileBytes,templates,management,rs};
+  return{db,database,connectionUrl:url?.toString(),context,projectId,inventory,start,approve,sign,evidence,external,uploads,files,fileBytes,templates,management,rs,graph};
 }
 
 for(const usePostgres of [false,true])test(`price creation and signed document integrity (${usePostgres?'PostgreSQL':'PGlite'})`,{skip:usePostgres&&!process.env.WORKFLOW_TEST_DATABASE_URL},async t=>{
@@ -377,8 +377,26 @@ for(const usePostgres of [false,true])test(`price creation and signed document i
       const snapshot=Object.fromEntries(Object.entries(catalog.fields).map(([key,value])=>[key,value.sample]));
       await assert.rejects(f.templates.generate({...f.context,projectId:f.projectId,templateVersionId:template.templateVersionId,idempotencyKey:randomUUID(),contractId,snapshot}),e=>(e as {code:string}).code==='template_generation_not_ready');
       const rendered=await f.management.preview(templateContext);
-      const key=randomUUID();const operation=await generations.reserve({...f.context,projectId:f.projectId,template:source,idempotencyKey:key,requestHash:'a'.repeat(64),unitId:base.unitId,partyId:base.partyId,salesCaseId:base.salesCaseId,contractId,snapshot});
-      const output=await f.uploads.upload({...f.context,projectId:f.projectId,unitId:base.unitId,partyId:base.partyId,salesCaseId:base.salesCaseId,contractId,typeCode:'future_purchase_contract',idempotencyKey:`generation:${operation.id}`,documentName:'Technical SBK binding fixture',fileName:'fixture.docx',mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',bytes:rendered,versionLabel:'v1',status:'ready'});
+      const appendixItems:Array<{number:number;documentId:string;documentVersionId:string}>=[];
+      assert.equal(source.schema.appendices?.length,5);
+      for(const required of source.schema.appendices!){
+        const appendix=await f.uploads.upload({...f.context,projectId:f.projectId,typeCode:'other',idempotencyKey:randomUUID(),
+          documentName:`Technical SBK appendix ${required.number}`,fileName:`technical-appendix-${required.number}.pdf`,mimeType:'application/pdf',
+          bytes:f.fileBytes,versionLabel:'technical-v1',status:'ready'});
+        await repository.setAppendix({...f.context,contractId,versionId,number:required.number,documentId:appendix.documentId,
+          documentVersionId:appendix.documentVersionId,expectedDocumentVersionId:null});
+        appendixItems.push({number:required.number,documentId:appendix.documentId,documentVersionId:appendix.documentVersionId});
+      }
+      const key=randomUUID();const operation=await generations.reserve({...f.context,projectId:f.projectId,template:source,idempotencyKey:key,requestHash:'a'.repeat(64),unitId:base.unitId,partyId:base.partyId,salesCaseId:base.salesCaseId,contractId,snapshot,
+        contractAppendices:{versionId,items:appendixItems}});
+      const upload=()=>f.uploads.upload({...f.context,projectId:f.projectId,unitId:base.unitId,partyId:base.partyId,salesCaseId:base.salesCaseId,contractId,typeCode:'future_purchase_contract',idempotencyKey:`generation:${operation.id}`,documentName:'Technical SBK binding fixture',fileName:'fixture.docx',mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',bytes:rendered,versionLabel:'v1',status:'ready'});
+      const originalUpload=f.graph.uploadFile;f.graph.uploadFile=async()=>{throw new Error('Technical Graph timeout');};
+      try{await assert.rejects(upload(),e=>e instanceof SharePointUploadError&&e.code==='graph_unavailable');}finally{f.graph.uploadFile=originalUpload;}
+      const reserved=(await f.db.query<{state:string;appendix_snapshot:unknown}>('SELECT state,appendix_snapshot FROM document_generation_operations WHERE id=$1',[operation.id])).rows[0];
+      assert.equal(reserved.state,'reserved');
+      const retried=await generations.reserve({...f.context,projectId:f.projectId,template:source,idempotencyKey:key,requestHash:'a'.repeat(64),unitId:base.unitId,partyId:base.partyId,salesCaseId:base.salesCaseId,contractId,snapshot,
+        contractAppendices:{versionId,items:appendixItems}});assert.equal(retried.id,operation.id);
+      const output=await upload();
       await generations.complete({...f.context,operationId:operation.id,documentId:output.documentId,documentVersionId:output.documentVersionId,renderedContentHash:`sha256:${createHash('sha256').update(rendered).digest('hex')}`});
       const input={...f.context,contractId,operationId:operation.id,documentId:output.documentId,documentVersionId:output.documentVersionId,templateVersionId:template.templateVersionId,snapshot};
       await assert.rejects(repository.bind({...input,contractId:base.contract_id}),/CONTRACT_GENERATION_BINDING_MISMATCH/);
@@ -390,6 +408,13 @@ for(const usePostgres of [false,true])test(`price creation and signed document i
       await repository.setSigningPlan(plan);
       await assert.rejects(f.db.query("UPDATE document_versions SET status_code='draft' WHERE id=$1",[output.documentVersionId]),/append-only/);
       const bound=await repository.bind(input);const retry=await repository.bind(input);assert.deepEqual(retry,bound);assert.equal(bound.versionId,versionId);
+      const signable=await f.evidence.signableFile({...f.context,contractId,versionId});assert.equal(signable.evidence.documentVersionId,output.documentVersionId);
+      const item=(await f.db.query<{external_item_id:string}>('SELECT external_item_id FROM documents WHERE id=$1',[appendixItems[0].documentId])).rows[0];
+      const appendixFile=f.files.get(item.external_item_id);assert(appendixFile);const originalBytes=appendixFile.bytes;
+      appendixFile.bytes=new TextEncoder().encode('%PDF-tampered technical fixture');
+      try{await assert.rejects(f.evidence.signableFile({...f.context,contractId,versionId}),e=>e instanceof ContractDocumentError&&e.code==='DOCUMENT_HASH_MISMATCH');}
+      finally{appendixFile.bytes=originalBytes;}
+      assert.deepEqual((await f.db.query<{appendix_snapshot:unknown}>('SELECT appendix_snapshot FROM document_generation_operations WHERE id=$1',[operation.id])).rows[0].appendix_snapshot,reserved.appendix_snapshot);
       await assert.rejects(repository.bind({...input,membershipId:randomUUID()}),/contract.manage permission required/);
       const events=(await f.db.query<{audits:number;outbox:number}>("SELECT (SELECT count(*)::int FROM audit_log WHERE entity_id=$1 AND action='contract.sbk_generated') audits,(SELECT count(*)::int FROM outbox_events WHERE aggregate_id=$2 AND event_type='contract.sbk_generated.v1') outbox",[bound.versionId,contractId])).rows[0];assert.deepEqual(events,{audits:1,outbox:1});
       assert.deepEqual((await f.db.query<{generation_payload:Record<string,string>}>('SELECT generation_payload FROM contract_versions WHERE id=$1',[bound.versionId])).rows[0].generation_payload,snapshot);

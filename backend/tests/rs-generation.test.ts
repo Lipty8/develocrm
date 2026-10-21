@@ -170,7 +170,7 @@ for(const type of ['rs','sbk'] as const)test(`${type.toUpperCase()} bind ověřu
   const calls:Array<{sql:string;values:unknown[]}>=[];
   const client={query:async(sql:string,values:unknown[]=[])=>{calls.push({sql,values});
     if(sql.includes('SELECT project_id,reference,current_status,contract_type'))return{rows:[{project_id:"20000000-0000-0000-0000-000000000002",reference:"TEST-417",contract_type:type}]};
-    if(sql.includes('SELECT g.id FROM document_generation_operations'))return{rows:[{id:'operation'}]};
+    if(sql.includes('SELECT g.id,g.contract_preparation_version_id FROM document_generation_operations'))return{rows:[{id:'operation'}]};
     if(sql.includes('SELECT id,version_number,source_type,document_id'))return{rows:[{id:"30000000-0000-0000-0000-000000000001",version_number:3,source_type:"manual",document_id:null}]};
     if(sql.includes('UPDATE contract_versions SET source_type='))return{rows:[{id:"30000000-0000-0000-0000-000000000001",version_number:3}]};
     return{rows:[]};}};

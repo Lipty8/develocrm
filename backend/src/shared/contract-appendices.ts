@@ -14,6 +14,7 @@ export type ContractAppendixSummary = {
   contractVersionId:string|null; editable:boolean;
   items:Array<ContractAppendixSelection & {label:string}>;
 };
+export type GenerationAppendixSelection={versionId:string;items:Array<{number:number;documentId:string;documentVersionId:string}>};
 
 export function contractAppendixRequirements(type:'rs'|'sbk',variant:unknown):ReadonlyArray<{number:number;label:string}>{
   return (variant===ORIGINAL_DOB_FULL_VARIANT||type==='sbk'&&variant===SBK_DOB_DELIVERY_VARIANT)

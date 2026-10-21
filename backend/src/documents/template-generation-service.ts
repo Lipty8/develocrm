@@ -5,6 +5,7 @@ import type { MicrosoftGraphAdapter } from "./graph-adapter.js";
 import type { DocumentContext, DocumentRepository } from "./repository.js";
 import type { SharePointDocumentUploadService } from "./upload-service.js";
 import { DocumentTemplateGenerationRepository, type PlaceholderSchema } from "./template-generation-repository.js";
+import {contractAppendixRequirements,type GenerationAppendixSelection} from '../shared/contract-appendices.js';
 
 export {RS_PLACEHOLDERS,TECHNICAL_PLACEHOLDERS};
 const SUPPORTED_PLACEHOLDERS=supportedTemplateTokens();
@@ -36,19 +37,27 @@ export class DocumentTemplateGenerationService{
     if(unknown.length)throw new DocxTemplateError("unknown_template_token","Šablona obsahuje neschválená pole.",unknown);
     if(inspection.malformedTokens.length||inspection.legacyMarkers.length)throw new DocumentGenerationError('invalid_template_fields');
     if(inspection.tokens.join("\0")!==fields.join("\0"))throw new DocumentGenerationError("schema_token_mismatch");
-    return this.repository.register({...input,contractType:catalog.contractType??undefined,contentHash});
+    const appendices=catalog.contractType==='rs'||catalog.contractType==='sbk'?contractAppendixRequirements(catalog.contractType,input.variantKey):[];
+    const schema:PlaceholderSchema={fields:input.schema.fields,...(appendices.length?{appendices}: {})};
+    return this.repository.register({...input,schema,contractType:catalog.contractType??undefined,contentHash});
   }
 
   async generate(input:DocumentContext&{projectId:string;templateVersionId:string;idempotencyKey:string;unitId?:string;partyId?:string;
-    salesCaseId?:string;contractId?:string;documentId?:string;documentName?:string;snapshot?:Record<string,string>}){
+    salesCaseId?:string;contractId?:string;documentId?:string;documentName?:string;snapshot?:Record<string,string>;contractAppendices?:GenerationAppendixSelection}){
     if(!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,159}$/.test(input.idempotencyKey))throw new DocumentGenerationError("invalid_idempotency_key");
     const template=await this.repository.getTemplate(input);if(!template)throw new DocumentGenerationError("template_not_found");
     const catalog=templateCatalog(template.outputTypeCode,template.variantKey);
     if(!catalog||catalog.generationSupported===false)throw new DocumentGenerationError('template_generation_not_ready');
     if(catalog.contractType&&(!input.contractId||!input.snapshot))throw new DocumentGenerationError('use_contract_generation');
+    const requiredAppendices=catalog.contractType==='rs'||catalog.contractType==='sbk'?contractAppendixRequirements(catalog.contractType,template.variantKey):[];
+    if(requiredAppendices.length&&(JSON.stringify(template.schema.appendices)!==JSON.stringify(requiredAppendices)
+      ||!input.contractAppendices||input.contractAppendices.items.length!==requiredAppendices.length
+      ||input.contractAppendices.items.some((item,index)=>item.number!==requiredAppendices[index].number)))
+      throw new DocumentGenerationError('contract_appendices_required');
     if(!template.externalVersionId)throw new DocumentGenerationError("template_source_version_unavailable");
     const requestHash=hash(JSON.stringify({projectId:input.projectId,templateVersionId:input.templateVersionId,unitId:input.unitId??null,
-      partyId:input.partyId??null,salesCaseId:input.salesCaseId??null,contractId:input.contractId??null,documentId:input.documentId??null,documentName:input.documentName??null,snapshot:input.snapshot??null}));
+      partyId:input.partyId??null,salesCaseId:input.salesCaseId??null,contractId:input.contractId??null,documentId:input.documentId??null,documentName:input.documentName??null,snapshot:input.snapshot??null,
+      ...(input.contractAppendices?{contractAppendices:input.contractAppendices}:{})}));
     const operation=await this.repository.reserve({...input,template,requestHash});
     if(operation.state==="completed")return{operationId:operation.id,documentId:operation.outputDocumentId,documentVersionId:operation.outputDocumentVersionId,replayed:true};
     const connection=await this.documents.getConnectionForUpload(input);if(!connection||connection.driveId!==template.driveId)throw new DocumentGenerationError("template_drive_mismatch");

@@ -12,6 +12,7 @@ export class ContractDocumentError extends Error {
   constructor(readonly code:string){super("Smlouva nemá ověřený dokument připravený k podpisu.");}
 }
 type Evidence={contractId:string;versionId:string;documentVersionId:string;documentId:string;projectId:string;name:string;mimeType:string;hash:string;driveId:string;itemId:string;externalVersionId:string;webUrl:string|null;signedAt:string|null};
+type AppendixEvidence={number:number;documentId:string;documentVersionId:string;hash:string;driveId:string;itemId:string;externalVersionId:string};
 type Context=DocumentContext&{contractId:string;versionId:string};
 
 export class ContractDocumentEvidenceService {
@@ -36,6 +37,31 @@ export class ContractDocumentEvidenceService {
 
   async exactFile(input:Context){
     const evidence=await this.evidence(input);
+    const bytes=await this.readExact(input,evidence);
+    return {evidence,bytes};
+  }
+
+  async appendixEvidence(input:Context):Promise<AppendixEvidence[]>{
+    try{return await this.database.withContext(input,async client=>{
+      await client.query('SELECT app.assert_contract_appendices($1,$2,$3)',[input.tenantId,input.contractId,input.versionId]);
+      return(await client.query<AppendixEvidence>(`SELECT l.appendix_number number,l.document_id "documentId",l.document_version_id "documentVersionId",
+        v.content_hash hash,d.external_drive_id "driveId",d.external_item_id "itemId",v.external_version_id "externalVersionId"
+        FROM contract_documents l JOIN contracts c ON c.tenant_id=l.tenant_id AND c.project_id=l.project_id AND c.id=l.contract_id
+        JOIN documents d ON d.tenant_id=l.tenant_id AND d.project_id=l.project_id AND d.id=l.document_id
+        JOIN document_versions v ON v.tenant_id=l.tenant_id AND v.project_id=l.project_id AND v.document_id=l.document_id AND v.id=l.document_version_id
+        WHERE l.tenant_id=$1 AND l.contract_id=$3 AND l.contract_version_id=$4 AND l.appendix_number IS NOT NULL
+          AND app.has_project_permission(c.tenant_id,$2,c.project_id,'contract.read')
+          AND app.has_project_permission(c.tenant_id,$2,c.project_id,'documents.view')
+          AND (d.sensitivity='normal' OR app.has_project_permission(c.tenant_id,$2,c.project_id,'documents.view_sensitive'))
+        ORDER BY l.appendix_number`,[input.tenantId,input.membershipId,input.contractId,input.versionId])).rows;
+    });}catch(error){
+      const code=error instanceof Error?error.message.match(/^CONTRACT_APPENDIX_[A-Z_]+$/)?.[0]:undefined;
+      if(code)throw new ContractDocumentError(code);
+      throw error;
+    }
+  }
+
+  private async readExact(input:DocumentContext,evidence:Pick<Evidence,'driveId'|'itemId'|'externalVersionId'|'hash'>){
     const connection=await this.database.withContext(input,async client=>(await client.query<{site_id:string;drive_id:string}>(`
       SELECT site_id,drive_id FROM sharepoint_connections WHERE tenant_id=$1 AND drive_id=$2
       AND authentication_mode='managed_identity' AND credential_reference=$3 AND archived_at IS NULL AND connection_status='connected'`,
@@ -46,7 +72,7 @@ export class ContractDocumentEvidenceService {
     if(!versions.some(version=>version.id===evidence.externalVersionId))throw new ContractDocumentError("DOCUMENT_VERSION_UNAVAILABLE");
     const bytes=await this.graph.downloadFile(graphConnection,evidence.itemId,evidence.externalVersionId);
     if(`sha256:${createHash("sha256").update(bytes).digest("hex")}`!==evidence.hash)throw new ContractDocumentError("DOCUMENT_HASH_MISMATCH");
-    return {evidence,bytes};
+    return bytes;
   }
 
   async signableFile(input:Context){
@@ -55,6 +81,8 @@ export class ContractDocumentEvidenceService {
     // Historical download stays available; only a new signature is gated.
     if(!result.evidence.signedAt)
       validateFinalContractFile({fileName:result.evidence.name,mimeType:result.evidence.mimeType,bytes:result.bytes});
+    const appendices=await this.appendixEvidence(input);
+    for(const appendix of appendices)await this.readExact(input,appendix);
     return result;
   }
 

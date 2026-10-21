@@ -4,14 +4,13 @@
 
 This package prepares explicit selection of exact appendix versions inside the
 existing contract preparation panel. It does **not** activate either original
-legal template and is **not yet deployed**. Migration 0068 has only been executed
+legal template and is **not yet deployed**. Migrations 0068/0069 have only been executed
 in disposable local databases. No historical or pilot business data were changed.
 
-The next required integration gate is generation/signature bundle validation:
-pin the selected appendix set when generation starts, validate it again when the
-final document is bound, preserve it on retry/new business versions, and verify
-the exact appendix bytes through the existing SharePoint evidence layer. Do not
-remove `original_profile_review` or `generationSupported:false` before those gates,
+Generation/signature bundle validation is implemented and verified in the
+follow-up section below. Published browser E2E and a live exact SharePoint file
+check remain required. Do not remove `original_profile_review` or
+`generationSupported:false` before full original-profile business validation,
 content approval and authenticated browser E2E have passed.
 
 ## Existing model reused
@@ -49,7 +48,7 @@ request, asks the user to select a specific ready version, retains an optimistic
 concurrency token, refreshes the preparation summary after saving, and displays
 safe Czech errors. It does not upload files through another mechanism.
 
-## Verification completed
+## Initial selection-package verification (e2764ee)
 
 - Backend regression: 431 total, 426 passed, zero failed, five optional native
   suites skipped in the ordinary full-suite run.
@@ -80,3 +79,36 @@ The default Documents library root was empty. Access to the previously reference
 `/sites/immobuilding` location returned 403. The user has been asked for the exact
 uploaded folder URL; do not copy arbitrary similarly named files from elsewhere
 or expand Graph permissions to compensate.
+
+## Follow-up work after e2764ee — tested locally, not yet deployed
+
+Migration 0069 and the generation/evidence services now prepare a frozen appendix
+snapshot on the existing `document_generation_operations` record. The snapshot
+pins the working contract version, exact document-version IDs, native versions,
+hashes and SharePoint item identities. Selection changes and archiving/rebinding
+used documents are blocked while generation/final evidence depends on them.
+Template registration adds explicit appendix requirements to the existing
+immutable `placeholder_schema`; existing template versions are not backfilled.
+Pre-sign verification reads exact native appendix bytes and checks SHA-256 through
+the same Graph adapter used for the main document.
+
+The new trigger initially also intercepted legacy no-appendix test transitions
+that intentionally do not establish a session context. It is now limited to
+versions with appendix links or an original template profile; legacy primary-
+document enforcement remains independent. The original signed-document rejection
+code is preserved when both old and new document guards apply.
+
+After a temporary approval-review usage limit reset, the final backend regression
+ran with `WORKFLOW_TEST_DATABASE_URL`: **484 passed, zero failed, zero skipped**
+(60.2 seconds), including every available native PostgreSQL suite. The synthetic
+SBK fixture now uploads all five appendices through the real upload service with
+a Graph test adapter. It renders the supplied parametrized SBK, simulates upload
+timeout, retries the same reserved operation, binds the exact main document and
+checks all exact appendix versions before signing. Altered appendix bytes are
+rejected; the original frozen snapshot stays unchanged. Public approval/generation
+of the review-only profile is still explicitly rejected in this fixture.
+
+Frontend TypeScript, backend production compilation and changed-file lint passed.
+One redundant assertion in a concurrency test had narrowed an error branch to
+`never`; removing it did not change the test's failure behavior.
+No pilot migrations, publication or business-data changes have been performed.
