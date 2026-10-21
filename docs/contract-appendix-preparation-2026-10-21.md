@@ -176,7 +176,18 @@ on a working version without final document, signature or generation reservation
 signed/final associations, file identity/bytes and other link tables remain
 protected. Regression tests cover replacement, removal, idempotent/concurrent
 removal, preserved signed association and denied direct deletion/archive.
-Deployment and repeat browser verification of 0070 are pending.
+Migration-only follow-up commit `42f476f8d8c5cedd2907fefefc986a64ae0e3892`
+was pushed to private GitHub. ACR build `cg4r` succeeded; migration image digest
+`sha256:0ba6461dadc85c1b9af4c245f295a510408ca83968975064ce90fb2f4e97d257`.
+Execution `caj-develocrm-migrations-pilot-0qi1t0c` succeeded and logged only
+`Applied 0070_shared_appendix_draft_link.sql`. Independent read-only execution
+`caj-develocrm-migrations-pilot-gbmq219` succeeded, confirmed 70 migrations and
+0070 checksum `aaf6870cc9dddb934e1d5f10e4a19e00f5dc130e18b0eb490024c33e56d1760f`.
+The final removal through the same authenticated UI succeeded, cleared the slot
+without an application reload, and stayed cleared after a full reload. Underlying
+files/versions were not deleted. `/health` and `/ready` both remained 200.
+API revision `appendices-67f169c` and Sites 160 were retained because this follow-up
+changes only a compatible database guard, regression tests and documentation.
 Source-content classification/approval is not inferred from this technical link test.
 
 The 0070 regression explicitly restores the old guard in each disposable fixture,
