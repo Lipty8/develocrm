@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {buildApp} from '../src/app.js';
 import {IamRepository} from '../src/iam/repository.js';
-import {SharePointDocumentUploadService} from '../src/documents/upload-service.js';
+import {SharePointDocumentUploadService,type DocumentUploadInput} from '../src/documents/upload-service.js';
 import {PDF_DOCUMENT_MAX_BYTES} from '../src/documents/file-limits.js';
 
 test('PDF HTTP transport accepts >8 MiB, rejects oversize, and keeps template limits',async t=>{
@@ -11,7 +11,7 @@ test('PDF HTTP transport accepts >8 MiB, rejects oversize, and keeps template li
   t.mock.method(IamRepository.prototype,'resolveUser',async()=>user);
   t.mock.method(IamRepository.prototype,'getSession',async()=>({user,workspace:{tenantId:'tenant',tenantName:'Technical',tenantSlug:'test',membershipId:'member',roles:[],permissions:[]}}));
   let calls=0;
-  t.mock.method(SharePointDocumentUploadService.prototype,'upload',async input=>{
+  t.mock.method(SharePointDocumentUploadService.prototype,'upload',async(input:DocumentUploadInput)=>{
     calls++;assert.equal(input.bytes.byteLength,10*1024*1024);
     assert.equal(input.tenantId,'tenant');assert.equal(input.membershipId,'member');
     return{documentId:'document',documentVersionId:'version',itemId:'item',driveId:'configured',webUrl:null,etag:'etag',replayed:false};

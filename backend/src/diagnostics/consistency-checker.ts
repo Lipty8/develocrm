@@ -36,7 +36,8 @@ WITH scope AS (
 ), signed AS (
  SELECT cv.*,c.reference,c.unit_id,c.sales_case_id,c.contract_type,c.current_status
  FROM contract_versions cv JOIN contracts c ON c.tenant_id=cv.tenant_id AND c.id=cv.contract_id
- WHERE cv.tenant_id=$1 AND cv.project_id IN(SELECT id FROM scope) AND cv.version_status='signed'
+ WHERE cv.tenant_id=$1 AND cv.project_id IN(SELECT id FROM scope) AND (cv.version_status='signed'
+ OR EXISTS(SELECT 1 FROM contract_parties p WHERE p.tenant_id=cv.tenant_id AND p.signed_version_id=cv.id AND p.signature_status='signed'))
 ), facts AS (
  SELECT project_id,'contract_version'::text entity_type,id entity_id,reference label,'SIGNED_EVIDENCE_MISSING'::text code,
  jsonb_build_object('contractId',contract_id,'signedAt',signed_at) details FROM signed WHERE document_version_id IS NULL
@@ -54,7 +55,7 @@ WITH scope AS (
  UNION ALL
  SELECT c.project_id,'contract',c.id,c.reference,'SIGNED_CONTRACT_VERSION_MISSING','{}'::jsonb FROM contracts c
  WHERE c.tenant_id=$1 AND c.project_id IN(SELECT id FROM scope) AND c.current_status='signed'
- AND NOT EXISTS(SELECT 1 FROM signed s WHERE s.contract_id=c.id)
+ AND NOT EXISTS(SELECT 1 FROM signed s WHERE s.contract_id=c.id AND s.version_status='signed')
  UNION ALL
  SELECT c.project_id,'contract',c.id,c.reference,'RS_RESERVATION_INCONSISTENT',jsonb_build_object('unitId',c.unit_id)
  FROM contracts c JOIN units u ON u.tenant_id=c.tenant_id AND u.id=c.unit_id
@@ -102,7 +103,7 @@ WITH scope AS (
  FROM document_template_versions tv JOIN document_templates t ON t.tenant_id=tv.tenant_id AND t.id=tv.template_id
  LEFT JOIN document_versions v ON v.tenant_id=tv.tenant_id AND v.id=tv.source_document_version_id
  WHERE tv.tenant_id=$1 AND tv.project_id IN(SELECT id FROM scope) AND tv.approval_status='approved'
- AND (tv.content_hash !~ '^sha256:[a-f0-9]{64}$' OR v.id IS NULL OR v.project_id IS DISTINCT FROM tv.project_id OR v.document_id IS DISTINCT FROM tv.source_document_id OR nullif(v.external_version_id,'') IS NULL)
+ AND (tv.content_hash !~ '^sha256:[a-f0-9]{64}$' OR tv.content_hash IS DISTINCT FROM v.content_hash OR v.id IS NULL OR v.project_id IS DISTINCT FROM tv.project_id OR v.document_id IS DISTINCT FROM tv.source_document_id OR nullif(v.external_version_id,'') IS NULL)
  UNION ALL
  SELECT g.project_id,'generation',g.id,t.name,'GENERATION_CONTEXT_MISMATCH','{}'::jsonb
  FROM document_generation_operations g JOIN document_template_versions tv ON tv.tenant_id=g.tenant_id AND tv.id=g.template_version_id
@@ -118,12 +119,63 @@ WITH scope AS (
  AND (g.id IS NULL OR g.template_version_id IS DISTINCT FROM cv.template_version_id OR g.contract_id IS DISTINCT FROM cv.contract_id
  OR g.generation_snapshot IS DISTINCT FROM cv.generation_payload OR g.output_document_version_id IS DISTINCT FROM cv.document_version_id)
  UNION ALL
+ SELECT g.project_id,'generation',g.id,c.reference,'GENERATION_APPENDIX_SNAPSHOT_MISMATCH','{}'::jsonb
+ FROM document_generation_operations g JOIN contracts c ON c.tenant_id=g.tenant_id AND c.id=g.contract_id
+ WHERE g.tenant_id=$1 AND g.project_id IN(SELECT id FROM scope) AND g.contract_preparation_version_id IS NOT NULL
+ AND g.appendix_snapshot IS DISTINCT FROM (
+   SELECT COALESCE(jsonb_agg(jsonb_build_object('number',l.appendix_number,'documentId',d.id,'documentVersionId',v.id,
+     'hash',v.content_hash,'externalVersionId',v.external_version_id,'driveId',d.external_drive_id,'itemId',d.external_item_id)
+     ORDER BY l.appendix_number),'[]'::jsonb)
+   FROM contract_documents l JOIN documents d ON d.tenant_id=l.tenant_id AND d.project_id=l.project_id AND d.id=l.document_id
+   JOIN document_versions v ON v.tenant_id=l.tenant_id AND v.project_id=l.project_id AND v.document_id=l.document_id AND v.id=l.document_version_id
+   WHERE l.tenant_id=g.tenant_id AND l.contract_id=g.contract_id AND l.contract_version_id=g.contract_preparation_version_id AND l.appendix_number IS NOT NULL)
+ UNION ALL
  SELECT u.project_id,'unit',u.id,u.code,'CURRENT_PRICE_PROJECTION_MISMATCH','{}'::jsonb FROM units u
  WHERE u.tenant_id=$1 AND u.project_id IN(SELECT id FROM scope)
  AND app.current_unit_sales_price(u.tenant_id,u.id,now()) IS DISTINCT FROM
  (app.current_unit_price(u.tenant_id,u.id,now())+app.current_unit_accessory_price(u.tenant_id,u.id,now()))
 )
 SELECT * FROM facts ORDER BY project_id,code,entity_id`;
+
+/** Exact files only: never resolve a document to its latest business version. */
+export const physicalEvidenceSql=`
+WITH protected_versions AS (
+ SELECT cv.*,c.reference FROM contract_versions cv JOIN contracts c ON c.tenant_id=cv.tenant_id AND c.id=cv.contract_id
+ WHERE cv.tenant_id=$1 AND cv.project_id=ANY($2::uuid[]) AND (
+   cv.document_version_id IS NOT NULL OR cv.version_status='signed'
+   OR EXISTS(SELECT 1 FROM contract_parties p WHERE p.tenant_id=cv.tenant_id AND p.signed_version_id=cv.id AND p.signature_status='signed')
+   OR EXISTS(SELECT 1 FROM document_generation_operations g WHERE g.tenant_id=cv.tenant_id AND g.contract_preparation_version_id=cv.id))
+), files AS (
+ SELECT cv.project_id,cv.id entity_id,'contract_version'::text entity_type,cv.reference label,
+   cv.document_id::text document_id,cv.document_version_id::text version_id,NULL::text expected_hash,
+   NULL::text expected_drive,NULL::text expected_item,NULL::text expected_version,false pinned
+ FROM protected_versions cv WHERE cv.document_version_id IS NOT NULL
+ UNION ALL
+ SELECT cv.project_id,l.id,'contract_appendix',cv.reference||' · Příloha '||l.appendix_number,
+   l.document_id::text,l.document_version_id::text,NULL,NULL,NULL,NULL,false
+ FROM protected_versions cv JOIN contract_documents l ON l.tenant_id=cv.tenant_id AND l.project_id=cv.project_id
+   AND l.contract_id=cv.contract_id AND l.contract_version_id=cv.id AND l.appendix_number IS NOT NULL
+ UNION ALL
+ SELECT g.project_id,g.id,'generation_appendix',c.reference||' · Příloha '||COALESCE(a.value->>'number','?'),
+   a.value->>'documentId',a.value->>'documentVersionId',a.value->>'hash',a.value->>'driveId',a.value->>'itemId',a.value->>'externalVersionId',true
+ FROM document_generation_operations g JOIN contracts c ON c.tenant_id=g.tenant_id AND c.id=g.contract_id
+ CROSS JOIN LATERAL jsonb_array_elements(g.appendix_snapshot) a(value)
+ WHERE g.tenant_id=$1 AND g.project_id=ANY($2::uuid[]) AND g.contract_preparation_version_id IS NOT NULL
+ UNION ALL
+ SELECT tv.project_id,tv.id,'template_version',t.name,tv.source_document_id::text,tv.source_document_version_id::text,tv.content_hash,NULL,NULL,NULL,false
+ FROM document_template_versions tv JOIN document_templates t ON t.tenant_id=tv.tenant_id AND t.id=tv.template_id
+ WHERE tv.tenant_id=$1 AND tv.project_id=ANY($2::uuid[]) AND tv.approval_status='approved'
+)
+SELECT f.project_id,f.entity_id,f.entity_type,f.label,COALESCE(f.expected_hash,v.content_hash) hash,v.external_version_id version_id,
+ d.external_drive_id drive_id,d.external_item_id item_id,conn.site_id,
+ (v.project_id=f.project_id AND d.project_id=f.project_id AND d.id::text=f.document_id AND d.storage_provider='sharepoint'
+  AND (d.sensitivity='normal' OR app.has_project_permission($1,$4,f.project_id,'documents.view_sensitive'))
+  AND conn.authentication_mode='managed_identity' AND conn.connection_status='connected' AND conn.credential_reference=$3
+  AND (NOT f.pinned OR (f.expected_hash IS NOT NULL AND f.expected_hash=v.content_hash
+    AND f.expected_drive=d.external_drive_id AND f.expected_item=d.external_item_id AND f.expected_version=v.external_version_id))) configured
+FROM files f LEFT JOIN document_versions v ON v.tenant_id=$1 AND v.id::text=f.version_id
+LEFT JOIN documents d ON d.tenant_id=v.tenant_id AND d.id=v.document_id
+LEFT JOIN sharepoint_connections conn ON conn.tenant_id=d.tenant_id AND conn.drive_id=d.external_drive_id AND conn.archived_at IS NULL`;
 
 const descriptions:Record<string,string>={
  SIGNED_EVIDENCE_MISSING:'Historický podpis čeká na doložení skutečného podepsaného souboru.',
@@ -141,6 +193,7 @@ const descriptions:Record<string,string>={
  APPROVED_TEMPLATE_HASH_MISMATCH:'Schválená šablona neodpovídá uložené zdrojové verzi.',
  GENERATION_CONTEXT_MISMATCH:'Generování neodpovídá zdrojové šabloně nebo výstupní verzi.',
  GENERATION_SNAPSHOT_MISMATCH:'Smluvní verze neodpovídá uloženému vstupu generování.',
+ GENERATION_APPENDIX_SNAPSHOT_MISMATCH:'Přílohy smlouvy neodpovídají přesným verzím uloženým při generování.',
  CURRENT_PRICE_PROJECTION_MISMATCH:'Celková cena neodpovídá centrálnímu součtu jednotky a příslušenství.',
 };
 
@@ -175,22 +228,8 @@ export class ConsistencyChecker {
    if(input.projectId&&!projects.some(p=>p.allowed))throw new Error('project permission required');
    const projectIds=projects.filter(p=>p.allowed).map(p=>p.id);
    const facts=(await client.query<Fact>(consistencyFactsSql,[input.tenantId,input.membershipId,input.projectId??null])).rows;
-   const files=(await client.query<{project_id:string;entity_id:string;entity_type:string;label:string;hash:string;drive_id:string;item_id:string;version_id:string;site_id:string;configured:boolean}>(`
-    WITH files AS (
-     SELECT cv.project_id,cv.id entity_id,'contract_version'::text entity_type,c.reference label,cv.document_version_id version_id,NULL::text expected_hash
-     FROM contract_versions cv JOIN contracts c ON c.tenant_id=cv.tenant_id AND c.id=cv.contract_id
-     WHERE cv.tenant_id=$1 AND cv.project_id=ANY($2::uuid[]) AND cv.version_status='signed' AND cv.document_version_id IS NOT NULL
-     UNION ALL
-     SELECT tv.project_id,tv.id,'template_version',t.name,tv.source_document_version_id,tv.content_hash FROM document_template_versions tv
-     JOIN document_templates t ON t.tenant_id=tv.tenant_id AND t.id=tv.template_id
-     WHERE tv.tenant_id=$1 AND tv.project_id=ANY($2::uuid[]) AND tv.approval_status='approved'
-    ) SELECT f.project_id,f.entity_id,f.entity_type,f.label,COALESCE(f.expected_hash,v.content_hash) hash,v.external_version_id version_id,
-      d.external_drive_id drive_id,d.external_item_id item_id,conn.site_id,
-      (conn.authentication_mode='managed_identity' AND conn.connection_status='connected' AND conn.credential_reference=$3) configured
-    FROM files f JOIN document_versions v ON v.tenant_id=$1 AND v.id=f.version_id
-    JOIN documents d ON d.tenant_id=v.tenant_id AND d.id=v.document_id
-    LEFT JOIN sharepoint_connections conn ON conn.tenant_id=d.tenant_id AND conn.drive_id=d.external_drive_id AND conn.archived_at IS NULL`,
-    [input.tenantId,projectIds,`managed-identity://${this.identityClientId??''}`])).rows;
+   const files=(await client.query<{project_id:string;entity_id:string;entity_type:string;label:string;hash:string;drive_id:string;item_id:string;version_id:string;site_id:string;configured:boolean}>(
+    physicalEvidenceSql,[input.tenantId,projectIds,`managed-identity://${this.identityClientId??''}`,input.membershipId])).rows;
    const generations=(await client.query<{id:string;project_id:string;generation_snapshot:Record<string,string>;snapshot_hash:string;snapshot_hash_scheme:string;legacy_pre_enforcement:boolean}>(`
     SELECT g.id,g.project_id,g.generation_snapshot,g.snapshot_hash,g.snapshot_hash_scheme,
       COALESCE(g.created_at<(SELECT applied_at FROM schema_migrations WHERE filename='0058_read_only_release_diagnostics.sql'),false) legacy_pre_enforcement
@@ -208,13 +247,20 @@ export class ConsistencyChecker {
   let physicalEvidence:ConsistencyReport['physicalEvidence']='not_checked';
   if(input.physical){
    physicalEvidence='verified';
+   const downloadedHashes=new Map<string,string>();
    for(const file of snapshot.files){
     let code:string|undefined;
     try{
-     if(!this.graph||!file.configured||!file.site_id||!file.version_id||!file.hash)throw new Error('unavailable');
-     const bytes=await this.graph.downloadFile({siteId:file.site_id,driveId:file.drive_id},file.item_id,file.version_id);
-     if(`sha256:${createHash('sha256').update(bytes).digest('hex')}`!==file.hash)code='PHYSICAL_DOCUMENT_HASH_MISMATCH';
+     if(!this.graph||!file.configured||!file.site_id||!file.drive_id||!file.item_id||!file.version_id||!file.hash)throw new Error('unavailable');
+     const key=JSON.stringify([file.site_id,file.drive_id,file.item_id,file.version_id]);
+     let actualHash=downloadedHashes.get(key);
+     if(!actualHash){
+      const bytes=await this.graph.downloadFile({siteId:file.site_id,driveId:file.drive_id},file.item_id,file.version_id);
+      actualHash=`sha256:${createHash('sha256').update(bytes).digest('hex')}`;downloadedHashes.set(key,actualHash);
+     }
+     if(actualHash!==file.hash)code='PHYSICAL_DOCUMENT_HASH_MISMATCH';
     }catch{code='PHYSICAL_DOCUMENT_UNVERIFIED';physicalEvidence='incomplete';}
+    if(code)physicalEvidence='incomplete';
     if(code)findings.push({severity:'critical',code,tenantId:input.tenantId,projectId:file.project_id,entityType:file.entity_type,entityId:file.entity_id,label:file.label,runId,
      description:code==='PHYSICAL_DOCUMENT_HASH_MISMATCH'?'Přesný soubor neodpovídá uloženému otisku.':'Přesný soubor nebylo možné ověřit v SharePointu.'});
    }

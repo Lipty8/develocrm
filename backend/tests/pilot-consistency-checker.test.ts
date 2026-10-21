@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {ConsistencyChecker,classifyFact,consistencyFactsSql,type Fact} from '../src/diagnostics/consistency-checker.js';
+import {ConsistencyChecker,classifyFact,consistencyFactsSql,physicalEvidenceSql,type Fact} from '../src/diagnostics/consistency-checker.js';
 import type {Database} from '../src/database.js';
 import type {MicrosoftGraphAdapter} from '../src/documents/graph-adapter.js';
 import {snapshotHash} from '../src/shared/snapshot-integrity.js';
@@ -30,7 +30,7 @@ function fixture(options:{authorized?:boolean;projects?:Array<{id:string;allowed
    if(sql.includes('FROM tenant_memberships'))return{rows:options.authorized===false?[]:[{authorized:true}],rowCount:options.authorized===false?0:1};
    if(sql===consistencyFactsSql)return{rows:options.facts??[],rowCount:0};
    if(sql.includes('FROM projects WHERE'))return{rows:options.projects??[{id:'project-a',allowed:true}],rowCount:1};
-   if(sql.includes('WITH files'))return{rows:options.files??[],rowCount:0};
+   if(sql===physicalEvidenceSql)return{rows:options.files??[],rowCount:0};
    if(sql.includes('FROM document_generation_operations'))return{rows:options.generations??[],rowCount:0};
    throw new Error('Unexpected query');
   }});
@@ -79,5 +79,33 @@ test('Graph failure and hash mismatch fail closed, without raw errors',async()=>
   const report=await new ConsistencyChecker(f.database,graph,'mi').run({...ctx,physical:true});
   assert.equal(report.summary.critical,1);assert(!JSON.stringify(report).includes('secret'));
   assert.equal(report.findings[0].code,fail?'PHYSICAL_DOCUMENT_UNVERIFIED':'PHYSICAL_DOCUMENT_HASH_MISMATCH');
+  assert.equal(report.physicalEvidence,'incomplete');
  }
+});
+
+test('physical appendix evidence is pinned, deduplicated, and safe on missing or unauthorized metadata',async()=>{
+ const bytes=Buffer.from('pinned appendix'),hash=`sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+ const file={project_id:'a',entity_id:'appendix-a',entity_type:'contract_appendix',label:'RS · Příloha 1',hash,drive_id:'private-drive',item_id:'private-item',version_id:'1.0',site_id:'private-site',configured:true};
+ const f=fixture({files:[file,{...file,entity_id:'generation-a',entity_type:'generation_appendix'}]});let downloads=0;
+ const graph={downloadFile:async(_connection:unknown,_item:string,version:string)=>{downloads++;assert.equal(version,'1.0');return bytes;}} as unknown as MicrosoftGraphAdapter;
+ const report=await new ConsistencyChecker(f.database,graph,'mi').run({...ctx,physical:true});
+ assert.equal(downloads,1);assert.equal(report.physicalEvidence,'verified');
+ for(const missing of [{configured:false},{version_id:null},{item_id:null},{drive_id:null}]){
+  const inaccessible=fixture({files:[{...file,...missing}]});
+  const result=await new ConsistencyChecker(inaccessible.database,graph,'mi').run({...ctx,physical:true});
+  assert.equal(result.physicalEvidence,'incomplete');assert.equal(result.summary.critical,1);
+  assert.equal(result.findings[0].entityType,'contract_appendix');assert(!JSON.stringify(result).includes('private-'));
+ }
+ assert.equal(downloads,1,'unauthorized metadata must never trigger a physical read');
+});
+
+test('SQL includes partial signatures, frozen bundles, missing versions and sensitive-document authorization',()=>{
+ assert.match(consistencyFactsSql,/p.signature_status='signed'/);
+ assert.match(consistencyFactsSql,/GENERATION_APPENDIX_SNAPSHOT_MISMATCH/);
+ assert.match(physicalEvidenceSql,/contract_preparation_version_id/);
+ assert.match(physicalEvidenceSql,/jsonb_array_elements\(g.appendix_snapshot\)/);
+ assert.match(physicalEvidenceSql,/LEFT JOIN document_versions/);
+ assert.match(physicalEvidenceSql,/documents.view_sensitive/);
+ assert.match(physicalEvidenceSql,/f.expected_version=v.external_version_id/);
+ assert.match(physicalEvidenceSql,/cv.project_id=ANY\(\$2::uuid\[\]\)/);
 });

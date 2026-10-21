@@ -12,6 +12,7 @@ import {RsGenerationRepository} from '../src/contracts/rs-generation-repository.
 import {DocumentTemplateGenerationRepository,type TemplateSource} from '../src/documents/template-generation-repository.js';
 import {contractAppendixRequirements} from '../src/shared/contract-appendices.js';
 import {ORIGINAL_DOB_FULL_VARIANT} from '../src/documents/template-catalog.js';
+import {physicalEvidenceSql,consistencyFactsSql} from '../src/diagnostics/consistency-checker.js';
 
 async function fixture(postgresUrl?:string){
   const memory=postgresUrl?null:new PGlite();const admin=postgresUrl?new Pool({connectionString:postgresUrl}):null;
@@ -125,6 +126,13 @@ for(const native of [false,true])test(`exact appendix version binding (${native?
         await assert.rejects(f.set(5,null,undefined,undefined,undefined,undefined,b.document_version_id),/NEW_VERSION_REQUIRED/);
       }else version=await f.context(c=>signatureDocument(c,f.ids.tenantId,f.ids.membershipId,f.contract.contract_id));
       assert.equal(version,f.contract.version_id);
+      const pinned=await f.context(c=>c.query<{entity_type:string;entity_id:string;version_id:string}>(physicalEvidenceSql,[f.ids.tenantId,[f.unit.project_id],'managed-identity://fixture',f.ids.membershipId]));
+      assert.ok(pinned.rows.some(row=>row.entity_type==='contract_appendix'&&row.version_id==='1.0'));
+      assert.ok(pinned.rows.some(row=>row.entity_type==='contract_version'&&row.entity_id===version),'unsigned final evidence is already frozen');
+      const foreign=await f.context(c=>c.query(physicalEvidenceSql,[randomUUID(),[f.unit.project_id],'managed-identity://fixture',f.ids.membershipId]));
+      assert.equal(foreign.rows.length,0);
+      const outsideProject=await f.context(c=>c.query(physicalEvidenceSql,[f.ids.tenantId,[randomUUID()],'managed-identity://fixture',f.ids.membershipId]));
+      assert.equal(outsideProject.rows.length,0);
       await assert.rejects(f.set(1,b),/NEW_VERSION_REQUIRED/);
       await f.context(async c=>{await c.query("SELECT app.transition_contract_status($1,$2,'sent','Technical test',$3)",[f.ids.tenantId,f.contract.contract_id,f.ids.membershipId]);await c.query("SELECT app.transition_contract_status($1,$2,'approved','Technical test',$3)",[f.ids.tenantId,f.contract.contract_id,f.ids.membershipId]);await c.query('SELECT * FROM app.sign_contract_externally($1,$2,$3,now(),$4,NULL)',[f.ids.tenantId,f.contract.contract_id,version,f.ids.membershipId]);});
       assert.equal((await f.client.query<{yes:boolean}>('SELECT app.document_has_signature_evidence($1,$2) yes',[f.ids.tenantId,a.document_id])).rows[0].yes,true);
@@ -193,6 +201,23 @@ for(const native of [false,true])test(`generation pins the exact appendix bundle
     assert.equal(recorded.contract_preparation_version_id,f.contract.version_id);assert.equal(recorded.appendix_snapshot.length,6);
     assert.deepEqual(recorded.appendix_snapshot.map(item=>({number:item.number,documentId:item.documentId,documentVersionId:item.documentVersionId})),selection.items);
     for(const item of recorded.appendix_snapshot){assert.equal(item.hash,`sha256:${'b'.repeat(64)}`);assert.equal(item.externalVersionId,'1.0');}
+    const pinned=await f.context(client=>client.query<{entity_type:string;hash:string;version_id:string}>(physicalEvidenceSql,[f.ids.tenantId,[f.unit.project_id],'managed-identity://fixture',f.ids.membershipId]));
+    assert.equal(pinned.rows.filter(row=>row.entity_type==='generation_appendix').length,6);
+    assert.equal(pinned.rows.filter(row=>row.entity_type==='contract_appendix').length,6);
+    assert.ok(pinned.rows.filter(row=>row.entity_type==='generation_appendix').every(row=>row.hash===`sha256:${'b'.repeat(64)}`&&row.version_id==='1.0'));
+    const facts=await f.context(client=>client.query<{code:string}>(consistencyFactsSql,[f.ids.tenantId,f.ids.membershipId,f.unit.project_id]));
+    assert.ok(!facts.rows.some(row=>row.code==='GENERATION_APPENDIX_SNAPSHOT_MISMATCH'));
+    // Simulate pre-existing storage/database corruption only in this disposable
+    // fixture. The diagnostic itself stays read-only; rollback restores guards.
+    await f.client.query('BEGIN');
+    try{
+      await f.client.query('ALTER TABLE document_generation_operations DISABLE TRIGGER USER');
+      await f.client.query("UPDATE document_generation_operations SET appendix_snapshot=jsonb_set(appendix_snapshot,'{0,hash}',to_jsonb($2::text)) WHERE id=$1",[operation.id,`sha256:${'f'.repeat(64)}`]);
+      const corrupted=(await f.client.query<{code:string}>(consistencyFactsSql,[f.ids.tenantId,f.ids.membershipId,f.unit.project_id])).rows;
+      assert.ok(corrupted.some(row=>row.code==='GENERATION_APPENDIX_SNAPSHOT_MISMATCH'));
+      const files=(await f.client.query<{entity_type:string;hash:string;configured:boolean}>(physicalEvidenceSql,[f.ids.tenantId,[f.unit.project_id],'managed-identity://fixture',f.ids.membershipId])).rows;
+      assert.ok(files.some(row=>row.entity_type==='generation_appendix'&&row.hash===`sha256:${'f'.repeat(64)}`&&!row.configured));
+    }finally{await f.client.query('ROLLBACK');}
     await assert.rejects(f.set(1,spare,undefined,undefined,undefined,undefined,documents[0].document_version_id),/GENERATION_STARTED/);
     await assert.rejects(f.client.query('UPDATE documents SET archived_at=now() WHERE id=$1',[documents[0].document_id]),/DOCUMENT_IN_USE/);
     await assert.rejects(f.context(client=>client.query("UPDATE document_generation_operations SET appendix_snapshot='[]' WHERE id=$1",[operation.id])),/SNAPSHOT_IMMUTABLE/);
