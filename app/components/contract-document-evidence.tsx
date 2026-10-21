@@ -12,7 +12,7 @@ export function ContractDocumentEvidence({contractId,version,canUpload,onChanged
     const base64=await new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(",")[1]);reader.onerror=()=>reject(new Error("Soubor nelze načíst."));reader.readAsDataURL(file);});
     const mimeType=file.type||(file.name.toLowerCase().endsWith('.docx')?'application/vnd.openxmlformats-officedocument.wordprocessingml.document':file.name.toLowerCase().endsWith('.pdf')?'application/pdf':'');
     const response=await apiFetch(`/api/commercial/contracts/${encodeURIComponent(contractId)}/external-document`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({fileName:file.name,mimeType,contentBase64:base64,idempotencyKey:key})});
-    if(!response.ok)throw new Error("Finální dokument se nepodařilo uložit.");setFile(null);setKey(crypto.randomUUID());onChanged();
+    if(!response.ok){const payload=await response.json().catch(()=>null) as {error?:unknown}|null;throw new Error(typeof payload?.error==='string'?payload.error:"Finální dokument se nepodařilo uložit.");}setFile(null);setKey(crypto.randomUUID());onChanged();
   }catch(e){setError(e instanceof Error?e.message:"Dokument se nepodařilo uložit.");}finally{setBusy(false);}}
   async function open(){if(!version)return;setError("");try{
     const response=await apiFetch(`/api/commercial/contracts/${encodeURIComponent(contractId)}/versions/${encodeURIComponent(version.id)}/document`);

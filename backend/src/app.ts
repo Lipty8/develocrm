@@ -406,13 +406,13 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});if(!contractEvidence)throw new ContractDocumentError("connection_unavailable");
       const party=await dependencies.database.withContext(context,async client=>(await client.query<{contract_id:string}>("SELECT contract_id FROM contract_parties WHERE tenant_id=$1 AND id=$2",[context.tenantId,request.params.contractPartyId])).rows[0]);
       if(!party)throw new ContractDocumentError("SIGNED_DOCUMENT_REQUIRED");
-      await contractEvidence.exactFile({...context,contractId:party.contract_id,versionId:request.body.versionId});
+      await contractEvidence.signableFile({...context,contractId:party.contract_id,versionId:request.body.versionId});
       return await commercialCommands.sign({...context,contractPartyId:request.params.contractPartyId,versionId:request.body.versionId,reason:request.body.reason});}
     catch(error){request.log.warn({event:"contract.signature_rejected",correlationId:request.id,code:error instanceof ContractDocumentError?error.code:"signature_rejected"});return reply.code(409).send({error:"Podpis nelze evidovat bez ověřeného dokumentu smlouvy.",correlationId:request.id});}
   });
   app.post<{Params:{contractId:string};Body:{versionId:string;signedAt:string;note?:string}}>("/v1/contracts/:contractId/sign",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});if(!contractEvidence)throw new ContractDocumentError("connection_unavailable");
-      await contractEvidence.exactFile({...context,contractId:request.params.contractId,versionId:request.body.versionId});
+      await contractEvidence.signableFile({...context,contractId:request.params.contractId,versionId:request.body.versionId});
       return await commercialCommands.signContract({...context,contractId:request.params.contractId,versionId:request.body.versionId,signedAt:request.body.signedAt,note:request.body.note});}
     catch(error){const message=error instanceof Error?error.message:"";const friendly=error instanceof ContractDocumentError||message.includes("SIGNED_DOCUMENT")?"Smlouvu nelze podepsat bez ověřeného finálního dokumentu.":message.includes("approved")?"Před evidencí podpisu schvalte aktuální verzi smlouvy.":permissionError(error)?"K zaznamenání podpisu nemáte oprávnění.":"Podpis smlouvy se nepodařilo zaznamenat.";request.log.warn({event:"contract.signature_rejected",correlationId:request.id,code:error instanceof ContractDocumentError?error.code:"signature_rejected"});return reply.code(permissionError(error)?403:409).send({error:friendly,correlationId:request.id});}
   });
@@ -436,7 +436,7 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není přístupný"});if(!contractEvidence)return reply.code(503).send({error:"Úložiště dokumentů není dostupné."});
       const {fileName,mimeType,contentBase64,idempotencyKey}=request.body;
       return reply.code(201).send(await contractEvidence.uploadExternal({...context,contractId:request.params.contractId,fileName,mimeType,idempotencyKey,bytes:decodeBase64(contentBase64)}));
-    }catch(error){request.log.warn({event:"contract.external_upload_failed",correlationId:request.id,code:error instanceof ContractDocumentError?error.code:"upload_failed"});return reply.code(permissionError(error)?403:409).send({error:"Finální dokument se nepodařilo uložit. Zkontrolujte formát a velikost souboru.",correlationId:request.id});}
+    }catch(error){request.log.warn({event:"contract.external_upload_failed",correlationId:request.id,code:error instanceof ContractDocumentError?error.code:"upload_failed"});return reply.code(permissionError(error)?403:409).send({error:error instanceof ContractDocumentError&&error.code==='unresolved_document_fields'?'Dokument obsahuje nevyplněná pole. Doplňte je a nahrajte finální verzi.':"Finální dokument se nepodařilo uložit. Zkontrolujte formát a velikost souboru.",correlationId:request.id});}
   });
   app.get<{Params:{contractId:string;versionId:string}}>("/v1/contracts/:contractId/versions/:versionId/document",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není přístupný"});if(!contractEvidence)return reply.code(503).send({error:"Úložiště není dostupné."});const exact=await contractEvidence.exactFile({...context,...request.params});
@@ -445,7 +445,7 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
   });
   app.get<{Params:{contractId:string;versionId:string}}>("/v1/contracts/:contractId/versions/:versionId/document-readiness",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({ready:false});if(!contractEvidence)return reply.code(503).send({ready:false});
-      const verified=await contractEvidence.exactFile({...context,...request.params});return {ready:true,documentVersionId:verified.evidence.documentVersionId};
+      const verified=await contractEvidence.signableFile({...context,...request.params});return {ready:true,documentVersionId:verified.evidence.documentVersionId};
     }catch(error){request.log.warn({event:"contract.document_validation_failed",correlationId:request.id,code:error instanceof ContractDocumentError?error.code:"validation_failed"});return reply.code(409).send({ready:false,error:"Dokument se nepodařilo ověřit.",correlationId:request.id});}
   });
 

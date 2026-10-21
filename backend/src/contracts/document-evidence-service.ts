@@ -11,7 +11,7 @@ import type {SbkFinalNoticeContext} from '../shared/sbk-final-notice.js';
 export class ContractDocumentError extends Error {
   constructor(readonly code:string){super("Smlouva nemá ověřený dokument připravený k podpisu.");}
 }
-type Evidence={contractId:string;versionId:string;documentVersionId:string;documentId:string;projectId:string;name:string;hash:string;driveId:string;itemId:string;externalVersionId:string;webUrl:string|null;signedAt:string|null};
+type Evidence={contractId:string;versionId:string;documentVersionId:string;documentId:string;projectId:string;name:string;mimeType:string;hash:string;driveId:string;itemId:string;externalVersionId:string;webUrl:string|null;signedAt:string|null};
 type Context=DocumentContext&{contractId:string;versionId:string};
 
 export class ContractDocumentEvidenceService {
@@ -21,7 +21,7 @@ export class ContractDocumentEvidenceService {
   async evidence(input:Context):Promise<Evidence>{
     return this.database.withContext(input,async client=>{
       const e=(await client.query<Evidence>(`SELECT c.id "contractId",cv.id "versionId",cv.document_version_id "documentVersionId",cv.document_id "documentId",c.project_id "projectId",
-        op.original_file_name name,v.content_hash hash,op.graph_drive_id "driveId",op.graph_item_id "itemId",v.external_version_id "externalVersionId",op.graph_web_url "webUrl",cv.signed_at "signedAt"
+        op.original_file_name name,op.mime_type "mimeType",v.content_hash hash,op.graph_drive_id "driveId",op.graph_item_id "itemId",v.external_version_id "externalVersionId",op.graph_web_url "webUrl",cv.signed_at "signedAt"
         FROM contracts c JOIN contract_versions cv ON cv.tenant_id=c.tenant_id AND cv.contract_id=c.id
         JOIN document_versions v ON v.tenant_id=cv.tenant_id AND v.id=cv.document_version_id
         JOIN document_upload_operations op ON op.tenant_id=v.tenant_id AND op.document_version_id=v.id AND op.state='completed'
@@ -47,6 +47,15 @@ export class ContractDocumentEvidenceService {
     const bytes=await this.graph.downloadFile(graphConnection,evidence.itemId,evidence.externalVersionId);
     if(`sha256:${createHash("sha256").update(bytes).digest("hex")}`!==evidence.hash)throw new ContractDocumentError("DOCUMENT_HASH_MISMATCH");
     return {evidence,bytes};
+  }
+
+  async signableFile(input:Context){
+    const result=await this.exactFile(input);
+    // Recheck the exact immutable bytes, including previously uploaded files.
+    // Historical download stays available; only a new signature is gated.
+    if(!result.evidence.signedAt)
+      validateFinalContractFile({fileName:result.evidence.name,mimeType:result.evidence.mimeType,bytes:result.bytes});
+    return result;
   }
 
   async uploadExternal(input:DocumentContext&{contractId:string;idempotencyKey:string;fileName:string;mimeType:string;bytes:Uint8Array}){
@@ -100,7 +109,10 @@ function validateFinalContractFile(input:{fileName:string;mimeType:string;bytes:
   if(extension==='pdf'&&Buffer.from(input.bytes.subarray(0,5)).toString()!=='%PDF-')throw new ContractDocumentError('invalid_file_type');
   if(extension==='docx'&&(input.bytes[0]!==0x50||input.bytes[1]!==0x4b))throw new ContractDocumentError('invalid_file_type');
   if(extension==='docx'){
-    try{if(inspectDocxTemplate(input.bytes).tokens.length)throw new ContractDocumentError('unresolved_document_fields');}
+    let inspection:ReturnType<typeof inspectDocxTemplate>;
+    try{inspection=inspectDocxTemplate(input.bytes);}
     catch{throw new ContractDocumentError('invalid_final_docx');}
+    if(inspection.tokens.length||inspection.malformedTokens.length||inspection.legacyMarkers.length)
+      throw new ContractDocumentError('unresolved_document_fields');
   }
 }

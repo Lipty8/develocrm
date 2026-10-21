@@ -414,7 +414,7 @@ for(const usePostgres of [false,true])test(`price creation and signed document i
       assert.equal((await f.rs.readiness({...f.context,contractId:created.id})).ready,false,'draft legal template remains unavailable for generation');
     });
     await t.test('external upload, exact hash, signature retry, and immutable document',async()=>{
-      const c=await f.start();const uploaded=await f.external(c);const exact=await f.evidence.exactFile({...f.context,contractId:c.contract_id,versionId:uploaded.versionId});assert.deepEqual(exact.bytes,f.fileBytes);
+      const c=await f.start();const uploaded=await f.external(c);const exact=await f.evidence.signableFile({...f.context,contractId:c.contract_id,versionId:uploaded.versionId});assert.deepEqual(exact.bytes,f.fileBytes);assert.equal(exact.evidence.mimeType,'application/pdf');
       c.version_id=uploaded.versionId;await f.approve(c);await f.sign(c);await f.sign(c);
       assert.equal((await f.db.query<{count:number}>("SELECT count(*)::int count FROM audit_log WHERE entity_id=$1 AND action='contract.signed'",[c.contract_id])).rows[0].count,1);
       await assert.rejects(f.db.query("UPDATE contract_versions SET document_version_id=gen_random_uuid() WHERE id=$1",[c.version_id]),/immutable/);
