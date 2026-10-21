@@ -42,6 +42,52 @@
   build, frontend TypeScript and changed-file lint passed. Deployment of 0071
   and a live >8 MiB pipeline smoke test are not yet claimed by this section.
 
+### Deployment and current boundary
+
+- Commit `1e77dad2c54d6ed9f80794de76ee6f1205b2e702` pushed to private GitHub.
+  API build `cg4t` initially failed because the sanitized context omitted the
+  tracked `backend/tsconfig.json`; corrected context build `cg4v` succeeded.
+  No failed image was deployed. Migration build `cg4u` succeeded.
+- Migration execution `caj-develocrm-migrations-pilot-jk8v5n0` succeeded and
+  applied only 0071. Independent read-only execution
+  `caj-develocrm-migrations-pilot-a1yllu3` confirmed 71 migrations, with 0071
+  checksum `765d6fe86b6e0fe13eb837dba5b58d2a441bc311be7abd3740f34c77a4309b64`.
+- Migration image digest:
+  `sha256:b52165132c4b97780f8ac9ffcbc97357bb937b4ef167ea5352951faf2e354b9d`.
+  API digest:
+  `sha256:c6884bb9a24c78ecaa476199f99094b4fd4f204a47ace3c3fa9f3b2d205fe13a`.
+- Active revision `ca-develocrm-api-pilot--pdf-appendices-1e77dad` is
+  Healthy/Running/Provisioned with 100% traffic; `/health` and `/ready` returned
+  200. Sampled new-revision logs contained no startup/5xx/RLS findings.
+  Sites 160 remains compatible and unchanged. Authenticated browser reload of
+  `TECH62-PREPARE-RS` succeeded and retained all legal-readiness gates.
+- Frontend regression tests: 143/143; interaction tests: 115/115; backend
+  suite: 491/491 plus the added HTTP transport test: 1/1. No skipped PostgreSQL
+  tests in the full run. Backend build, frontend typecheck and changed-file lint
+  passed. No frontend production rebuild/deployment was needed for this
+  backend-only follow-up.
+- Two approved source copies exist in the exact configured target library:
+  standards and `Situace projektu, parkingu, sklepy.pdf` (734,142 bytes,
+  SHA-256 `b060a65c3f820b479376b2e1db67e90dcac9a154c680c503bf388843f00766f9`).
+  The latter contains parking/cellar plans for 1NP, 2NP and 1PP, not a verified
+  coordination/site plan. It must not be assigned as one merely from its name.
+- Read-only runtime execution `job-develocrm-hold-expiry-2bcfpqs` logged exact
+  native-version download and matching SHA-256 for both copies, including the
+  10,183,053-byte standards file. It used the existing managed identity and
+  configured site/drive, made no Graph writes and no CRM mutations. This proves
+  the larger physical readback, not a full CRM upload/import smoke test.
+- Automated safety review stopped the proposed CRM ingestion of these exact
+  files pending specific confirmation/classification and clarification of the
+  standards preview warning. No workaround or alternate ingestion was run.
+  Questions were sent to Adam; copies remain unlinked and unregistered in CRM.
+  No legal template, contract or pilot financial data were changed.
+- The downloaded catalogue archive contains 19 main unit PDFs plus a separate
+  519 sauna variant. They have been inventoried and hashed locally, not copied
+  or autoassigned. Text extraction joins floor/unit labels (e.g. `4+kk4417`),
+  so a naive numeric regex does not establish unit identity. Visual verification
+  is still required. No matching decision was made from filenames alone.
+
+
 
 ## Scope and current state
 
