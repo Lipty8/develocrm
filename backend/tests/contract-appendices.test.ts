@@ -121,6 +121,34 @@ for(const native of [false,true])test(`exact appendix version binding (${native?
       await assert.rejects(f.client.query('DELETE FROM contract_documents WHERE contract_version_id=$1 AND appendix_number=1',[version]),/COMMAND_REQUIRED|IMMUTABLE/);
       await assert.rejects(f.client.query('UPDATE documents SET archived_at=now() WHERE id=$1',[a.document_id]),/SIGNED_DOCUMENT_IMMUTABLE/);
     });
+    await t.test('a shared signed file can be replaced or removed only from an unrelated editable draft',async()=>{
+      const unit=(await f.client.query<{id:string}>("SELECT id FROM units WHERE tenant_id=$1 AND project_id=$2 AND commercial_status='available' AND id<>$3 ORDER BY code LIMIT 1",[f.ids.tenantId,f.unit.project_id,f.unit.id])).rows[0];
+      assert.ok(unit);
+      const next=await f.context(async c=>{
+        const hold=(await c.query<{sales_case_id:string}>("SELECT * FROM app.create_party_and_unit_hold($1,$2,'pre_reservation',now()+interval '48 hours',$3,$4,'Shared appendix draft test','individual',NULL,'Technical','Draft',NULL,NULL,$5,NULL)",[f.ids.tenantId,unit.id,f.ids.membershipId,randomUUID(),`${randomUUID()}@example.test`])).rows[0];
+        return(await c.query<{contract_id:string;version_id:string}>("SELECT * FROM app.create_contract_with_payment($1,$2,'rs',$3,'Shared appendix draft',$4,NULL,$5,'fixed',250000,now()+interval '7 days')",[f.ids.tenantId,hold.sales_case_id,`DRAFT-${randomUUID()}`,f.ids.membershipId,randomUUID()])).rows[0];
+      });
+      const select=(doc:typeof a|null,expected:string|null)=>f.context(c=>c.query('SELECT app.set_contract_appendix($1,$2,$3,1,$4,$5,$6,$7)',[f.ids.tenantId,next.contract_id,next.version_id,doc?.document_id??null,doc?.document_version_id??null,f.ids.membershipId,expected]));
+      await select(a,null);
+      await assert.rejects(f.context(c=>c.query('DELETE FROM contract_documents WHERE tenant_id=$1 AND contract_version_id=$2 AND appendix_number=1',[f.ids.tenantId,next.version_id])),{code:'42501'});
+      await assert.rejects(f.client.query('DELETE FROM contract_documents WHERE tenant_id=$1 AND contract_version_id=$2 AND appendix_number=1',[f.ids.tenantId,next.version_id]),/COMMAND_REQUIRED/);
+      const oldMigration=await readFile(new URL('../migrations/0057_price_and_signed_document_integrity.sql',import.meta.url),'utf8');
+      const oldGuard=oldMigration.match(/CREATE OR REPLACE FUNCTION app\.guard_signed_document_link\(\)[\s\S]*?END \$\$;/)?.[0];
+      assert.ok(oldGuard);await f.client.query(oldGuard);
+      await assert.rejects(select(null,a.document_version_id),/SIGNED_DOCUMENT_IMMUTABLE/,'reproduces the pilot removal failure before 0070');
+      await f.client.query(await readFile(new URL('../migrations/0070_shared_appendix_draft_link.sql',import.meta.url),'utf8'));
+      await select(b,a.document_version_id);
+      await select(a,b.document_version_id);
+      if(native)await Promise.all(Array.from({length:4},()=>select(null,a.document_version_id)));
+      else await select(null,a.document_version_id);
+      await select(null,null);
+      assert.equal((await f.client.query<{n:number}>('SELECT count(*)::int n FROM contract_documents WHERE tenant_id=$1 AND contract_version_id=$2 AND appendix_number IS NOT NULL',[f.ids.tenantId,next.version_id])).rows[0].n,0);
+      assert.equal((await f.client.query<{n:number}>("SELECT count(*)::int n FROM audit_log WHERE entity_id=$1 AND action='contract.appendix_updated'",[next.version_id])).rows[0].n,4);
+      assert.equal((await f.client.query<{n:number}>("SELECT count(*)::int n FROM outbox_events WHERE payload->>'contractVersionId'=$1::text AND event_type='contract.appendix_updated.v1'",[next.version_id])).rows[0].n,4);
+      assert.equal((await f.client.query<{n:number}>('SELECT count(*)::int n FROM contract_documents WHERE tenant_id=$1 AND contract_version_id=$2 AND appendix_number=1 AND document_version_id=$3',[f.ids.tenantId,f.contract.version_id,a.document_version_id])).rows[0].n,1);
+      await assert.rejects(f.set(1,null,undefined,undefined,undefined,undefined,a.document_version_id),/CONTRACT_APPENDIX_CONTRACT_NOT_EDITABLE/);
+      await assert.rejects(f.client.query('UPDATE documents SET archived_at=now() WHERE id=$1',[a.document_id]),/SIGNED_DOCUMENT_IMMUTABLE/);
+    });
   }finally{await f.close();}
 });
 

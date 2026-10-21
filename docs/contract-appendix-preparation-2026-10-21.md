@@ -1,15 +1,17 @@
-# RS/SBK appendix preparation — implementation in progress
+# RS/SBK appendix preparation — technical package deployed, legal activation pending
 
 ## Scope and current state
 
 This package prepares explicit selection of exact appendix versions inside the
 existing contract preparation panel. It does **not** activate either original
-legal template and is **not yet deployed**. Migrations 0068/0069 have only been executed
-in disposable local databases. No historical or pilot business data were changed.
+legal template. The technical package is deployed as backend `appendices-67f169c`
+and private Sites 160. Migrations 0068/0069 are applied in the pilot. Only a clearly
+technical contract's appendix association is exercised by the browser smoke test;
+real/historical pilot business data are not changed.
 
 Generation/signature bundle validation is implemented and verified in the
-follow-up section below. Published browser E2E and a live exact SharePoint file
-check remain required. Do not remove `original_profile_review` or
+follow-up section below. Full original-profile generation/signature browser E2E
+and live exact SharePoint appendix-byte verification remain required. Do not remove `original_profile_review` or
 `generationSupported:false` before full original-profile business validation,
 content approval and authenticated browser E2E have passed.
 
@@ -67,8 +69,9 @@ safe Czech errors. It does not upload files through another mechanism.
 - Frontend TypeScript, backend TypeScript build and changed-file lint passed.
 - Vinext production build passed; existing large-chunk warning remains.
 
-These results do not prove live Graph appendix-byte verification or published
-browser E2E. Those checks remain required before deployment/activation.
+These initial results did not prove live Graph appendix-byte verification or
+published browser E2E. The deployment and limited browser checks are recorded below;
+full original-profile evidence verification remains required before activation.
 
 ## Source discovery
 
@@ -80,7 +83,7 @@ The default Documents library root was empty. Access to the previously reference
 uploaded folder URL; do not copy arbitrary similarly named files from elsewhere
 or expand Graph permissions to compensate.
 
-## Follow-up work after e2764ee — tested locally, not yet deployed
+## Follow-up work after e2764ee
 
 Migration 0069 and the generation/evidence services now prepare a frozen appendix
 snapshot on the existing `document_generation_operations` record. The snapshot
@@ -111,4 +114,83 @@ of the review-only profile is still explicitly rejected in this fixture.
 Frontend TypeScript, backend production compilation and changed-file lint passed.
 One redundant assertion in a concurrency test had narrowed an error branch to
 `never`; removing it did not change the test's failure behavior.
-No pilot migrations, publication or business-data changes have been performed.
+## Pilot deployment — 2026-10-21
+
+- Implementation commits: `e2764ee`, `38f5f06`; final deployable commit
+  `67f169cd5fe1b391a94352bb36a1c3cc7a4d971c`, pushed to private GitHub.
+- API ACR build `cg4p` succeeded. Immutable image digest:
+  `sha256:cd1a5e934c64cc32b3f67ca95ace930417a334f94ff9f94e6513e844bbf60be3`.
+- Migration ACR build `cg4q` succeeded. Immutable image digest:
+  `sha256:678f97188bb24ec9eb10211441a145a9077b02a5bb3fd6b5e6a5fd912b4efae4`.
+- Existing migration job, existing managed identity and Key Vault-backed admin
+  secret reference retained. Execution `caj-develocrm-migrations-pilot-cr29twh`
+  succeeded and applied only 0068/0069. Independent read-only execution
+  `caj-develocrm-migrations-pilot-0fz9kxm` confirmed 69 migrations and exact hashes:
+  - 0068: `1675f5627cc09bc68a92c99a889d3d8082d09d11c54f3008c7000d5483b00bb3`
+  - 0069: `0444d1d3058d99d944e507b1ddafd645b92d480f93206121cab7b197d19549d8`
+- Active revision `ca-develocrm-api-pilot--appendices-67f169c`: Healthy, Running,
+  one replica, 100% latest-revision traffic; liveness/readiness probes enabled.
+  `/health` and `/ready` returned 200.
+- Private Sites 160 publication succeeded, deployment
+  `appgdep_6ad8c214e3f081919c05e20022647a1d`, Sites commit
+  `7ff19abb286c773bd2a0da2b14179ecc87dc0d28`. All 539 source files matched GitHub;
+  both Git trees were `2dda3575c65645bdfa1856c6e98486451264be95`.
+  Site access remains private/custom; no sharing changes.
+- Last production frontend build succeeded through the official Sites helper.
+  Existing large-chunk warnings remain. Packaging-only follow-up reused unchanged
+  frontend inputs and reverified the final matching source tree.
+- Frontend interaction tests 115/115, static frontend tests 143/143; full backend
+  484/484 with every optional native PostgreSQL suite enabled, plus the separate
+  new migration-image packaging regression 1/1. Typechecks/build/lint passed.
+- Post-cutover log sample: 252 entries, zero completed-request 5xx, zero fatal
+  startup/module failures and zero matched DB/RLS errors. This is a bounded sample,
+  not a claim that future errors cannot occur.
+
+### Packaging incident and recovery
+
+The first cleaned build context for 38f5f06 omitted `backend/scripts/migrate.ts`.
+ACR built the image but migration execution `caj-develocrm-migrations-pilot-5mx0kun`
+failed before connecting to PostgreSQL with a missing entrypoint. A read-only check
+confirmed the schema stayed at 67; neither API nor frontend was switched to it.
+Commit 67f169c adds a Dockerfile fail-fast existence check and a packaging regression
+test. The corrected context includes the committed launcher, excludes secrets and
+attachments, and produced the successful matching images above.
+
+### Authenticated browser verification and limits
+
+Microsoft sign-in returned the expected Adam Liptak administrator session.
+Projects, the TECH62 project, contract list and preparation readiness loaded with
+HTTP 200. The technical `TECH62-PREPARE-RS` renders all six required appendix slots
+and explicit missing-version messages, while original-template generation remains
+blocked. Selecting the existing technical `TECH62-DRAFT-RS` file and its exact
+`externi finalni dokument` version saved slot 1 with HTTP 200 (`req-4j`) and refreshed
+the panel/readiness without a full application reload. This file is a disposable
+smoke fixture, **not** a real catalogue or approved legal appendix.
+The selected document/version remained visible after a full browser reload.
+The first removal attempt returned 409 (`req-5z`): the pre-existing global
+`guard_signed_document_link` rejected removal because this same technical file is
+signed evidence in another contract. It wrongly protected an unrelated editable
+draft association as if it were the original signed association. No data were
+lost. Migration 0070 scopes only this exception to an explicit appendix command
+on a working version without final document, signature or generation reservation;
+signed/final associations, file identity/bytes and other link tables remain
+protected. Regression tests cover replacement, removal, idempotent/concurrent
+removal, preserved signed association and denied direct deletion/archive.
+Deployment and repeat browser verification of 0070 are pending.
+Source-content classification/approval is not inferred from this technical link test.
+
+The 0070 regression explicitly restores the old guard in each disposable fixture,
+reproduces `SIGNED_DOCUMENT_IMMUTABLE`, reapplies 0070, then proves replacement and
+removal while preserving the other signed association. Four parallel native
+removals yield one mutation/audit/outbox outcome. Direct runtime DELETE still
+fails with PostgreSQL 42501; direct owner DELETE without the domain command also
+fails. After the fix, full backend regression passed **487/487, zero skipped**
+(62.5 seconds). Targeted appendix/evidence tests passed 17/17. Backend production
+compilation, frontend typecheck and changed-test lint also passed. No frontend or
+API runtime source changed in this follow-up; the existing healthy API/Sites
+versions remain compatible with this narrowly scoped database correction.
+
+No template approval/activation, real contract signature, financial operation or
+real project/deal mutation was performed. The full real-original pipeline remains
+unverified until the actual approved appendix folder is identified and content
+review/variant data gates are satisfied.
