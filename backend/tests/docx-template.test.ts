@@ -41,6 +41,17 @@ test('mailbox rendering is opt-in; default renderer still leaves relationships u
   assert.deepEqual(result, renderDocxTemplate(source, mailbox, mailOptions).bytes);
 });
 
+test('identical snapshot and source yield identical DOCX bytes across retry clocks', context => {
+  const source = linkedDocx();
+  context.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-21T00:00:00Z') });
+  const first = renderDocxTemplate(source, mailbox, mailOptions).bytes;
+  context.mock.timers.tick(27 * 60 * 60 * 1000);
+  const retried = renderDocxTemplate(source, mailbox, mailOptions).bytes;
+  assert.deepEqual(retried, first);
+  assert.equal(text(retried, relsPath), text(first, relsPath));
+  assert.notDeepEqual(renderDocxTemplate(source, { 'seller.email': 'changed@example.test' }, mailOptions).bytes, first);
+});
+
 test('Word complex and simple email fields update only the instruction target and display text', () => {
   for (const body of [emailField(), '<w:fldSimple w:instr="HYPERLINK &quot;mailto:old@example.test&quot;"><w:r><w:t>{{seller.email}}</w:t></w:r></w:fldSimple>']) {
     const source = docx(`<w:p>${body}</w:p><w:p><w:r><w:instrText>PAGE</w:instrText></w:r><w:r><w:t>1</w:t></w:r></w:p>`);

@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import {strToU8,zipSync} from 'fflate';
+import {renderDocxTemplate} from '../src/documents/docx-template.js';
 import type { GraphFileMetadata, MicrosoftGraphAdapter } from "../src/documents/graph-adapter.js";
 import { MicrosoftGraphRequestError } from "../src/documents/graph-adapter.js";
 import type { DocumentUploadReservation } from "../src/documents/repository.js";
@@ -21,7 +23,7 @@ function reservation(overrides:Partial<DocumentUploadReservation>={}):DocumentUp
 function harness(options:{finalizeFailureOnce?:boolean;uploadFailure?:unknown;version?:boolean}={}){
   let current=reservation(options.version?{operationType:"version",documentId:"71000000-0000-4000-8000-000000000001",documentVersionId:"81000000-0000-4000-8000-000000000001",
     baselineEtag:"old",currentItemId:"item-existing",currentItemName:"contract.txt",metadata:{existingDocumentId:"71000000-0000-4000-8000-000000000001"}}:{});
-  let uploadCalls=0,finalizeCalls=0;const items=new Map<string,GraphFileMetadata>();
+  let uploadCalls=0,finalizeCalls=0,storedRequestHash:string|undefined;const items=new Map<string,GraphFileMetadata>();
   if(options.version)items.set("item-existing",file("item-existing","contract.txt","parent","old"));
   const graph:MicrosoftGraphAdapter={
     getSite:async()=>null,listSiteDrives:async()=>[],delta:async()=>({items:[],deletedItemIds:[],nextCursor:null}),
@@ -34,7 +36,10 @@ function harness(options:{finalizeFailureOnce?:boolean;uploadFailure?:unknown;ve
     getVersions:async()=>[{id:"2.0",label:"2.0",size:4,etag:"etag",createdAt:null}],
   };
   const repository={
-    reserveUpload:async()=>current,getConnectionForUpload:async()=>({id:"connection",name:"Pilot",entraTenantId:"entra",siteId:"site",driveId:"drive",
+    reserveUpload:async(input:{requestHash:string})=>{
+      if(storedRequestHash&&storedRequestHash!==input.requestHash)throw new Error('idempotency_conflict');
+      storedRequestHash=input.requestHash;current={...current,requestHash:input.requestHash};return current;
+    },getConnectionForUpload:async()=>({id:"connection",name:"Pilot",entraTenantId:"entra",siteId:"site",driveId:"drive",
       authenticationMode:"managed_identity",credentialReference:`managed-identity://${clientId}`}),
     getUploadReservation:async()=>current,
     prepareUploadTarget:async(input:{targetPath:string[];sharePointFileName:string})=>{current={...current,targetPath:input.targetPath,sharePointFileName:input.sharePointFileName};return{id:current.id};},
@@ -59,6 +64,19 @@ test("nejistý Graph timeout se bezpečně retryne bez duplicitního souboru",as
 
 test("DB failure po Graph uploadu se při retry pouze finalizuje",async()=>{
   const h=harness({finalizeFailureOnce:true});await assert.rejects(h.service.upload(input()),/simulated db failure/);await h.service.upload(input());assert.equal(h.uploadCalls,1);
+});
+
+test('render retry after DB failure keeps upload fingerprint across different days',async t=>{
+  const source=zipSync({'[Content_Types].xml':strToU8('<Types/>'),
+    'word/document.xml':strToU8('<w:document><w:body><w:p><w:r><w:t>{{project.name}}</w:t></w:r></w:p></w:body></w:document>')});
+  t.mock.timers.enable({apis:['Date'],now:new Date('2026-10-21T00:00:00Z')});
+  const h=harness({finalizeFailureOnce:true});
+  const makeInput=()=>input({bytes:renderDocxTemplate(source,{'project.name':'TECH RETRY'}).bytes,
+    fileName:'technical.docx',mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+  await assert.rejects(h.service.upload(makeInput()),/simulated db failure/);
+  t.mock.timers.tick(27*60*60*1000);
+  const result=await h.service.upload(makeInput());
+  assert.equal(result.replayed,true);assert.equal(h.uploadCalls,1);assert.equal(h.current.state,'completed');
 });
 
 test("nová business verze přepisuje stejný SharePoint item a vytvoří CRM verzi",async()=>{

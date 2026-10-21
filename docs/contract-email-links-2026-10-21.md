@@ -61,3 +61,39 @@ different renderer; completed operations still return their existing version.
 
 This package is not legal approval and does not establish live legal contract
 generation/signature E2E. No real pilot business data has been changed.
+
+## Additional retry defect discovered in live verification
+
+The authenticated SBK preview before deployment showed the stale target. After
+deploying `8fd4aa7`, the same source generated the correct target and every other
+package part was unchanged. RS preview also showed the correct matching link.
+After reload, all source metadata/hash/status remained unchanged and profiles
+were still unapproved. However, a byte-for-byte repeat check failed: all 34 ZIP
+parts had identical content, but their package timestamps changed from 01:45:50
+to 01:48:06. This is not a legal text difference.
+
+The existing upload fingerprint includes exact rendered file size/content hash.
+Thus rendering an identical reserved generation later could cause an idempotency
+conflict, including after a successful Graph write followed by failed DB finalize.
+This consequence is reproduced in the service regression, not claimed as an
+observed failure of an actual pilot contract.
+
+The renderer now sets the ZIP-entry DOS timestamp to fixed local calendar
+components 1 January 2000 00:00:00 (independent of runtime timezone). Contract
+dates, generation timestamps/snapshots and source package part contents are not
+changed. Completed operations continue returning the recorded document version.
+No existing operation fingerprint is rewritten or bypassed. Older unfinished
+operations may still require explicit recovery; they must not be retried with
+weakened fingerprint checks.
+
+Tests advance the mocked render clock by 27 hours, require identical output
+bytes, then exercise the real upload service with an enforced stable request
+hash and a one-time DB-finalize failure. The retry finalizes once without a
+second Graph upload. This strengthens the previous test harness, which did not
+check the request fingerprint at all.
+
+Final retry-fix verification: full backend suite 409 passed, 0 failed, 4 optional
+native PostgreSQL suites skipped (413 total). Focused renderer/generation/real
+upload-service tests 34 passed, 0 skipped. Backend production build and lint
+passed. The prior frontend interaction/static/typecheck/build results still
+apply: this follow-up changes only ZIP package timestamps and backend tests.

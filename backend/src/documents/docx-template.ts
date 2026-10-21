@@ -150,7 +150,11 @@ export function renderDocxTemplate(
     archive[name] = strToU8(replaceTokensInXml(linked, values));
   }
 
-  const rendered = zipSync(archive, { level: 6 });
+  // ZIP entry timestamps must not depend on the retry clock. The upload
+  // idempotency fingerprint includes the content hash of these exact bytes.
+  // Local calendar components intentionally yield the same DOS timestamp in
+  // every runtime timezone; this is package metadata, not a contract date.
+  const rendered = zipSync(archive, { level: 6, mtime: new Date(2000, 0, 1, 0, 0, 0) });
   const unresolved = inspectDocxTemplate(rendered).tokens;
   if (unresolved.length > 0) {
     throw new DocxTemplateError(
