@@ -66,29 +66,89 @@ test("production Graph adapter uses only the configured site and drive for read 
   }finally{globalThis.fetch=originalFetch;}
 });
 
-test("historical driveItem version download uses the isolated Graph beta content endpoint",async()=>{
+test("historical driveItem version download uses the stable Graph content endpoint",async()=>{
   const requests:string[]=[];const originalFetch=globalThis.fetch;
   globalThis.fetch=(async(input:URL|RequestInfo)=>{requests.push(String(input));return new Response(new Uint8Array([1,2,3]),{status:200});}) as typeof fetch;
   try{
     const adapter=new EntraMicrosoftGraphAdapter({getAccessToken:async()=>"token"});
     assert.deepEqual(await adapter.downloadFile({siteId:"site",driveId:"drive"},"item","1.0"),new Uint8Array([1,2,3]));
-    assert.equal(requests[0],"https://graph.microsoft.com/beta/drives/drive/items/item/versions/1.0/content");
+    assert.equal(requests[0],"https://graph.microsoft.com/v1.0/drives/drive/items/item/versions/1.0/content");
   }finally{globalThis.fetch=originalFetch;}
 });
 
 test("current driveItem version falls back from Graph 400 to current content",async()=>{
   const requests:string[]=[];const originalFetch=globalThis.fetch;
-  globalThis.fetch=(async(input:URL|RequestInfo)=>{const url=String(input);requests.push(url);return url.includes("/beta/")
+  globalThis.fetch=(async(input:URL|RequestInfo,init?:RequestInit)=>{const url=String(input);requests.push(url);
+    assert.equal(new Headers(init?.headers).get('accept'),url.endsWith('/versions')?'application/json':'*/*');
+    if(url.endsWith('/versions'))return new Response(JSON.stringify({value:[{id:'1.0'}]}));
+    return url.endsWith('/versions/1.0/content')
     ?new Response(JSON.stringify({error:{code:"badRequest"}}),{status:400,headers:{"content-type":"application/json"}})
     :new Response(new Uint8Array([4,5,6]),{status:200});}) as typeof fetch;
   try{
     const adapter=new EntraMicrosoftGraphAdapter({getAccessToken:async()=>"token"});
     assert.deepEqual(await adapter.downloadFile({siteId:"site",driveId:"drive"},"item","1.0"),new Uint8Array([4,5,6]));
     assert.deepEqual(requests,[
-      "https://graph.microsoft.com/beta/drives/drive/items/item/versions/1.0/content",
+      "https://graph.microsoft.com/v1.0/drives/drive/items/item/versions/1.0/content",
+      "https://graph.microsoft.com/v1.0/drives/drive/items/item/versions",
       "https://graph.microsoft.com/v1.0/drives/drive/items/item/content",
     ]);
   }finally{globalThis.fetch=originalFetch;}
+});
+
+test('binary content negotiation does not request JSON from SharePoint version downloads',async()=>{
+ const originalFetch=globalThis.fetch;
+ globalThis.fetch=async(_input:URL|RequestInfo,init?:RequestInit)=>new Headers(init?.headers).get('accept')==='*/*'
+   ?new Response(new Uint8Array([1,2,3]))
+   :new Response(JSON.stringify({error:{code:'notAcceptable'}}),{status:406});
+ try{
+  const adapter=new EntraMicrosoftGraphAdapter({getAccessToken:async()=> 'token'});
+  assert.deepEqual(await adapter.downloadFile({siteId:'site',driveId:'drive'},'item','1.0'),new Uint8Array([1,2,3]));
+  assert.deepEqual(await adapter.downloadFile({siteId:'site',driveId:'drive'},'item'),new Uint8Array([1,2,3]));
+ }finally{globalThis.fetch=originalFetch;}
+});
+
+test('version-list permission failures cannot fall back to current content',async()=>{
+ const originalFetch=globalThis.fetch,requests:string[]=[];
+ globalThis.fetch=async(input:URL|RequestInfo)=>{
+  const url=String(input);requests.push(url);
+  return url.endsWith('/versions')?new Response('{}',{status:403}):new Response('{}',{status:400});
+ };
+ try{
+  const adapter=new EntraMicrosoftGraphAdapter({getAccessToken:async()=> 'token'});
+  await assert.rejects(adapter.downloadFile({siteId:'site',driveId:'drive'},'item','1.0'),e=>e instanceof MicrosoftGraphRequestError&&e.status===403);
+  assert.equal(requests.filter(url=>url.endsWith('/items/item/content')).length,0);
+ }finally{globalThis.fetch=originalFetch;}
+});
+
+test('a rejected historical or unknown version never silently becomes current content',async()=>{
+ const originalFetch=globalThis.fetch;
+ try{
+  for(const listed of [[{id:'2.0'},{id:'1.0'}],[]]){
+   const requests:string[]=[];
+   globalThis.fetch=async(input:URL|RequestInfo)=>{
+    const url=String(input);requests.push(url);
+    if(url.includes('/versions/1.0/content'))return new Response('{}',{status:400});
+    if(url.endsWith('/versions'))return new Response(JSON.stringify({value:listed}));
+    return new Response(new Uint8Array([9,9,9]));
+   };
+   const adapter=new EntraMicrosoftGraphAdapter({getAccessToken:async()=> 'token'});
+   await assert.rejects(adapter.downloadFile({siteId:'site',driveId:'drive'},'item','1.0'),e=>e instanceof MicrosoftGraphRequestError&&e.status===400);
+   assert.equal(requests.filter(url=>url.endsWith('/items/item/content')).length,0);
+  }
+ }finally{globalThis.fetch=originalFetch;}
+});
+
+test('historical download 403, 404 and 406 are preserved without latest-file substitution',async()=>{
+ const originalFetch=globalThis.fetch;
+ try{
+  for(const status of [403,404,406]){
+   let requests=0;
+   globalThis.fetch=async()=>{requests++;return new Response('{}',{status,headers:{'request-id':'safe-correlation'}});};
+   const adapter=new EntraMicrosoftGraphAdapter({getAccessToken:async()=> 'token'});
+   await assert.rejects(adapter.downloadFile({siteId:'site',driveId:'drive'},'item','1.0'),e=>e instanceof MicrosoftGraphRequestError&&e.status===status&&e.requestId==='safe-correlation');
+   assert.equal(requests,1);
+  }
+ }finally{globalThis.fetch=originalFetch;}
 });
 
 test('Graph content streams accept large appendices and cancel oversized responses',async()=>{

@@ -119,17 +119,19 @@ export class EntraMicrosoftGraphAdapter implements MicrosoftGraphAdapter {
 
   async downloadFile(connection: GraphConnection, itemId: string, versionId?: string): Promise<Uint8Array> {
     const suffix=versionId?`/versions/${encodeURIComponent(versionId)}/content`:"/content";
-    // Listing driveItem versions is available in Graph v1.0, while downloading
-    // one exact historical version is currently exposed only by Graph beta.
-    // Keep beta isolated to this read-only call; current-file reads stay on v1.0.
-    const absolute=versionId
-      ?`${this.graphBaseUrl.replace(/\/v1\.0\/?$/, "/beta")}/drives/${encodeURIComponent(connection.driveId)}/items/${encodeURIComponent(itemId)}${suffix}`
-      :undefined;
-    let response=await this.raw(absolute??`/drives/${encodeURIComponent(connection.driveId)}/items/${encodeURIComponent(itemId)}${suffix}`,undefined,Boolean(absolute));
-    // Graph returns 400 when the requested version is still the current one;
-    // its contract requires /content for that case. The caller verifies the
-    // downloaded bytes against the immutable CRM SHA-256 before using them.
-    if(versionId&&response.status===400)response=await this.raw(`/drives/${encodeURIComponent(connection.driveId)}/items/${encodeURIComponent(itemId)}/content`);
+    // Both current and historical downloads return binary content. Requesting
+    // application/json causes SharePoint 406 for retained historical versions.
+    const binaryHeaders={accept:'*/*'};
+    let response=await this.raw(`/drives/${encodeURIComponent(connection.driveId)}/items/${encodeURIComponent(itemId)}${suffix}`,{headers:binaryHeaders});
+    // Current versions require /content, but not every 400 means "current".
+    // Graph lists versions newest first. Only that exact ID may use this
+    // fallback; rejected historical/unknown versions must fail closed. Callers
+    // still verify the returned bytes against the pinned immutable SHA-256.
+    if(versionId&&response.status===400){
+      await response.body?.cancel();
+      const current=(await this.getVersions(connection,itemId))[0];
+      if(current?.id===versionId)response=await this.raw(`/drives/${encodeURIComponent(connection.driveId)}/items/${encodeURIComponent(itemId)}/content`,{headers:binaryHeaders});
+    }
     if(!response.ok)throw graphRequestError(response);
     return readBoundedDocument(response);
   }
