@@ -25,6 +25,19 @@ test('retry po síťové chybě zachová stejný klíč a nevytváří nový po�
   fireEvent.click(screen.getByRole('button',{name:'Vygenerovat RS'}));await waitFor(()=>assert.equal(changes,1));
   assert.equal(keys.length,2);assert.equal(keys[0],keys[1]);
 });
+
+test('server refusal refreshes readiness and removes stale generation CTA',async()=>{
+  let checks=0,generations=0;
+  mock.method(commercialRepository,'getRsReadiness',async()=>++checks===1?ready():({...ready(),ready:false,
+    issues:[{code:'buyer_address',field:'buyer.address',message:'Kupující nemá adresu.',action:{href:'/clients/b',label:'Otevřít kupujícího'}}]}));
+  mock.method(commercialRepository,'generateContract',async()=>{generations++;throw new Error('Doplňte povinné údaje.');});
+  render(<RsGenerationPanel contractId={contractId} canGenerate onChanged={()=>assert.fail('no successful generation')}/>);
+  fireEvent.click(await screen.findByRole('button',{name:'Vygenerovat RS'}));
+  await screen.findByText('Kupující nemá adresu.');
+  assert.equal(screen.queryByRole('button',{name:'Vygenerovat RS'}),null);
+  assert.equal(screen.getByRole('link',{name:'Otevřít kupujícího'}).getAttribute('href'),'/clients/b');
+  assert.equal(generations,1);assert.equal(checks,2);assert.ok(screen.getByRole('alert').textContent?.includes('Doplňte povinné údaje.'));
+});
 test('návrat do tabu obnoví CRM data, konfigurace bez manage nenabízí generování',async()=>{
   let count=0;mock.method(commercialRepository,'getRsReadiness',async()=>{const result=ready();result.summary!.buyers[0].label=++count===1?'Původní kupující':'Opravený kupující';return result;});
   render(<RsGenerationPanel contractId={contractId} canGenerate={false} onChanged={()=>{}}/>);await screen.findByText('Původní kupující');

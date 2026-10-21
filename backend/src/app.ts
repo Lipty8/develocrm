@@ -31,7 +31,7 @@ import { PaymentService } from "./payments/service.js";
 import { ClientChangeRepository } from "./client-changes/repository.js";
 import { ComplaintRepository } from "./complaints/repository.js";
 import { MediaAccessError, MediaRepository, type MediaEntityType, type MediaKind } from "./media/repository.js";
-import { mapApiError } from "./http/api-error.js";
+import { mapApiError, withPublicValidationIssues } from "./http/api-error.js";
 import {ConsistencyChecker} from './diagnostics/consistency-checker.js';
 import {PartyAddressValidationError} from './shared/party-address.js';
 
@@ -708,7 +708,8 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
       return reply.code(generation.replayed?200:201).send({generation});
     }catch(error){const rsError=error instanceof RsGenerationError?error:null;request.log.warn({event:"contract.generation_failed",correlationId:request.id,contractId:request.params.contractId,errorName:error instanceof Error?error.name:"Error",errorCode:rsError?.code},"contract generation failed");
       const status=permissionError(error)?403:rsError?.code==="contract_not_found"?404:rsError?.code==="not_ready"?422:409;
-      return reply.code(status).send({error:status===403?"Nemáte oprávnění vytvořit smlouvu.":status===404?"Smlouva nebyla nalezena.":status===422?"Doplňte povinné údaje před vytvořením smlouvy.":"Smlouvu se nepodařilo vytvořit.",issues:rsError?.issues??[],correlationId:request.id});}
+      const payload=mapApiError({error:status===403?"Nemáte oprávnění vytvořit smlouvu.":status===404?"Smlouva nebyla nalezena.":status===422?"Doplňte povinné údaje před vytvořením smlouvy.":"Smlouvu se nepodařilo vytvořit."},status,request.id);
+      return reply.code(status).send(status===422&&rsError?.code==='not_ready'?withPublicValidationIssues(payload,rsError.issues):payload);}
   });
   app.post<{Body:{projectId:string;typeCode:string;name:string;mimeType?:string;status?:string;note?:string;storageProvider?:"external"}}>("/v1/documents",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await documentRepository.createRecord({...context,...request.body}));}

@@ -51,7 +51,7 @@ export class RsGenerationService{
     }
     const source=await this.repository.load({...input,permission:"contract.manage"});if(!source)throw new RsGenerationError("contract_not_found");
     if(input.expectedContractType&&(source.contractType??'rs')!==input.expectedContractType)throw new RsGenerationError('contract_type_mismatch');
-    const issues=validate(source);if(issues.length)throw new RsGenerationError("not_ready",issues);
+    const issues=validate(source).map(item=>({...item,action:issueAction(item,source)}));if(issues.length)throw new RsGenerationError("not_ready",issues);
     const snapshot=buildSnapshot(source);const generated=await this.generator.generate({...input,projectId:source.projectId,templateVersionId:source.templateVersionId!,idempotencyKey:input.idempotencyKey,
       unitId:source.unitId,partyId:source.buyers[0].id,salesCaseId:source.salesCaseId,contractId:source.contractId,documentId:source.documentMimeType==='application/pdf'?undefined:source.documentId??undefined,documentName:`${source.contractType==='sbk'?'Smlouva o budoucí kupní smlouvě':'Rezervační smlouva'} ${source.reference}`,snapshot});
     if(!generated.documentId||!generated.documentVersionId)throw new RsGenerationError("generation_incomplete");

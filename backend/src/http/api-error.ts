@@ -1,9 +1,31 @@
+import type {RsReadinessIssue} from '../shared/rs-readiness.js';
+
 export type PublicApiError = {
   code: string;
   message: string;
   correlationId: string;
   error: string;
+  issues?: RsReadinessIssue[];
 };
+
+// Only explicitly constructed server validation envelopes may carry these
+// fields through the global serializer. JSON/request/diagnostic objects cannot
+// opt themselves in by supplying a similarly named property.
+const publicValidationIssues = new WeakMap<object, RsReadinessIssue[]>();
+export function withPublicValidationIssues(payload: PublicApiError, issues: readonly RsReadinessIssue[]): PublicApiError {
+  const safe = issues.slice(0, 100).map(item => ({
+    code: /^[a-z][a-z0-9_]{0,63}$/.test(item.code) ? item.code : 'invalid_contract_value',
+    field: /^[a-zA-Z0-9_.:-]{1,180}$/.test(item.field) ? item.field : 'contract',
+    message: item.message.length <= 500 && !containsTechnicalDetail(item.message)
+      ? item.message : 'Zkontrolujte údaj pro připravovanou smlouvu.',
+    ...(item.action && /^\/(?:clients|units|projects|contracts)(?:\/|\?)[^\r\n]*$/.test(item.action.href)
+      && item.action.label.length <= 100 && !containsTechnicalDetail(item.action.label)
+      ? {action: {href: item.action.href, label: item.action.label}} : {}),
+  }));
+  const result = {...payload, issues: safe};
+  publicValidationIssues.set(result, safe);
+  return result;
+}
 
 const TECHNICAL_PATTERN = /(?:SQLSTATE|syntax error|relation ["']|constraint ["']|duplicate key|violates .* constraint|could not determine data type|parameter \$\d+|SELECT\s|INSERT\s|UPDATE\s|DELETE\s|ECONN|ENOTFOUND|stack|postgres|pg_catalog)/i;
 
@@ -59,7 +81,9 @@ export function mapApiError(input: unknown, statusCode: number, correlationId: s
     code = "NOT_FOUND";
     message = "Požadovaný záznam nebyl nalezen.";
   }
-  return { code, message, error: message, correlationId };
+  const result = { code, message, error: message, correlationId };
+  const issues = input && typeof input === 'object' ? publicValidationIssues.get(input) : undefined;
+  return statusCode === 422 && issues ? withPublicValidationIssues(result, issues) : result;
 }
 
 export function containsTechnicalDetail(input: unknown): boolean {

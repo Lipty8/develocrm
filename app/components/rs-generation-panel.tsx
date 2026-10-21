@@ -49,7 +49,12 @@ export function RsGenerationPanel({contractId,contractType='rs',canGenerate,onCh
     if(working||checking||!readiness?.ready)return;
     setWorking(true);setError('');generationKey.current??=crypto.randomUUID();
     try{await commercialRepository.generateContract(contractId,generationKey.current);generationKey.current=null;await reload();onChanged();}
-    catch(value){setError(value instanceof Error?value.message:'Smlouvu nelze vytvořit.');}
+    catch(value){
+      // Data may have changed since the successful preflight. Do not leave a
+      // stale ready CTA visible after the server refused generation.
+      if(request.current&&!request.current.signal.aborted)await reload();
+      setError(value instanceof Error?value.message:'Smlouvu nelze vytvořit.');
+    }
     finally{setWorking(false);}
   }
   async function preparePaymentPlan(){
