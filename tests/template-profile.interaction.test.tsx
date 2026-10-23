@@ -50,7 +50,9 @@ test('nová doručovací varianta je volitelná pouze pro SBK a zůstává neakt
  assert.equal(selected,SBK_DOB_DELIVERY_VARIANT);
  view.rerender(<TemplateProfilePicker type="future_purchase_contract" value={selected} onChange={()=>{}}/>);
  assert.match(screen.getByRole('combobox').textContent??'',/doručování prodávajícímu z projektu/);
- assert.ok(screen.getByText(/Nelze ji aktivovat/));
+ assert.ok(screen.getByText(/nahraje jako koncept/));
+ assert.ok(screen.getByText(/obsahové kontrole a výslovném schválení konkrétní verze/));
+ assert.equal(screen.queryByText(/Nelze ji aktivovat/),null);
  view.rerender(<TemplateProfilePicker type="reservation_contract" value={ORIGINAL_DOB_FULL_VARIANT} onChange={()=>{}}/>);
  assert.equal(screen.queryByRole('option',{name:/doručování prodávajícímu z projektu/}),null);
 });

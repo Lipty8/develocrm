@@ -55,4 +55,8 @@ This is not a claim of a live approved-original generation or a complete
 RS-to-SBK browser E2E. That test remains gated by content approval and the exact
 approved appendix bundle. No ordinary-user legal template is activated here.
 Deployment and authenticated read-only smoke results are recorded separately
-once actually observed. No migration or frontend source change is required.
+once actually observed. No migration is required. A matching frontend wording
+change explains that SBK v2 uploads remain concepts pending explicit content
+approval, instead of incorrectly claiming the profile can never be activated.
+The upload control does not approve anything; RS and old SBK keep their existing
+review-only explanation.
