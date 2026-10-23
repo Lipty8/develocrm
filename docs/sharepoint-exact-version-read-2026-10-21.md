@@ -44,7 +44,35 @@ lint and diff checks passed. Tests also cover permission failures, unknown and
 historical version rejection, current-version fallback, exact appendix evidence,
 upload retry/recovery, and bounded PDF reads.
 
-Deployment and the post-deploy live read are recorded only after completion.
+## Deployment and live verification (23 October)
+
+- Implementation commit `801a27d`; private GitHub main pushed. ACR build `cg4x`
+  succeeded with digest
+  `sha256:648e8301318aced0e6571d81571377577a4e8a5c6d797dce9bdab60533353c76`.
+- Latest and ready API revision both equal
+  `ca-develocrm-api-pilot--binary-versions-801a27d`, with 100% traffic.
+  `/health` and `/ready` each returned 200. The structured HTTP log query found
+  no statusCode >= 500 for this revision. No frontend source changes: Sites 160
+  retained. No migration: schema remains 0071.
+- Initial post-deploy diagnostic `tlzjab4` failed on an erroneous diagnostic-only
+  SQL reference (`c.contract_id` instead of `c.id`). No inference about the
+  application was drawn from it. Corrected execution
+  `job-develocrm-hold-expiry-x9zzfwq` completed its reads and readiness check.
+- Both superseded technical versions now return exact bytes matching their
+  stored document-version SHA-256. Both are unsigned. No file or DB write was
+  performed. Four old template/source-version metadata discrepancies remain;
+  physical bytes still match their template hashes, not old source-version
+  checksums. These were not repaired or reclassified.
+- Expanded audit: complete coverage, physical evidence verified, 5 critical,
+  6 warning, 8 legacy findings. `ready=false`, solely CRITICAL_INCONSISTENCY.
+  The job consequently exits unsuccessfully, as required by the release gate;
+  this is not an API availability failure. Remaining critical findings are the
+  four legacy checksum discrepancies and TECH60-BLOCKED's unchanged reservation.
+- Original RS/SBK profiles remain draft/validated, not approved. No new legal
+  template was activated. This verification is a backend/Graph/DB read-only
+  smoke, not a claim of a new browser historical-download test.
+- Isolated local PostgreSQL was stopped after verification. Pilot data,
+  SharePoint grants and cron job configuration were unchanged.
 
 ## API references
 

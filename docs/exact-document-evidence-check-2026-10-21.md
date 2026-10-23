@@ -101,3 +101,40 @@ this is not an API deployment or startup failure.
 No data repair, document ingestion, legal-template approval, signature or
 financial mutation was performed in this package. Pending source-file security
 and classification confirmations from the previous package remain in force.
+
+### Follow-up root causes (read-only)
+
+Execution `job-develocrm-hold-expiry-8xjzqbw` succeeded. All four hash-mismatch
+templates were created before 0057, have completed uploads and non-empty but
+different checksums in the template and document-version records. Exact physical
+bytes match the template hash, not the old document-version checksum. Prefix
+normalization does not resolve the difference. No legacy record was corrected
+or silently marked compliant.
+
+Both unverified contract versions are unsigned and superseded, with valid
+project/document pairs, native IDs and completed uploads. Controlled execution
+`job-develocrm-hold-expiry-bvk3z56` proved the native IDs are actually listed.
+For each exact version, JSON Accept returns 406 `notAcceptable`, while binary
+Accept returns 200 with the expected document hash (beta and v1.0 both tested).
+The two physical-read findings therefore reveal an adapter transport defect,
+not missing files. See the separate exact-version transport fix report.
+
+`TECH60-BLOCKED` has an active reservation hold with `is_expirable=false`, an
+active sales case at reservation stage, cancelled RS and draft SBK. This confirms
+the old technical state rather than a current signed legal obligation. No
+historical reconciliation or automatic archive was performed.
+
+### Verified follow-up (23 October)
+
+The matching binary-content fix is deployed as `801a27d`. Read-only execution
+`job-develocrm-hold-expiry-x9zzfwq` confirms both previously inaccessible native
+versions now match their document-version hashes. Full physical evidence
+coverage is verified. The consistency gate remains failed on five existing
+critical findings (four pre-0057 metadata discrepancies and TECH60-BLOCKED),
+six warnings and eight reviewed legacy findings. Nothing was silently repaired.
+See `sharepoint-exact-version-read-2026-10-21.md` for deployment and read evidence.
+
+Adam has now confirmed the supplied catalogues as authoritative current area
+data. Applying these values to the 19 real units is a separate, explicitly
+requested approval; no update has yet been executed. Signed documents and
+generation snapshots remain immutable regardless of current-area corrections.
