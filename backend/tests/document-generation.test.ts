@@ -31,12 +31,22 @@ function harness(options:{source?:Uint8Array;snapshot?:Record<string,string>;upl
 }
 
 test('obecný generation endpoint nemůže obejít review-only profil právní RS/SBK',async()=>{
-  for(const [outputTypeCode,variantKey] of [['reservation_contract',ORIGINAL_DOB_FULL_VARIANT],['future_purchase_contract',ORIGINAL_DOB_FULL_VARIANT],['future_purchase_contract',SBK_DOB_DELIVERY_VARIANT]]){
+  for(const [outputTypeCode,variantKey] of [['reservation_contract',ORIGINAL_DOB_FULL_VARIANT],['future_purchase_contract',ORIGINAL_DOB_FULL_VARIANT]]){
     const h=harness();const original=await h.repository.getTemplate();
     h.repository.getTemplate=async()=>({...original,outputTypeCode,variantKey});
     await assert.rejects(h.service.generate({...context,projectId,templateVersionId,idempotencyKey:'review-only-generation',contractId:'contract',snapshot:{}}),
       (error:unknown)=>error instanceof DocumentGenerationError&&error.code==='template_generation_not_ready');
     assert.equal(h.uploads,0);
+  }
+});
+
+test('technická podpora SBK v2 nikdy nenahradí schválení konkrétní neměnné verze',async()=>{
+  for(const approvalStatus of ['draft','validated','retired',undefined]){
+    const h=harness();const original=await h.repository.getTemplate();
+    h.repository.getTemplate=async()=>({...original,outputTypeCode:'future_purchase_contract',variantKey:SBK_DOB_DELIVERY_VARIANT,approvalStatus});
+    await assert.rejects(h.service.generate({...context,projectId,templateVersionId,idempotencyKey:'sbk-unapproved-version',contractId:'contract',snapshot:{}}),
+      (error:unknown)=>error instanceof DocumentGenerationError&&error.code==='template_not_approved');
+    assert.equal(h.uploads,0);assert.equal(h.completions,0);
   }
 });
 

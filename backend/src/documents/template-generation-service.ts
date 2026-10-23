@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { inspectDocxTemplate, renderDocxTemplate, DocxTemplateError } from "./docx-template.js";
-import {RS_PLACEHOLDERS,TECHNICAL_PLACEHOLDERS,supportedTemplateTokens,templateCatalog} from "./template-catalog.js";
+import {RS_PLACEHOLDERS,TECHNICAL_PLACEHOLDERS,supportedTemplateTokens,templateCatalog,isOriginalContractVariant} from "./template-catalog.js";
 import type { MicrosoftGraphAdapter } from "./graph-adapter.js";
 import type { DocumentContext, DocumentRepository } from "./repository.js";
 import type { SharePointDocumentUploadService } from "./upload-service.js";
@@ -48,6 +48,10 @@ export class DocumentTemplateGenerationService{
     const template=await this.repository.getTemplate(input);if(!template)throw new DocumentGenerationError("template_not_found");
     const catalog=templateCatalog(template.outputTypeCode,template.variantKey);
     if(!catalog||catalog.generationSupported===false)throw new DocumentGenerationError('template_generation_not_ready');
+    // Defense in depth: capability never substitutes for explicit per-version
+    // approval, including when a repository implementation is replaced.
+    if(isOriginalContractVariant(template.variantKey)&&template.approvalStatus!=='approved')
+      throw new DocumentGenerationError('template_not_approved');
     if(catalog.contractType&&(!input.contractId||!input.snapshot))throw new DocumentGenerationError('use_contract_generation');
     const requiredAppendices=catalog.contractType==='rs'||catalog.contractType==='sbk'?contractAppendixRequirements(catalog.contractType,template.variantKey):[];
     if(requiredAppendices.length&&(JSON.stringify(template.schema.appendices)!==JSON.stringify(requiredAppendices)

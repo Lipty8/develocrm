@@ -251,18 +251,24 @@ test('nové RS schema nelze tiše nahrát jako starou výchozí šablonu',async(
     (error:unknown)=>error instanceof TemplateManagementError&&error.code==='invalid_template_fields');
   assert.equal(h.uploadCalls,0);
 });
-test('doručovací SBK má samostatný draft, náhled a nesmí přepsat 37polový profil ani být aktivována',async()=>{
+test('doručovací SBK má samostatný draft a technická podpora sama neprovádí schválení',async()=>{
  const bytes=await readFile(new URL('../templates/review/sbk-dejvice-original-delivery-review.docx',import.meta.url));
  const catalog=templateCatalog('future_purchase_contract',SBK_DOB_DELIVERY_VARIANT)!;
  const h=harness(bytes),view=template(bytes);Object.assign(view,{outputTypeCode:'future_purchase_contract',contractType:'sbk',variantKey:SBK_DOB_DELIVERY_VARIANT});
  h.repository.list=async()=>[view];
  await h.service.upload({...uploadInput(bytes),outputTypeCode:'future_purchase_contract',variantKey:SBK_DOB_DELIVERY_VARIANT,code:'sbk-delivery-v2'});
  assert.equal(Object.keys((h.created[0].schema as {fields:Record<string,unknown>}).fields).length,38);
- assert.equal(catalog.generationSupported,false);assert.equal((await h.service.list(context))[0].generationSupported,false);
+ assert.equal(catalog.generationSupported,true);assert.equal((await h.service.list(context))[0].generationSupported,true);
+ assert.equal(h.created[0].approvalStatus,undefined);assert.equal(view.versions[0].status,'draft');
  const output=await h.service.preview({...context,templateId,versionId});assert.deepEqual(inspectDocxTemplate(output).tokens,[]);
  assert.match(strFromU8(unzipSync(output)['word/document.xml']),/Testovací doručování 62/);
  assert.match(strFromU8(unzipSync(output)['word/document.xml']),/mailto:prodavajici@example.test/);
- await assert.rejects(h.service.approve({...context,templateId,versionId}),error=>error instanceof TemplateManagementError&&error.code==='template_generation_not_ready');
+ let approvals=0;h.repository.approve=async()=>{approvals++;};
+ assert.equal(approvals,0);view.versions[0].status='validated';
+ await h.service.approve({...context,templateId,versionId});assert.equal(approvals,1);
+ view.canApprove=false;
+ await assert.rejects(h.service.approve({...context,templateId,versionId}),error=>error instanceof TemplateManagementError&&error.code==='permission_required');
+ assert.equal(approvals,1);
  const incompatible=harness(bytes);
  await assert.rejects(incompatible.service.upload({...uploadInput(bytes),outputTypeCode:'future_purchase_contract',variantKey:ORIGINAL_DOB_FULL_VARIANT}),
   error=>error instanceof TemplateManagementError&&error.code==='invalid_template_fields');

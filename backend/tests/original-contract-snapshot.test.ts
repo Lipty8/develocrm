@@ -105,7 +105,8 @@ test('nová SBK doručovací varianta má 38 polí a nemění staré snapshoty a
  assert.equal(precedingRsComparison(compare)?.status,'compared');
  assert.equal(precedingRsComparison(compare)?.differences.length,0);
  const ready=await new RsGenerationService({load:async()=>source} as never,{} as never).readiness({tenantId:'t',userId:'u',membershipId:'m',contractId:source.contractId});
- assert.equal(ready.ready,false);assert.ok(ready.issues.some(item=>item.code==='original_profile_review'));
+ assert.equal(ready.ready,false);assert.ok(ready.issues.some(item=>item.code==='approved_template'));
+ assert.ok(!ready.issues.some(item=>item.code==='original_profile_review'));
 });
 test('žádná chybějící hodnota se nenahrazuje datem vytvoření, bydlištěm nebo cenou nula',()=>{
  for(const source of [

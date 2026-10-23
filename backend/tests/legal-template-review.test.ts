@@ -33,7 +33,9 @@ test('original RS and both SBK profiles synchronize seller email without rewriti
     ['sbk', 'sbk-dejvice-original-delivery-review.docx', SBK_DOB_DELIVERY_VARIANT],
   ]) {
     const catalog = templateCatalog(kind === 'rs' ? 'reservation_contract' : 'future_purchase_contract', variant)!;
-    assert.equal(catalog.generationSupported, false);
+    // Capability is not legal approval. Only the complete v2 mapping is
+    // supported; the manifests below must still remain non-activated drafts.
+    assert.equal(catalog.generationSupported, variant === SBK_DOB_DELIVERY_VARIANT);
     const source = await readFile(new URL(`../templates/review/${file}`, import.meta.url));
     const beforeHash = digest(source);
     const values = Object.fromEntries(Object.entries(catalog.fields).map(([key, field]) => [key, field.sample]));

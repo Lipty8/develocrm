@@ -102,7 +102,9 @@ function validate(source:RsSource):RsReadinessIssue[]{
     }
     issues.push(...originalContractIssues(source));
     if(!validPaymentTerms(source))issues.push(issue('contract_payment_terms','contract.paymentTerms','Platební plán této verze smlouvy chybí nebo neodpovídá aktuálním údajům. Splatnost musí vycházet ze skutečného podpisu, nikoli z vytvoření smlouvy.'));
-    issues.push(issue('original_profile_review','template','Tato varianta smlouvy ještě není připravena k běžnému použití. Zbývá dokončit kontrolu údajů a obsahové schválení.'));
+    const catalog=templateCatalog(source.contractType==='sbk'?'future_purchase_contract':'reservation_contract',source.templateVariant);
+    if(!catalog||catalog.generationSupported===false)
+      issues.push(issue('original_profile_review','template','Tato varianta smlouvy ještě není připravena k běžnému použití. Zbývá dokončit kontrolu údajů a obsahové schválení.'));
   }
   if(source.buyers.length!==1)issues.push(issue("buyer_count","buyers","Tato verze šablony vyžaduje právě jednoho kupujícího."));
   const buyer=source.buyers[0];

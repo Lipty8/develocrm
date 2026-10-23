@@ -101,9 +101,12 @@ export const ORIGINAL_TEMPLATE_CATALOGS:Record<string,TemplateCatalog>={
 };
 
 // A distinct schema profile preserves already uploaded 37-field SBK versions.
-// This is still review-only; it does not approve or activate legal content.
+// Technical capability is independent of approval of an immutable template
+// version. Existing draft/validated versions remain unusable until explicitly
+// approved through the authorized template lifecycle.
 export const SBK_DELIVERY_TEMPLATE_CATALOG:TemplateCatalog={
   ...ORIGINAL_TEMPLATE_CATALOGS.future_purchase_contract,
+  generationSupported:true,
   label:'SBK Dejvice · kompletní varianta · doručování prodávajícímu',
   fields:{...ORIGINAL_TEMPLATE_CATALOGS.future_purchase_contract.fields,
     'seller.deliveryAddress':{required:true,label:'Doručovací adresa prodávajícího',sample:'Testovací doručování 62, 160 00 Praha 6'}},
