@@ -38,3 +38,29 @@ out-of-order responses with aborted old requests, permission denial/retry,
 unavailable project, lifecycle completion after a switch, and unmounting an
 unsaved upload. Frontend TypeScript and changed-file lint passed. Full test
 and production build/deployment results are recorded only after completion.
+
+## Deployment and authenticated read-only E2E
+
+- GitHub implementation `5a72e1086b1629a819619e16cb23a2ff4303167a`, pushed.
+- Frontend 143/143 and interaction 121/121 passed; frontend TypeScript,
+  changed-file lint, diff check and official production build passed. Existing
+  large-chunk and Babel-size notices remain informational, not new failures.
+- Sites source `3ce010be41b18f7c05c38907b4e0eaa8896505cd` has the exact matching
+  Git tree `dbdb933220b586d4e276c3181aaaaef39cf4f5a5` with GitHub. Sites **162**,
+  deployment `appgdep_6adb3990694c8191995f395cb7d3d8ea` succeeded. Owner-private
+  custom access preserved, zero external viewers.
+- Authenticated browser as Adam: the original project-scoped link now selects
+  TECH SMOKE 0062 and displays only its three templates, not unrelated projects.
+  Selecting SBK preserves the project/return URL and displays only its two SBK
+  variants. A full reload preserves both filters and the exact return link.
+- Selecting TECH67 DELIVERY SBK and opening the upload modal prefilled the same
+  project, SBK type and v2 variant. The modal was cancelled without choosing a
+  file, validation, approval or upload. The template remains Concept.
+- Backend unchanged at `ca-develocrm-api-pilot--sbk-v2-9b7bd71`, no ACR build,
+  backend rollout or migration for this frontend-only fix. Health/ready 200;
+  sampled runtime logs during the smoke had no HTTP 5xx or RLS findings.
+- No real or technical business data, source file, document version, template
+  approval, financial record or SharePoint file was changed in this package.
+
+This closes the observed project-navigation defect, not the complete RS/SBK
+production-readiness objective or the separate outstanding legal approvals.
