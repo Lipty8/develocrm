@@ -100,6 +100,11 @@ installation was performed. API Docker builds already use pnpm exclusively.
   did not initialize its project filter (All projects remained selected).
   Explicit template selection correctly supplied the upload project. This
   separate context-navigation gap was not silently counted as fixed here.
+  Follow-up: this gap was subsequently fixed by `5a72e10`, already included in
+  Sites 163. On 24 October an authenticated direct project-scoped templates
+  link, normal Microsoft sign-in/return and full page reload retained the exact
+  TECH72 project UUID and displayed only its two synthetic templates. Do not
+  treat the earlier observation as a currently unresolved defect.
 - No migration, existing-unit update, signature, payment, template approval,
   appendix association, SharePoint write or other pilot business mutation.
   The isolated local PostgreSQL instance was stopped after the final tests.
