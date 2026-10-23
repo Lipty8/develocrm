@@ -23,6 +23,7 @@ import {inspectDocxTemplate,renderDocxTemplate} from '../dist/documents/docx-tem
 import {RS_PLACEHOLDERS,SBK_DOB_DELIVERY_VARIANT,templateCatalog} from '../dist/documents/template-catalog.js';
 import {contractAppendixRequirements} from '../dist/shared/contract-appendices.js';
 import {signaturePaymentTerms} from '../dist/contracts/signature-payment-terms.js';
+import {originalPaymentPlan} from '../dist/contracts/original-payment-plan.js';
 
 export const SMOKE_KEY='technical-sbk-business-pipeline-v1';
 const CODE='TECH72',NAME='TECH SMOKE 0072 – synthetic RS SBK';
@@ -60,6 +61,33 @@ export function smokeFailure(error,phase,projectId){
     errorName:typeof error?.name==='string'&&/^[A-Za-z]{1,80}$/.test(error.name)?error.name:undefined};
 }
 
+// Assertions only: expected stages and due dates come from the existing domain
+// projections/calendar. This harness must not become another workflow engine.
+export function assertSignedChainEvidence({contracts,unit,next,terms,payments}){
+  if(contracts.length!==2||!['rs','sbk'].every(type=>contracts.filter(c=>c.type===type).length===1))fail('SMOKE_SIGNED_CHAIN_REQUIRED');
+  for(const c of contracts){
+    if(c.status!=='signed'||!c.signedAt||c.signedAt!==c.lastRequiredSignatureAt||!c.allRequiredSigned
+      ||c.versionStatus!=='signed'||c.versionSignedAt!==c.signedAt||!c.locked||!c.documentVersionId
+      ||c.signatureAudits!==1||c.signatureEvents!==1||c.signatureOutbox!==1||c.versionCount!==1
+      ||c.generationCount!==1)fail('SMOKE_SIGNATURE_EVIDENCE_INVALID');
+    if(c.unitId!==unit.id||c.salesCaseId!==unit.salesCaseId)fail('SMOKE_BUSINESS_CONTEXT_MISMATCH');
+  }
+  if(unit.caseStatus!=='active'||unit.commercialStatus!=='contracted'||unit.stage!=='sbk'
+    ||next.salesCaseId!==unit.salesCaseId||next.kind!=='create_contract'||next.contractType!=='ks'
+    ||next.salesProcess?.reviewRequired||next.salesProcess?.currentStage!=='ks'
+    ||!['rs','sbk'].every(code=>next.salesProcess?.steps.some(step=>step.code===code&&step.state==='complete')))
+    fail('SMOKE_SBK_WORKFLOW_INCONSISTENT');
+  const sbk=contracts.find(c=>c.type==='sbk');
+  if(!terms||terms.contractType!=='sbk'||terms.precedingRsContractId!==contracts.find(c=>c.type==='rs').id)
+    fail('SMOKE_SBK_PAYMENT_SNAPSHOT_INVALID');
+  const expected=originalPaymentPlan({type:'sbk',totalPrice:terms.totalPrice,reservationFeeAmount:terms.reservationFee,
+    paidReservationFeeAmount:terms.paidReservationFee,effectiveSignatureAt:sbk.signedAt}).filter(row=>row.state==='scheduled');
+  if(payments.length!==expected.length||payments.some(row=>row.contractVersionId!==sbk.versionId
+    ||row.unitId!==unit.id||row.salesCaseId!==unit.salesCaseId
+    ||!expected.some(plan=>plan.key===row.schedule_key&&plan.amount===row.amount&&plan.dueOn===row.dueOn)))
+    fail('SMOKE_SBK_PAYMENT_PLAN_INVALID');
+}
+
 export async function runSbkSmoke(input){
   assertSmokeInput(input);
   if(['prepare_rs','prepare_sbk'].includes(input.mode))for(const kind of ['rs','sbk']){
@@ -72,7 +100,7 @@ export async function runSbkSmoke(input){
     const actor=await database.withContext({tenantId},async c=>(await c.query("SELECT user_id FROM tenant_memberships WHERE tenant_id=$1 AND id=$2 AND status='active'",[tenantId,membershipId])).rows[0],{readOnly:true});
     if(!actor)fail('SMOKE_ACTIVE_ACTOR_REQUIRED');
     const context={tenantId,membershipId,userId:actor.user_id};
-    const sql=(q,values=[])=>database.withContext(context,c=>c.query(q,values));
+    const sql=(q,values=[])=>database.withContext(context,c=>c.query(q,values),input.mode==='verify'?{readOnly:true}:undefined);
     const safe=(await sql("SELECT NOT rolsuper AND NOT rolbypassrls AND pg_has_role(current_user,'develocrm_app','member') safe,app.current_user_has_permission('system.manage') allowed FROM pg_roles WHERE rolname=current_user")).rows[0];
     if(!safe?.safe||!safe.allowed)fail('SMOKE_NON_ADMIN_RUNTIME_AND_SYSTEM_PERMISSION_REQUIRED');
     const inventory=new InventoryRepository(database),imports=new InventoryImportService(database),sales=new SalesRepository(database),commercial=new CommercialService(database),payments=new PaymentService(database);
@@ -232,11 +260,33 @@ export async function runSbkSmoke(input){
       const sbk=await contract('sbk');
       const source=await preparationRepo.load({...context,contractId:sbk.id,permission:'contract.read'});
       const terms=signaturePaymentTerms(source?.paymentTerms);if(!terms)fail('SMOKE_SBK_PAYMENT_SNAPSHOT_INVALID');
-      const expected=terms.rows.filter(row=>row.anchor==='effective_signature');
-      const rows=(await sql("SELECT schedule_key,obligation_type,amount::text,due_at IS NOT NULL scheduled FROM payment_obligations WHERE tenant_id=$1 AND project_id=$2 AND contract_id=$3 AND cancelled_at IS NULL ORDER BY obligation_type",[tenantId,projectId,sbk.id])).rows;
-      const next=await commercial.nextContractAction({...context,unitId:(await unit()).id});
-      if(rows.length!==expected.length||rows.some(row=>!row.scheduled||!expected.some(plan=>plan.key===row.schedule_key&&plan.amount===row.amount)))fail('SMOKE_SBK_PAYMENT_PLAN_INVALID');
-      console.log(JSON.stringify({event:'smoke.sbk_chain_verified',projectId,results:result,payments:rows,nextAction:next.kind,syntheticOnly:true}));
+      const rows=(await sql(`SELECT schedule_key,amount::text,(due_at AT TIME ZONE 'Europe/Prague')::date::text "dueOn",
+        contract_version_id "contractVersionId",unit_id "unitId",sales_case_id "salesCaseId"
+        FROM payment_obligations WHERE tenant_id=$1 AND project_id=$2 AND contract_id=$3 AND cancelled_at IS NULL`,[tenantId,projectId,sbk.id])).rows;
+      const u=(await unit()).id;
+      const unitState=(await sql(`SELECT u.id,u.commercial_status "commercialStatus",s.id "salesCaseId",s.status "caseStatus",s.current_stage stage
+        FROM units u JOIN sales_cases s ON s.tenant_id=u.tenant_id AND s.unit_id=u.id AND s.status='active'
+        WHERE u.tenant_id=$1 AND u.project_id=$2 AND u.id=$3`,[tenantId,projectId,u])).rows;
+      if(unitState.length!==1)fail('SMOKE_ACTIVE_CASE_AMBIGUOUS');
+      const facts=(await sql(`SELECT c.id,c.contract_type type,c.current_status status,c.unit_id "unitId",c.sales_case_id "salesCaseId",
+        c.signed_at "signedAt",v.id "versionId",v.version_status "versionStatus",v.signed_at "versionSignedAt",
+        v.locked_at IS NOT NULL locked,v.document_version_id "documentVersionId",
+        (SELECT max(p.signed_at) FROM contract_parties p WHERE p.tenant_id=c.tenant_id AND p.contract_id=c.id AND p.signing_required) "lastRequiredSignatureAt",
+        EXISTS(SELECT 1 FROM contract_parties p WHERE p.tenant_id=c.tenant_id AND p.contract_id=c.id AND p.signing_required)
+          AND NOT EXISTS(SELECT 1 FROM contract_parties p WHERE p.tenant_id=c.tenant_id AND p.contract_id=c.id AND p.signing_required
+            AND (p.signature_status<>'signed' OR p.signed_version_id IS DISTINCT FROM v.id OR p.signed_at IS NULL)) "allRequiredSigned",
+        (SELECT count(*)::int FROM audit_log a WHERE a.tenant_id=c.tenant_id AND a.entity_id=c.id AND a.action='contract.signed') "signatureAudits",
+        (SELECT count(*)::int FROM contract_status_events e WHERE e.tenant_id=c.tenant_id AND e.contract_id=c.id AND e.to_status='signed') "signatureEvents",
+        (SELECT count(*)::int FROM outbox_events e WHERE e.tenant_id=c.tenant_id AND e.aggregate_id=c.id AND e.event_type='contract.signed.v1') "signatureOutbox",
+        (SELECT count(*)::int FROM contract_versions x WHERE x.tenant_id=c.tenant_id AND x.contract_id=c.id) "versionCount",
+        (SELECT count(*)::int FROM document_generation_operations g WHERE g.tenant_id=c.tenant_id AND g.contract_id=c.id AND g.state='completed') "generationCount"
+        FROM contracts c JOIN contract_versions v ON v.tenant_id=c.tenant_id AND v.contract_id=c.id
+        WHERE c.tenant_id=$1 AND c.project_id=$2 AND c.id=ANY($3::uuid[])`,[tenantId,projectId,result.map(item=>item.contractId)])).rows
+        .map(row=>({...row,signedAt:row.signedAt?.toISOString(),versionSignedAt:row.versionSignedAt?.toISOString(),lastRequiredSignatureAt:row.lastRequiredSignatureAt?.toISOString()}));
+      const next=await commercial.nextContractAction({...context,unitId:u});
+      assertSignedChainEvidence({contracts:facts,unit:unitState[0],next,terms,payments:rows});
+      console.log(JSON.stringify({event:'smoke.sbk_chain_verified',projectId,results:result,payments:rows,nextAction:next.kind,
+        nextContractType:next.contractType,commercialStatus:unitState[0].commercialStatus,signatureAuditVerified:true,syntheticOnly:true}));
     }
     return{ok:true,projectId,phase};
   }catch(error){console.error(JSON.stringify(smokeFailure(error,phase,projectId)));return{ok:false,projectId,phase};}

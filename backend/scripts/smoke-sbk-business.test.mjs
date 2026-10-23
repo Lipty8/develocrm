@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
-import {assertSmokeInput,assertSmokeProject,assertSyntheticTemplate,smokeFailure,SMOKE_KEY} from './smoke-sbk-business.mjs';
+import {assertSmokeInput,assertSmokeProject,assertSyntheticTemplate,assertSignedChainEvidence,smokeFailure,SMOKE_KEY} from './smoke-sbk-business.mjs';
+import {getSalesProcessState} from '../dist/shared/next-contract-action.js';
 
 const actor='11111111-1111-4111-8111-111111111111';
 const project={code:'TECH72',name:'TECH SMOKE 0072 – synthetic RS SBK',archived_at:null};
@@ -45,4 +46,43 @@ test('failure output never exposes raw SQL, Graph URLs, secrets or stacks',()=>{
   assert.equal(smokeFailure({code:'23505'},'prepare_rs',actor).code,'23505');
   assert.equal(smokeFailure(new Error('SINGLESECRET'),'prepare_rs',actor).code,'SMOKE_OPERATION_FAILED');
   assert.equal(smokeFailure({code:'contract_appendices_required'},'sbk.generate',actor).code,'contract_appendices_required');
+});
+
+function signedChain(){
+  const contracts=['rs','sbk'].map(type=>({id:type,type,status:'signed',unitId:'unit',salesCaseId:'case',
+    signedAt:'2026-10-23T21:00:00.000Z',lastRequiredSignatureAt:'2026-10-23T21:00:00.000Z',allRequiredSigned:true,
+    versionStatus:'signed',versionSignedAt:'2026-10-23T21:00:00.000Z',versionId:`${type}-v1`,locked:true,
+    documentVersionId:`${type}-doc-v1`,signatureAudits:1,signatureEvents:1,signatureOutbox:1,versionCount:1,generationCount:1}));
+  const salesProcess=getSalesProcessState({hasActiveSalesCase:true,contracts:contracts.map(c=>({...c})),commercialStatus:'contracted',salesStage:'sbk'});
+  return{contracts,unit:{id:'unit',salesCaseId:'case',caseStatus:'active',commercialStatus:'contracted',stage:'sbk'},
+    next:{...salesProcess.nextContractAction,salesCaseId:'case',salesProcess},
+    terms:{contractType:'sbk',precedingRsContractId:'rs',totalPrice:'5500000.00',reservationFee:'250000.00',paidReservationFee:'250000.00'},
+    payments:[{schedule_key:'sbk_first',amount:'1100000.00',dueOn:'2026-11-02',contractVersionId:'sbk-v1',unitId:'unit',salesCaseId:'case'}]};
+}
+test('signed-chain verification uses central projection and Czech holiday-aware deadline',()=>{
+  assert.doesNotThrow(()=>assertSignedChainEvidence(signedChain()));
+  const early=signedChain();early.payments[0].dueOn='2026-10-30';
+  assert.throws(()=>assertSignedChainEvidence(early),/PAYMENT_PLAN_INVALID/);
+});
+test('signed-chain verification rejects stale stage, free unit or repeated RS CTA',()=>{
+  for(const mutate of [s=>{s.unit.commercialStatus='available';},s=>{s.unit.stage='rs';},s=>{s.next.contractType='rs';},
+    s=>{s.next.salesProcess.steps.find(step=>step.code==='sbk').state='current';}]){
+    const state=signedChain();mutate(state);assert.throws(()=>assertSignedChainEvidence(state),/WORKFLOW_INCONSISTENT/);
+  }
+});
+test('signed-chain verification rejects incomplete signatures, unlocked files and duplicate audit/generation',()=>{
+  for(const mutate of [s=>{s.contracts[1].allRequiredSigned=false;},s=>{s.contracts[1].locked=false;},
+    s=>{s.contracts[1].documentVersionId=null;},s=>{s.contracts[1].signatureAudits=2;},
+    s=>{s.contracts[1].signatureOutbox=0;},s=>{s.contracts[1].generationCount=2;},
+    s=>{s.contracts[1].lastRequiredSignatureAt='2026-10-24T21:00:00.000Z';}]){
+    const state=signedChain();mutate(state);assert.throws(()=>assertSignedChainEvidence(state),/SIGNATURE_EVIDENCE_INVALID/);
+  }
+});
+test('signed-chain verification rejects mismatched business context and premature final installment',()=>{
+  const wrongCase=signedChain();wrongCase.contracts[1].salesCaseId='other';
+  assert.throws(()=>assertSignedChainEvidence(wrongCase),/BUSINESS_CONTEXT_MISMATCH/);
+  for(const mutate of [s=>{s.payments[0].contractVersionId='old';},s=>{s.payments[0].salesCaseId='other';},
+    s=>{s.payments.push({...s.payments[0],schedule_key:'sbk_final',amount:'4150000.00'});}]){
+    const state=signedChain();mutate(state);assert.throws(()=>assertSignedChainEvidence(state),/PAYMENT_PLAN_INVALID/);
+  }
 });

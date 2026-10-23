@@ -90,6 +90,26 @@ bytes) and appendix evidence were verified. Contract
 `5216b67d-c508-405e-bf2c-be839658032d`, version
 `07e52631-8a65-4582-a335-a4f462dfd334`. No real legal template was activated.
 
+### Final verifier hardening (2026-10-24)
+
+The read-only verify mode now rejects inconsistent unit/case/contract context,
+an unlocked or unbound signed version, incomplete required signatures, a
+signature timestamp other than the last required signature, duplicate/missing
+signature audit/status/outbox events, and duplicate generation/version rows in
+this deliberately single-version fixture. It checks the existing central sales
+projection for completed RS/SBK, current KS and the next KS action, alongside
+the persisted active case and contracted unit. It does not calculate another
+workflow projection.
+
+Payment due dates are compared with `originalPaymentPlan` using the actual
+signed timestamp, not just a non-null due date. The fixture has no final notice,
+so a prematurely materialized final installment is rejected. The SQL queries
+inside verify run in read-only transactions. New negative tests include wrong
+case/version, an available unit, stale RS CTA, incomplete signatures, duplicate
+generation/audit and an incorrect deadline across the 28 October holiday.
+All 10 harness tests passed. This is local verifier coverage, not proof of the
+still-pending live SBK signature or its resulting persisted financial state.
+
 Live SBK signature, final payment-plan verification and cleanup remain
 unverified. This synthetic test must not be reported as an approved-original
 RS/SBK production E2E.
