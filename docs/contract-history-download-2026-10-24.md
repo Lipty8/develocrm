@@ -30,8 +30,28 @@ version-row layout is retained with responsive button wrapping.
   actual Versions tab when its latest version has no file, unavailable/legacy
   states, a safe error with no fallback, and cancellation on context change.
 - Frontend typecheck, backend TypeScript build, changed-file ESLint and
-  frontend production build passed. Publication/browser results remain
-  unproven until actually observed.
+  frontend production build passed.
+
+## Published read-only browser verification
+
+- Implementation commit: `8cc2ccc316002351dc4288f7f34ab38fb595e0e3`.
+- Private Sites version 163, deployment
+  `appgdep_6adbdc60cdd88191b2d1fa68e9eb4b02`: Succeeded.
+- Sites commit `f9f77977510a51e9f5ee51ca20d3faebc34058ad` and GitHub
+  implementation share source tree `3ceb169c1cf16cd970c90ec0ca9cb3b6a589266a`
+  (560 tracked files). Site access remains private.
+- Compatible backend remains `ca-develocrm-api-pilot--sbk-jsonb-4dc5624`;
+  health and readiness returned HTTP 200 after publication. No migration or
+  backend change was required for this UI package.
+- Authenticated published UI: opened existing technical contract
+  `RS TECH-GEN-3BB`, Versions tab, downloaded both v1 and v2 using their
+  individual actions. Each returned 39,711 bytes without an error. Hashes:
+  - v1: `d0e6ae1e3aebcd26f0bb73edf88702fc01b0e7dfb76d917a6990e617be92a435`
+  - v2: `7c91d9d336c9e739abd7468035c2325df1691a493b48df734334c93591976444`
+- Distinct contents demonstrate that the old-version action did not silently
+  return the latest file. The existing exact-file endpoint validates native
+  version binding and content hash before responding. No business record,
+  signature, financial allocation or original SharePoint file was changed.
 
 ## Additional read-only generated Word QA
 
