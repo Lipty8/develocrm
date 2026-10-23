@@ -71,10 +71,18 @@ document ready, version 1, price 5,000,000 + accessories 500,000 = 5,500,000 CZK
 and fee 250,000 CZK. The signature modal opened with that exact document.
 Automatic confirmation was rejected because its checkbox asserts an actual
 signature rather than a simulation. No backend workaround was attempted. The
-dialog was handed to Adam for the explicitly technical scenario; the RS is not
-reported as signed until a subsequent authoritative check proves it.
+dialog was handed to Adam for the explicitly technical scenario. Adam confirmed
+completion; a new authenticated detail navigation then displayed Signed,
+signed document version 1 and signature evidence. The existing generation
+capability and evidence controls were not bypassed.
 
-The positive live RS signature, SBK generation/signature, payment-plan checks,
-browser reload and final cleanup remain unverified until their executions and
-browser evidence are actually observed. A passed fixture test must not be
-reported as an approved-original RS/SBK production E2E.
+SBK preparation executions `job-develocrm-hold-expiry-v81mg05` and
+`job-develocrm-hold-expiry-lnlth4j` failed. The latter identified
+`contract_appendices_required` at `sbk.generate`, after successful readiness.
+The persisted jsonb appendix descriptor key order caused a false schema
+rejection before generated-output reservation/upload. See the separate JSONB
+correction report. These are failures, not a passed SBK smoke.
+
+Live SBK generation/signature, final payment-plan verification and cleanup remain
+unverified. A passed fixture test must not be reported as an approved-original
+RS/SBK production E2E.

@@ -43,4 +43,6 @@ test('failure output never exposes raw SQL, Graph URLs, secrets or stacks',()=>{
   assert.match(output,/SMOKE_OPERATION_FAILED/);
   assert.doesNotMatch(output,/password|https|sensitive|stack|postgresql/);
   assert.equal(smokeFailure({code:'23505'},'prepare_rs',actor).code,'23505');
+  assert.equal(smokeFailure(new Error('SINGLESECRET'),'prepare_rs',actor).code,'SMOKE_OPERATION_FAILED');
+  assert.equal(smokeFailure({code:'contract_appendices_required'},'sbk.generate',actor).code,'contract_appendices_required');
 });

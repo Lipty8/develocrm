@@ -54,7 +54,7 @@ export function assertSyntheticTemplate(bytes,expectedHash,kind){
 
 // Never serialize driver messages, query text, Graph URLs or stack traces.
 export function smokeFailure(error,phase,projectId){
-  const candidate=error?.code??error?.message;
+  const candidate=error?.code??(/^SMOKE_[A-Z0-9_]+$/.test(error?.message??'')?error.message:undefined);
   return{event:'smoke.sbk_pipeline_failed',phase,projectId,
     code:typeof candidate==='string'&&/^[A-Za-z0-9_]{1,120}$/.test(candidate)?candidate:'SMOKE_OPERATION_FAILED',
     errorName:typeof error?.name==='string'&&/^[A-Za-z]{1,80}$/.test(error.name)?error.name:undefined};
@@ -148,7 +148,9 @@ export async function runSbkSmoke(input){
       if(!v.document_version_id){
         if(type==='sbk'){
           phase='sbk.signing_plan';
-          await generation.setSigningPlan({...context,contractId:c.id,versionId:v.id,sellerPlannedOn:today,buyerPlannedOn:today});
+          const current=await preparationRepo.load({...context,contractId:c.id,permission:'contract.manage'});
+          await generation.setSigningPlan({...context,contractId:c.id,versionId:v.id,
+            sellerPlannedOn:current?.signingPlan?.sellerPlannedOn??today,buyerPlannedOn:current?.signingPlan?.buyerPlannedOn??today});
           phase='sbk.payment_terms';
           await generation.preparePaymentTerms({...context,contractId:c.id,versionId:v.id});
           const rsBytes=Buffer.from(input.templates.rs.base64,'base64');assertSyntheticTemplate(rsBytes,input.templates.rs.sha256,'rs');

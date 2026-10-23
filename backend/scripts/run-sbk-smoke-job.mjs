@@ -21,11 +21,17 @@ if(['prepare_rs','prepare_sbk'].includes(mode)){
 }
 const source=readFileSync(new URL('./smoke-sbk-business.mjs',import.meta.url),'utf8').replaceAll("from '../dist/","from './backend/dist/");
 const command=source+`\nconst outcome=await runSbkSmoke({...${JSON.stringify(input)},databaseUrl:process.env.DATABASE_URL});if(!outcome.ok)process.exitCode=1;`;
+const live=spawnSync('/opt/homebrew/bin/az',['containerapp','show','--name','ca-develocrm-api-pilot','--resource-group','rg-develocrm-pilot',
+  '--query','{ready:properties.latestReadyRevisionName,latest:properties.latestRevisionName,image:properties.template.containers[0].image}','-o','json','--only-show-errors'],{encoding:'utf8'});
+if(live.status!==0)throw new Error('SMOKE_CURRENT_REVISION_UNAVAILABLE');
+const deployed=JSON.parse(live.stdout);
+if(deployed.ready!==deployed.latest||!/^acrdevelocrmpilot9a4c6e\.azurecr\.io\/develocrm-api@sha256:[a-f0-9]{64}$/.test(deployed.image??''))
+  throw new Error('SMOKE_MATCHING_READY_IMMUTABLE_IMAGE_REQUIRED');
 const definition={containers:[{name:'job-develocrm-hold-expiry',
-  image:'acrdevelocrmpilot9a4c6e.azurecr.io/develocrm-api@sha256:d13a9c67c765762be6bd193f66c3054a953e003f90d46948ec839c606373a144',
+  image:deployed.image,
   env:[{name:'DATABASE_URL',secretRef:'database-url'}],resources:{cpu:0.5,memory:'1Gi'},command:['node','--input-type=module','-e',command]}]};
 const directory=mkdtempSync(join(tmpdir(),'develocrm-tech72-job-')),path=join(directory,'execution.json');
 writeFileSync(path,JSON.stringify(definition),{mode:0o600});
 const result=spawnSync('/opt/homebrew/bin/az',['containerapp','job','start','--name','job-develocrm-hold-expiry','--resource-group','rg-develocrm-pilot','--yaml',path,'--query','name','-o','tsv'],{encoding:'utf8'});
 if(result.status!==0){console.error('SMOKE_JOB_START_FAILED');process.exitCode=1;}
-else console.log(JSON.stringify({execution:result.stdout.trim(),mode,projectId:projectId??null,scheduledJobChanged:false}));
+else console.log(JSON.stringify({execution:result.stdout.trim(),mode,projectId:projectId??null,matchingRevision:deployed.ready,scheduledJobChanged:false}));
