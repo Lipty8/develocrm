@@ -216,6 +216,18 @@ let waitFor:typeof import("@testing-library/react").waitFor;
 let act:typeof import("@testing-library/react").act;
 let userEvent:typeof import("@testing-library/user-event").default;
 
+test('záložka Verze zpřístupní přesný starší dokument i když poslední verze nemá soubor',()=>{
+  const meta={name:'Technická verze',basedOnVersionId:null,source:'generated',createdAt:'2026-10-23T10:00:00Z',signedAt:null};
+  render(<ContractDetail contract={{...sampleContracts[0],id:'history-contract',typeCode:'rs',statusCode:'cancelled',history:[],parties:[],versions:[
+    {...meta,id:'v2',number:2,status:'working'},
+    {...meta,id:'v1',number:1,status:'superseded',documentVersionId:'dv1',documentReady:true,documentName:'exact-v1.docx'},
+  ]}} close={()=>{}} openUnit={()=>{}} openClient={()=>{}} openDocument={()=>{}} canManage={false} isAdmin={false} onChanged={()=>{}}/>);
+  fireEvent.click(screen.getByRole('button',{name:/^Verze\s*2$/}));
+  assert.ok(screen.getByRole('button',{name:'Stáhnout dokument v1'}));
+  assert.equal(screen.queryByRole('button',{name:'Stáhnout dokument v2'}),null);
+  assert.ok(screen.getByText('Bez dokumentu.'));
+});
+
 test('ukončená ani zrušená RS nespouští generování a neukazuje V přípravě jako aktuální krok',()=>{
  for(const status of ['terminated','cancelled']){
   const view=render(<ContractDetail contract={{...sampleContracts[0],id:'closed-contract',typeCode:'rs',statusCode:status,history:[],parties:[],versions:[]}} close={()=>{}} openUnit={()=>{}} openClient={()=>{}} onWorkflow={()=>{throw new Error('Closed workflow');}} openDocument={()=>{}} canManage={true} isAdmin={true} onChanged={()=>{}}/>);
