@@ -1,4 +1,5 @@
 import {apiFetch} from "../lib/api-client";
+import {readError} from '../lib/read-state';
 
 export type TemplateLifecycle="draft"|"validated"|"approved"|"retired";
 export type TemplateValidation={valid:boolean;tokens:string[];unknownTokens:string[];missingTokens:string[];malformedTokens:string[];legacyMarkers:string[];errors:string[]};
@@ -9,7 +10,7 @@ export type TemplateUploadInput={projectId:string;code:string;name:string;output
 
 class TemplateRepository{
   async list(filters:{projectId?:string;outputTypeCode?:string}={},signal?:AbortSignal):Promise<DocumentTemplate[]>{const params=new URLSearchParams();for(const[key,value]of Object.entries(filters))if(value)params.set(key,value);
-    const response=await apiFetch(`/api/document-templates?${params}`,{signal,cache:"no-store"});if(!response.ok)throw await error(response,"Šablony se nepodařilo načíst");return((await response.json())as{templates:DocumentTemplate[]}).templates;}
+    const response=await apiFetch(`/api/document-templates?${params}`,{signal,cache:"no-store"});if(!response.ok)throw readError(response);return((await response.json())as{templates:DocumentTemplate[]}).templates;}
   async upload(input:TemplateUploadInput){const contentBase64=await base64(input.file);const{file,...metadata}=input;const response=await apiFetch("/api/document-templates?action=upload",{method:"POST",dataInvalidation:'none',headers:{"content-type":"application/json"},body:JSON.stringify({...metadata,fileName:file.name,mimeType:file.type||"application/vnd.openxmlformats-officedocument.wordprocessingml.document",contentBase64})});
     if(!response.ok)throw await error(response,"Novou verzi šablony se nepodařilo nahrát");return response.json() as Promise<{version:{templateId:string;templateVersionId:string;validation:TemplateValidation}}>;}
   async action(templateId:string,versionId:string,action:"validate"|"approve"|"retire"){const response=await apiFetch(`/api/document-templates?action=${action}&templateId=${encodeURIComponent(templateId)}&versionId=${encodeURIComponent(versionId)}`,{method:"POST",dataInvalidation:'none'});if(!response.ok)throw await error(response,"Změnu šablony se nepodařilo dokončit");return response.json();}
