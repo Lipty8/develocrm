@@ -3,8 +3,9 @@ import test from "node:test";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
+import {Pool} from 'pg';
 import { DocumentTemplateGenerationService, DocumentGenerationError } from "../src/documents/template-generation-service.js";
-import { DocumentTemplateGenerationRepository } from "../src/documents/template-generation-repository.js";
+import { DocumentTemplateGenerationRepository,type TemplateSource,type GenerationOperation } from "../src/documents/template-generation-repository.js";
 import { DocxTemplateError, inspectDocxTemplate } from "../src/documents/docx-template.js";
 import {ORIGINAL_DOB_FULL_VARIANT,SBK_DOB_DELIVERY_VARIANT} from '../src/documents/template-catalog.js';
 
@@ -14,21 +15,84 @@ function docx(text:string){return zipSync({"[Content_Types].xml":strToU8("<Types
 function hash(bytes:Uint8Array){return`sha256:${createHash("sha256").update(bytes).digest("hex")}`;}
 const schema={fields:{"project.name":{required:true},"unit.code":{required:true},"buyer.name":{required:true}}};
 
-function harness(options:{source?:Uint8Array;snapshot?:Record<string,string>;uploadError?:Error;completed?:boolean;templateHash?:string}={}){
+function harness(options:{source?:Uint8Array;snapshot?:Record<string,string>;uploadError?:Error;completed?:boolean;templateHash?:string;uploadNaming?:GenerationOperation['uploadNaming']}={}){
   const source=options.source??docx("Projekt {{project.name}}, jednotka {{unit.code}}, klient {{buyer.name}}");let uploads=0,completions=0;
+  let uploadNaming:{fileName:string;documentName:string;versionLabel:string}|undefined;
   const template={templateId:"template",templateVersionId,projectId,templateCode:"technical-test",templateName:"Technický test",outputTypeCode:"other",versionLabel:"v1",
     contentHash:options.templateHash??hash(source),schema,driveId:"drive",itemId:"item",externalVersionId:"1.0"};
   const operation={id:"operation",state:options.completed?"completed":"reserved",projectId,template,snapshot:options.snapshot??{"project.name":"Hrdlička","unit.code":"417","buyer.name":"Jan Novák"},
-    outputDocumentId:options.completed?"document":null,outputDocumentVersionId:options.completed?"version":null,unitId:"unit",partyId:"party",salesCaseId:null,contractId:null,createdAt:"2026-10-08T10:00:00.000Z"} as const;
+    outputDocumentId:options.completed?"document":null,outputDocumentVersionId:options.completed?"version":null,unitId:"unit",partyId:"party",salesCaseId:null,contractId:null,createdAt:"2026-10-08T10:00:00.000Z",uploadNaming:options.uploadNaming} as const;
   const repository={sourceForRegistration:async()=>({projectId,driveId:"drive",itemId:"item",externalVersionId:"1.0",contentHash:hash(source)}),register:async()=>({templateId:"template",templateVersionId}),
     getTemplate:async()=>template,reserve:async()=>operation,complete:async()=>{completions++;}};
   const documents={getConnectionForUpload:async()=>({siteId:"site",driveId:"drive"})};
   const graph={downloadFile:async()=>source};
-  const uploadsService={upload:async(input:{bytes:Uint8Array})=>{uploads++;if(options.uploadError)throw options.uploadError;assert.deepEqual(inspectDocxTemplate(input.bytes).tokens,[]);
+  const uploadsService={upload:async(input:{bytes:Uint8Array;fileName:string;documentName:string;versionLabel:string})=>{uploads++;uploadNaming={fileName:input.fileName,documentName:input.documentName,versionLabel:input.versionLabel};if(options.uploadError)throw options.uploadError;assert.deepEqual(inspectDocxTemplate(input.bytes).tokens,[]);
     const xml=strFromU8(unzipSync(input.bytes)["word/document.xml"]);assert.match(xml,/Hrdlička/);assert.match(xml,/417/);assert.match(xml,/Jan Novák/);
     return{documentId:"document",documentVersionId:"version",replayed:false};}};
-  return{repository,service:new DocumentTemplateGenerationService(repository as never,documents as never,uploadsService as never,graph as never),get uploads(){return uploads;},get completions(){return completions;}};
+  return{repository,service:new DocumentTemplateGenerationService(repository as never,documents as never,uploadsService as never,graph as never),get uploads(){return uploads;},get completions(){return completions;},get uploadNaming(){return uploadNaming;}};
 }
+
+test('nový Word má deterministický název bez locale Date textu',async()=>{
+  const h=harness();await h.service.generate({...context,projectId,templateVersionId,idempotencyKey:'filename-regression-01'});
+  assert.deepEqual(h.uploadNaming,{fileName:'technical-test-20261008100000.docx',documentName:'Technický test 20261008100000',versionLabel:'v1-20261008100000'});
+});
+
+test('retry staršího uploadu zachová všechny původně rezervované názvy',async()=>{
+  const legacy={fileName:'technical-test-Thu Oct 08 202.docx',documentName:'Původní dokument Thu Oct 08 202',versionLabel:'v1-Thu Oct 08 202'};
+  const h=harness({uploadNaming:legacy});
+  await h.service.generate({...context,projectId,templateVersionId,idempotencyKey:'filename-legacy-retry'});
+  assert.deepEqual(h.uploadNaming,legacy);
+});
+
+async function mappedOperation(createdAt:unknown,naming?:{original_file_name:string;document_name:string;version_label:string}){
+  const template:TemplateSource={templateId:'template',templateVersionId,projectId,templateCode:'technical',templateName:'Technical',outputTypeCode:'other',versionLabel:'v1',
+    schema,approvalStatus:'approved',effectiveFrom:'2026-10-08',contentHash:'sha256:test',driveId:'drive',itemId:'item',externalVersionId:'1.0'};
+  const queries:Array<{sql:string;values:unknown[]}>=[];
+  const client={query:async(sql:string,values:unknown[])=>{queries.push({sql,values});
+    return{rows:sql.includes('FROM document_upload_operations')?(naming?[naming]:[]):[
+      {id:'operation',request_hash:'request',state:'reserved',project_id:projectId,generation_snapshot:{'project.name':'Test'},created_at:createdAt}]};}};
+  const database={withContext:async(_context:unknown,work:(c:typeof client)=>Promise<unknown>)=>work(client)};
+  const result=await new DocumentTemplateGenerationRepository(database as never).reserve({...context,projectId,template,idempotencyKey:'filename-repo-resume',requestHash:'request'});
+  return{result,queries};
+}
+
+test('repository převede skutečný pg Date i explicitní timezone timestamp na stejné ISO',async()=>{
+  for(const value of [new Date('2026-10-08T10:00:00.123Z'),'2026-10-08T12:00:00.123+02:00','2026-10-08 10:00:00.123+00']){
+    const {result}=await mappedOperation(value);assert.equal(result.createdAt,'2026-10-08T10:00:00.123Z');
+    assert.equal(result.uploadNaming,undefined);
+  }
+});
+
+test('nativní PostgreSQL pg driver vrací Date nezávisle na session timezone',{
+  skip:!process.env.WORKFLOW_TEST_DATABASE_URL,
+},async()=>{
+  const pool=new Pool({connectionString:process.env.WORKFLOW_TEST_DATABASE_URL,max:1});
+  const client=await pool.connect();
+  try{
+    for(const zone of ['UTC','Europe/Prague','Pacific/Honolulu']){
+      await client.query("SELECT set_config('TimeZone',$1,false)",[zone]);
+      const row=(await client.query<{created_at:Date}>('SELECT $1::timestamptz created_at',['2026-10-08T12:00:00.123+02:00'])).rows[0];
+      assert.ok(row.created_at instanceof Date);
+      assert.match(String(row.created_at),/GMT/); // Reproduces the old mapping input.
+      const {result}=await mappedOperation(row.created_at);
+      assert.equal(result.createdAt,'2026-10-08T10:00:00.123Z');
+    }
+  }finally{client.release();await pool.end();}
+});
+
+test('repository obnovuje názvy pouze ze stejného tenant/project uploadu',async()=>{
+  const {result,queries}=await mappedOperation(new Date('2026-10-08T10:00:00Z'),{original_file_name:'legacy.docx',document_name:'Původní název',version_label:'old-v1'});
+  assert.deepEqual(result.uploadNaming,{fileName:'legacy.docx',documentName:'Původní název',versionLabel:'old-v1'});
+  const uploadQuery=queries.find(call=>call.sql.includes('FROM document_upload_operations'))!;
+  assert.match(uploadQuery.sql,/tenant_id=\$1 AND project_id=\$2 AND idempotency_key=\$3/);
+  assert.deepEqual(uploadQuery.values,[context.tenantId,projectId,'generation:operation']);
+});
+
+test('neplatný čas nebo neúplné rezervované názvy nesmí tiše vytvořit nový upload',async()=>{
+  for(const value of [null,undefined,'2026-10-08','2026-10-08T10:00:00','not-a-date',new Date('invalid')])
+    await assert.rejects(mappedOperation(value),/invalid generation operation timestamp/);
+  await assert.rejects(mappedOperation(new Date(),{original_file_name:'legacy.docx',document_name:'',version_label:'v1'}),/invalid reserved generation naming/);
+});
 
 test('obecný generation endpoint nemůže obejít review-only profil právní RS/SBK',async()=>{
   for(const [outputTypeCode,variantKey] of [['reservation_contract',ORIGINAL_DOB_FULL_VARIANT],['future_purchase_contract',ORIGINAL_DOB_FULL_VARIANT]]){

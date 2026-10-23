@@ -7,7 +7,9 @@ export type PlaceholderSchema={fields:Record<string,{required:boolean}>;appendic
 export type TemplateSource={templateId:string;templateVersionId:string;projectId:string;templateCode:string;templateName:string;outputTypeCode:string;
   versionLabel:string;contentHash:string;schema:PlaceholderSchema;approvalStatus:"draft"|"approved"|"retired";effectiveFrom:string;driveId:string;itemId:string;externalVersionId:string|null;variantKey?:string};
 export type GenerationOperation={id:string;state:"reserved"|"completed";projectId:string;template:TemplateSource;snapshot:Record<string,string>;
-  outputDocumentId:string|null;outputDocumentVersionId:string|null;unitId:string|null;partyId:string|null;salesCaseId:string|null;contractId:string|null;createdAt:string};
+  outputDocumentId:string|null;outputDocumentVersionId:string|null;unitId:string|null;partyId:string|null;salesCaseId:string|null;contractId:string|null;createdAt:string;
+  uploadNaming?:{fileName:string;documentName:string;versionLabel:string}};
+type ReservedUploadNaming={original_file_name:string;document_name:string;version_label:string};
 
 export class DocumentTemplateGenerationRepository{
   constructor(private readonly database:Database){}
@@ -55,7 +57,7 @@ export class DocumentTemplateGenerationRepository{
   async getTemplate(input:DocumentContext&{templateVersionId:string;projectId:string}):Promise<TemplateSource|null>{
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
       const row=(await client.query<Record<string,unknown>>(`SELECT t.id template_id,tv.id template_version_id,t.project_id,t.code,t.name,t.output_type_code,t.variant_key,
-          tv.version_label,tv.content_hash,tv.placeholder_schema,tv.approval_status,tv.effective_from,d.external_drive_id,d.external_item_id,v.external_version_id
+          tv.version_label,tv.content_hash,tv.placeholder_schema,tv.approval_status,tv.effective_from::text,d.external_drive_id,d.external_item_id,v.external_version_id
         FROM document_template_versions tv JOIN document_templates t ON t.tenant_id=tv.tenant_id AND t.id=tv.template_id
         JOIN documents d ON d.tenant_id=tv.tenant_id AND d.project_id=tv.project_id AND d.id=tv.source_document_id
         JOIN document_versions v ON v.tenant_id=tv.tenant_id AND v.id=tv.source_document_version_id
@@ -69,7 +71,15 @@ export class DocumentTemplateGenerationRepository{
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
       if(input.contractId&&['reservation_contract','future_purchase_contract'].includes(input.template.outputTypeCode))await client.query("SELECT app.lock_workflow_unit($1,(SELECT unit_id FROM contracts WHERE tenant_id=$1 AND project_id=$2 AND id=$3))",[input.tenantId,input.projectId,input.contractId]);
       const existing=(await client.query<Record<string,unknown>>(`SELECT * FROM document_generation_operations WHERE tenant_id=$1 AND idempotency_key=$2`,[input.tenantId,input.idempotencyKey])).rows[0];
-      if(existing){if(existing.request_hash!==input.requestHash)throw new Error("idempotency key payload mismatch");return mapOperation(existing,input.template);}
+      if(existing){
+        if(existing.request_hash!==input.requestHash)throw new Error("idempotency key payload mismatch");
+        // A pre-fix upload may already be physically persisted. Keep its exact
+        // reserved naming rather than change its request hash on recovery.
+        const naming=(await client.query<ReservedUploadNaming>(`SELECT original_file_name,version_label,metadata->>'documentName' document_name
+          FROM document_upload_operations WHERE tenant_id=$1 AND project_id=$2 AND idempotency_key=$3`,
+          [input.tenantId,input.projectId,`generation:${String(existing.id)}`])).rows[0];
+        return mapOperation(existing,input.template,naming);
+      }
       if(input.contractId&&['reservation_contract','future_purchase_contract'].includes(input.template.outputTypeCode)){
         const pending=await client.query(`SELECT 1 FROM document_generation_operations g WHERE g.tenant_id=$1 AND g.contract_id=$2
           AND (g.state='reserved' OR NOT EXISTS(SELECT 1 FROM contract_versions cv WHERE cv.tenant_id=g.tenant_id AND cv.generation_operation_id=g.id))`,[input.tenantId,input.contractId]);
@@ -132,4 +142,12 @@ export class DocumentTemplateGenerationRepository{
 }
 
 function mapTemplate(r:Record<string,unknown>):TemplateSource{return{templateId:String(r.template_id),templateVersionId:String(r.template_version_id),projectId:String(r.project_id),templateCode:String(r.code),templateName:String(r.name),outputTypeCode:String(r.output_type_code),variantKey:r.variant_key?String(r.variant_key):'default',versionLabel:String(r.version_label),contentHash:String(r.content_hash),schema:r.placeholder_schema as PlaceholderSchema,approvalStatus:String(r.approval_status) as TemplateSource["approvalStatus"],effectiveFrom:String(r.effective_from),driveId:String(r.external_drive_id),itemId:String(r.external_item_id),externalVersionId:r.external_version_id?String(r.external_version_id):null};}
-function mapOperation(r:Record<string,unknown>,template:TemplateSource):GenerationOperation{return{id:String(r.id),state:String(r.state) as GenerationOperation["state"],projectId:String(r.project_id),template,snapshot:r.generation_snapshot as Record<string,string>,outputDocumentId:r.output_document_id?String(r.output_document_id):null,outputDocumentVersionId:r.output_document_version_id?String(r.output_document_version_id):null,unitId:r.unit_id?String(r.unit_id):null,partyId:r.party_id?String(r.party_id):null,salesCaseId:r.sales_case_id?String(r.sales_case_id):null,contractId:r.contract_id?String(r.contract_id):null,createdAt:String(r.created_at)};}
+function mapOperation(r:Record<string,unknown>,template:TemplateSource,naming?:ReservedUploadNaming):GenerationOperation{
+  const value=r.created_at;
+  if(!(value instanceof Date)&&!(typeof value==='string'&&/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}(?::?\d{2})?)$/i.test(value)))throw new Error('invalid generation operation timestamp');
+  const date=value instanceof Date?value:new Date(value);
+  if(!Number.isFinite(date.getTime()))throw new Error('invalid generation operation timestamp');
+  if(naming&&[naming.original_file_name,naming.document_name,naming.version_label].some(item=>typeof item!=='string'||!item.trim()))throw new Error('invalid reserved generation naming');
+  return{id:String(r.id),state:String(r.state) as GenerationOperation["state"],projectId:String(r.project_id),template,snapshot:r.generation_snapshot as Record<string,string>,outputDocumentId:r.output_document_id?String(r.output_document_id):null,outputDocumentVersionId:r.output_document_version_id?String(r.output_document_version_id):null,unitId:r.unit_id?String(r.unit_id):null,partyId:r.party_id?String(r.party_id):null,salesCaseId:r.sales_case_id?String(r.sales_case_id):null,contractId:r.contract_id?String(r.contract_id):null,createdAt:date.toISOString(),
+    ...(naming?{uploadNaming:{fileName:naming.original_file_name,documentName:naming.document_name,versionLabel:naming.version_label}}:{})};
+}

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {createHash} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
+import {Pool} from 'pg';
 import {strFromU8,unzipSync} from 'fflate';
 import {RsGenerationService,RsGenerationError,buildSnapshot} from '../src/contracts/rs-generation-service.js';
 import type {RsSource} from '../src/contracts/rs-generation-repository.js';
@@ -119,6 +120,44 @@ test('SBK v2: schválená verze, autorizovaná data, strict DOCX, existující u
   assert.deepEqual(h.operation?.snapshot,buildSnapshot(h.current));assert.equal(h.upload?.graphVersionId,'1.0');assert.equal(h.upload?.state,'completed');
   const retry=await h.service.generate(input);assert.equal(retry.replayed,true);assert.equal(h.uploads,1);assert.equal(retry.contractVersionId,first.contractVersionId);
   assert.equal(JSON.stringify(h.current),before);
+});
+
+test('SBK v2: pořadí JSON klíčů schématu příloh nesmí blokovat platné generování',async()=>{
+  const h=await harness();
+  h.template.schema.appendices=contractAppendixRequirements('sbk',SBK_DOB_DELIVERY_VARIANT).map(({number,label})=>({label,number}));
+  await h.service.generate({...context,contractId:h.current.contractId,idempotencyKey:'sbk-json-key-order'});
+  assert.equal(h.uploads,1);assert.equal(h.binds,1);
+});
+
+test('SBK v2: skutečný PostgreSQL jsonb roundtrip zachová generovatelnost příloh',{
+  skip:!process.env.WORKFLOW_TEST_DATABASE_URL,
+},async()=>{
+  const pool=new Pool({connectionString:process.env.WORKFLOW_TEST_DATABASE_URL,max:1});
+  try{
+    const h=await harness();
+    const expected=contractAppendixRequirements('sbk',SBK_DOB_DELIVERY_VARIANT);
+    const persisted=(await pool.query<{appendices:Array<{number:number;label:string}>}>('SELECT $1::jsonb appendices',[JSON.stringify(expected)])).rows[0].appendices;
+    assert.deepEqual(persisted,expected);
+    assert.notEqual(JSON.stringify(persisted),JSON.stringify(expected)); // Reproduces the runtime false rejection.
+    h.template.schema.appendices=persisted;
+    await h.service.generate({...context,contractId:h.current.contractId,idempotencyKey:'sbk-postgres-jsonb'});
+    assert.equal(h.uploads,1);assert.equal(h.binds,1);
+  }finally{await pool.end();}
+});
+
+test('SBK v2: změněná pozice, počet nebo obsah schématu příloh stále zastaví upload',async()=>{
+  for(const change of [
+    (rows:Array<{number:number;label:string}>)=>rows.slice(1),
+    (rows:Array<{number:number;label:string}>)=>rows.reverse(),
+    (rows:Array<{number:number;label:string}>)=>rows.map((row,index)=>index===0?{...row,number:99}:row),
+    (rows:Array<{number:number;label:string}>)=>rows.map((row,index)=>index===0?{...row,label:'Jiná příloha'}:row),
+    (rows:Array<{number:number;label:string}>)=>[...rows,rows[0]],
+  ]){
+    const h=await harness();h.template.schema.appendices=change([...contractAppendixRequirements('sbk',SBK_DOB_DELIVERY_VARIANT)]);
+    await assert.rejects(h.service.generate({...context,contractId:h.current.contractId,idempotencyKey:'sbk-invalid-schema'}),
+      (error:unknown)=>error instanceof Error&&'code' in error&&error.code==='contract_appendices_required');
+    assert.equal(h.uploads,0);assert.equal(h.operation,undefined);
+  }
 });
 
 test('SBK v2: DB failure po fyzickém uploadu retryne stejný dokument bez druhé kopie',async()=>{

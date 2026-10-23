@@ -54,7 +54,7 @@ export class DocumentTemplateGenerationService{
       throw new DocumentGenerationError('template_not_approved');
     if(catalog.contractType&&(!input.contractId||!input.snapshot))throw new DocumentGenerationError('use_contract_generation');
     const requiredAppendices=catalog.contractType==='rs'||catalog.contractType==='sbk'?contractAppendixRequirements(catalog.contractType,template.variantKey):[];
-    if(requiredAppendices.length&&(JSON.stringify(template.schema.appendices)!==JSON.stringify(requiredAppendices)
+    if(requiredAppendices.length&&(!appendixSchemaMatches(template.schema.appendices,requiredAppendices)
       ||!input.contractAppendices||input.contractAppendices.items.length!==requiredAppendices.length
       ||input.contractAppendices.items.some((item,index)=>item.number!==requiredAppendices[index].number)))
       throw new DocumentGenerationError('contract_appendices_required');
@@ -72,12 +72,22 @@ export class DocumentTemplateGenerationService{
     const renderedHash=`sha256:${hash(rendered.bytes)}`;
     const stamp=operation.createdAt.replace(/[-:TZ.]/g,"").slice(0,14);const safeCode=template.templateCode.replace(/[^a-z0-9_-]/g,"-");
     const upload=await this.uploads.upload({...input,idempotencyKey:`generation:${operation.id}`,documentId:input.documentId,typeCode:template.outputTypeCode,
-      documentName:input.documentName?.trim()||`${template.templateName} ${stamp}`,fileName:`${safeCode}-${stamp}.docx`,mimeType:"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      bytes:rendered.bytes,versionLabel:`${template.versionLabel}-${stamp}`,status:"ready",note:"Automaticky vytvořený dokument",
+      documentName:operation.uploadNaming?.documentName??(input.documentName?.trim()||`${template.templateName} ${stamp}`),fileName:operation.uploadNaming?.fileName??`${safeCode}-${stamp}.docx`,mimeType:"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      bytes:rendered.bytes,versionLabel:operation.uploadNaming?.versionLabel??`${template.versionLabel}-${stamp}`,status:"ready",note:"Automaticky vytvořený dokument",
       unitId:operation.unitId??undefined,partyId:operation.partyId??undefined,salesCaseId:operation.salesCaseId??undefined,contractId:operation.contractId??undefined});
     await this.repository.complete({...input,operationId:operation.id,documentId:upload.documentId,documentVersionId:upload.documentVersionId,renderedContentHash:renderedHash});
     return{operationId:operation.id,documentId:upload.documentId,documentVersionId:upload.documentVersionId,replayed:upload.replayed};
   }
+}
+
+function appendixSchemaMatches(value:unknown,expected:ReadonlyArray<{number:number;label:string}>):boolean{
+  // PostgreSQL jsonb canonicalizes object key order. Order is meaningful for
+  // appendix positions, not for the keys inside each appendix descriptor.
+  return Array.isArray(value)&&value.length===expected.length&&value.every((item,index)=>{
+    if(!item||typeof item!=='object'||Array.isArray(item))return false;
+    const row=item as Record<string,unknown>;
+    return Object.keys(row).length===2&&row.number===expected[index].number&&row.label===expected[index].label;
+  });
 }
 
 function validateSchema(schema:PlaceholderSchema):void{
