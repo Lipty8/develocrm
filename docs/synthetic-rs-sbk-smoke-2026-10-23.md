@@ -83,6 +83,13 @@ The persisted jsonb appendix descriptor key order caused a false schema
 rejection before generated-output reservation/upload. See the separate JSONB
 correction report. These are failures, not a passed SBK smoke.
 
-Live SBK generation/signature, final payment-plan verification and cleanup remain
-unverified. A passed fixture test must not be reported as an approved-original
+After deployment of `4dc5624`, matching execution
+`job-develocrm-hold-expiry-g0jxyjm` Succeeded. The same SBK request generated,
+uploaded, bound and retried without duplication. Exact physical Word (43,736
+bytes) and appendix evidence were verified. Contract
+`5216b67d-c508-405e-bf2c-be839658032d`, version
+`07e52631-8a65-4582-a335-a4f462dfd334`. No real legal template was activated.
+
+Live SBK signature, final payment-plan verification and cleanup remain
+unverified. This synthetic test must not be reported as an approved-original
 RS/SBK production E2E.
