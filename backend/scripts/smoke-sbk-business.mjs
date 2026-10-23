@@ -56,7 +56,8 @@ export function assertSyntheticTemplate(bytes,expectedHash,kind){
 export function smokeFailure(error,phase,projectId){
   const candidate=error?.code??error?.message;
   return{event:'smoke.sbk_pipeline_failed',phase,projectId,
-    code:typeof candidate==='string'&&/^[A-Z0-9_]{1,120}$/.test(candidate)?candidate:'SMOKE_OPERATION_FAILED'};
+    code:typeof candidate==='string'&&/^[A-Za-z0-9_]{1,120}$/.test(candidate)?candidate:'SMOKE_OPERATION_FAILED',
+    errorName:typeof error?.name==='string'&&/^[A-Za-z]{1,80}$/.test(error.name)?error.name:undefined};
 }
 
 export async function runSbkSmoke(input){
@@ -121,6 +122,7 @@ export async function runSbkSmoke(input){
     const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Prague'}).format(new Date());
 
     async function ensureTemplate(type){
+      phase=`${type}.template_source`;
       const file=input.templates?.[type];if(!file)fail('SMOKE_TEMPLATE_INPUT_REQUIRED');
       const bytes=Buffer.from(file.base64,'base64');assertSyntheticTemplate(bytes,file.sha256,type);
       const code=`tech72-synthetic-${type}`;let found=(await management.list({...scoped})).find(t=>t.code===code);
@@ -134,19 +136,25 @@ export async function runSbkSmoke(input){
       const persisted=await management.source(target);const xml=strFromU8(unzipSync(persisted.bytes)['word/document.xml']);
       const expectedXml=strFromU8(unzipSync(bytes)['word/document.xml']);
       if(xml!==expectedXml)fail('SMOKE_PERSISTED_SOURCE_NOT_SYNTHETIC');
+      phase=`${type}.template_validate`;
       if(v.status==='draft')await management.validate(target);
+      phase=`${type}.template_approve`;
       if(v.status!=='approved')await management.approve(target);
       return target;
     }
     async function generateAndPrepare(c,type){
+      phase=`${type}.prepare`;
       const v=await latest(c.id);if(c.current_status==='signed')return{contractId:c.id,versionId:v.id,alreadySigned:true};
       if(!v.document_version_id){
         if(type==='sbk'){
+          phase='sbk.signing_plan';
           await generation.setSigningPlan({...context,contractId:c.id,versionId:v.id,sellerPlannedOn:today,buyerPlannedOn:today});
+          phase='sbk.payment_terms';
           await generation.preparePaymentTerms({...context,contractId:c.id,versionId:v.id});
           const rsBytes=Buffer.from(input.templates.rs.base64,'base64');assertSyntheticTemplate(rsBytes,input.templates.rs.sha256,'rs');
           const appendix=renderDocxTemplate(rsBytes,Object.fromEntries(RS_PLACEHOLDERS.map(k=>[k,'NEPLATNÁ TECHNICKÁ PŘÍLOHA'])),{allowedTokens:RS_PLACEHOLDERS,requiredTokens:RS_PLACEHOLDERS}).bytes;
           for(const required of contractAppendixRequirements('sbk',SBK_DOB_DELIVERY_VARIANT)){
+            phase=`sbk.appendix_${required.number}`;
             const uploaded=await uploads.upload({...scoped,unitId:(await unit()).id,contractId:c.id,typeCode:'other',documentName:`TECH72 příloha ${required.number} BEZ PRÁVNÍHO ÚČINKU`,
               fileName:`TECH72-appendix-${required.number}.docx`,mimeType:MIME,bytes:appendix,versionLabel:'synthetic-v1',status:'ready',idempotencyKey:`tech72-appendix-${required.number}`});
             const source=await preparationRepo.load({...context,contractId:c.id,permission:'contract.manage'});
@@ -156,6 +164,7 @@ export async function runSbkSmoke(input){
           }
         }
         const ready=await generation.readiness({...context,contractId:c.id});if(!ready.ready)fail(`SMOKE_NOT_READY_${ready.issues.map(i=>i.code).join('_').toUpperCase()}`);
+        phase=`${type}.generate`;
         const request={...context,contractId:c.id,idempotencyKey:`tech72-generate-${type}`};
         const first=await generation.generate(request),replay=await generation.generate(request);
         if(!replay.replayed||first.documentVersionId!==replay.documentVersionId||first.contractVersionId!==replay.contractVersionId)fail('SMOKE_GENERATION_RETRY_DUPLICATED');
@@ -200,8 +209,10 @@ export async function runSbkSmoke(input){
       phase='prepare_sbk';const rs=await contract('rs');if(rs?.current_status!=='signed')fail('SMOKE_BROWSER_RS_SIGNATURE_REQUIRED');
       const obligation=(await sql("SELECT id,amount::float8 amount FROM payment_obligations WHERE tenant_id=$1 AND project_id=$2 AND contract_id=$3 AND obligation_type='reservation_fee' AND cancelled_at IS NULL",[tenantId,projectId,rs.id])).rows;
       if(obligation.length!==1||obligation[0].amount!==250000)fail('SMOKE_RS_PAYMENT_UNEXPECTED');
+      phase='sbk.record_technical_fee';
       await payments.record({...context,obligationId:obligation[0].id,amount:250000,paidAt:new Date().toISOString(),note:'TECH72 účetní simulace bez přesunu peněz',idempotencyKey:'tech72-paid-rs-fee'});
       await ensureTemplate('sbk');let sbk=await contract('sbk');
+      phase='sbk.create_contract';
       if(!sbk){const sale=(await sql('SELECT sales_case_id FROM contracts WHERE tenant_id=$1 AND project_id=$2 AND id=$3',[tenantId,projectId,rs.id])).rows[0];
         await commercial.createContract({...context,salesCaseId:sale.sales_case_id,type:'sbk',reference:`${CODE}-SBK-SYNTHETIC`,title:'TECH72 NEPLATNÝ TEST SBK',idempotencyKey:'tech72-create-sbk',paymentTiming:'signature'});sbk=await contract('sbk');}
       console.log(JSON.stringify({event:'smoke.sbk_document_prepared',projectId,unitId:(await unit()).id,...await generateAndPrepare(sbk,'sbk'),requiresBrowserSignature:true}));
