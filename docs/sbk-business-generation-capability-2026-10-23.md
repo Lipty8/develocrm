@@ -60,3 +60,9 @@ change explains that SBK v2 uploads remain concepts pending explicit content
 approval, instead of incorrectly claiming the profile can never be activated.
 The upload control does not approve anything; RS and old SBK keep their existing
 review-only explanation.
+
+The current Sites helper identified a conflicting obsolete npm starter
+`package-lock.json` alongside the declared pnpm package manager and maintained
+pnpm lockfile. The obsolete npm lockfile was removed from source (recoverable
+in Git). No dependency version or pnpm resolution changed, and no dependency
+installation was performed. API Docker builds already use pnpm exclusively.
