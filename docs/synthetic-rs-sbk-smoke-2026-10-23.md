@@ -110,6 +110,44 @@ generation/audit and an incorrect deadline across the 28 October holiday.
 All 10 harness tests passed. This is local verifier coverage, not proof of the
 still-pending live SBK signature or its resulting persisted financial state.
 
-Live SBK signature, final payment-plan verification and cleanup remain
-unverified. This synthetic test must not be reported as an approved-original
-RS/SBK production E2E.
+### Live signed-chain verification (24 October)
+
+Adam completed the SBK signature manually. A fresh authenticated detail reload
+displayed Signed, document version 1 and signature evidence recorded at
+24 October 10:33 Europe/Prague. The exact document remained downloadable.
+
+Execution `job-develocrm-hold-expiry-1g39y19` Failed after both signed-document
+reads: the verifier incorrectly asked the preparation repository for payment
+terms. That repository deliberately excludes signed contracts. This was a smoke
+harness defect, not a failed signature or production payment mutation. The
+verifier now reads the exact locked signed version's persisted payment snapshot
+with tenant/project/contract/version and permission checks. Eleven harness tests
+and changed-script lint passed, including the new signed-snapshot regression.
+
+Corrected execution `job-develocrm-hold-expiry-9ojmcyp` Succeeded using the
+existing immutable ready API image `ca-develocrm-api-pilot--sbk-jsonb-4dc5624`.
+The `smoke.sbk_chain_verified` result confirmed:
+
+- Exact native document versions and content hashes for both RS and SBK,
+  without unresolved placeholders.
+- One signed, locked logical version and one completed generation per contract;
+  all required parties signed that version. The contract/version timestamp
+  equals the last required signature.
+- Exactly one signature audit record, status event and outbox event per contract.
+- Same active sales case `7e750c52-2cd1-4696-b88a-ee86caf3d1a2` and unit7201;
+  persisted unit status contracted/SBK, completed RS/SBK and central next action KS.
+- Exactly one SBK obligation: 1,100,000 CZK, exact SBK version, correct case/unit,
+  due 2 November 2026 (five Czech working days after the actual signature,
+  excluding the 28 October public holiday). No premature final installment.
+
+Authenticated browser navigation from the signed SBK to unit7201 displayed SBK,
+RS/SBK Hotovo and KS Následující krok. Unit Payments showed the existing
+250,000 CZK technical fee plus the new 1,100,000 CZK installment, consistent with
+the contract detail. The final 4,150,000 CZK remained awaiting evidenced delivery
+of the notice, with no invented due date. No KS or notice was created.
+
+The verification did not write business data, resend a signature or change job
+configuration. No runtime deployment or migration is needed for the harness
+correction. Cleanup remains deferred; TECH72 files/history remain intact. This
+passed synthetic chain is **not** an approved-original RS/SBK production E2E or
+permission to activate legal templates.

@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
-import {assertSmokeInput,assertSmokeProject,assertSyntheticTemplate,assertSignedChainEvidence,smokeFailure,SMOKE_KEY} from './smoke-sbk-business.mjs';
+import {assertSmokeInput,assertSmokeProject,assertSyntheticTemplate,assertSignedChainEvidence,loadSignedSmokePaymentTerms,smokeFailure,SMOKE_KEY} from './smoke-sbk-business.mjs';
 import {getSalesProcessState} from '../dist/shared/next-contract-action.js';
+import {originalPaymentPlan} from '../dist/contracts/original-payment-plan.js';
 
 const actor='11111111-1111-4111-8111-111111111111';
 const project={code:'TECH72',name:'TECH SMOKE 0072 – synthetic RS SBK',archived_at:null};
@@ -85,4 +86,20 @@ test('signed-chain verification rejects mismatched business context and prematur
     s=>{s.payments.push({...s.payments[0],schedule_key:'sbk_final',amount:'4150000.00'});}]){
     const state=signedChain();mutate(state);assert.throws(()=>assertSignedChainEvidence(state),/PAYMENT_PLAN_INVALID/);
   }
+});
+test('post-signature verifier reads the exact locked signed version, not the draft preparation mapper',async()=>{
+  const terms={version:1,profile:'dejvice-original-dob-full-v1',calendarPolicy:'cz-2026-v1',signatureAnchor:'last_required_signature',
+    contractType:'sbk',totalPrice:'5500000.00',reservationFee:'250000.00',paidReservationFee:'250000.00',
+    precedingRsContractId:actor,buyerPartyId:actor,variableSymbol:'72',
+    rows:originalPaymentPlan({type:'sbk',totalPrice:'5500000.00',reservationFeeAmount:'250000.00',paidReservationFeeAmount:'250000.00'})};
+  const target={tenantId:'tenant',projectId:'project',contractId:'contract',versionId:'version',membershipId:'membership'};
+  const result=await loadSignedSmokePaymentTerms(async(query,values)=>{
+    assert.match(query,/FROM contract_versions v/);assert.match(query,/c.current_status='signed'/);
+    assert.match(query,/v.version_status='signed'/);assert.match(query,/v.locked_at IS NOT NULL/);
+    assert.match(query,/app.has_project_permission/);assert.deepEqual(values,['tenant','project','contract','version','membership']);
+    return{rows:[{payment_terms_snapshot:terms}]};
+  },target);
+  assert.equal(result,terms);
+  for(const rows of [[],[{payment_terms_snapshot:null}],[{payment_terms_snapshot:{...terms,signatureAnchor:'planned_date'}}]])
+    await assert.rejects(()=>loadSignedSmokePaymentTerms(async()=>({rows}),target),/PAYMENT_SNAPSHOT_INVALID/);
 });

@@ -14,9 +14,9 @@ original's complete business workflow.
 | Deterministic SharePoint upload and exact evidence | Existing upload/generation services, native version and SHA-256 checks; deployed binary-version download fix | No missing technical transport fix identified in this pass; legal activation is independent |
 | Exact historical downloads | Sites 163 browser downloads of technical v1/v2 returned distinct expected files | No new implementation needed; see exact-download report |
 | Project-scoped template navigation | `5a72e10` already implements URL-backed project/type state and cancellation | Authenticated live check on 24 October passed, including ordinary sign-in return and reload; stale audit note corrected |
-| Synthetic RS signature | TECH72 RS observed Signed with exact version after fresh navigation | Complete synthetic SBK signature remains a manual browser step, not a backend workaround |
-| Synthetic SBK generation | Runtime execution `job-develocrm-hold-expiry-g0jxyjm` succeeded; exact generated Word, appendices and replay verified | SBK still unsigned at last observation; final persisted stage/deadline/audit checks and cleanup are not yet proven |
-| Last-required-signature payment deadline | Central signature/payment implementation and Czech calendar tests | Strengthened verifier `e692d07` now checks actual due day/context/audit, but its post-SBK-signature live run is pending |
+| Synthetic RS/SBK signatures | Both TECH72 contracts manually signed by Adam, exact locked versions observed and read back | No pending signature. This does not approve original legal templates |
+| Synthetic SBK generation | Runtime generation/replay verified; final read-only execution `job-develocrm-hold-expiry-9ojmcyp` Succeeded | Technical chain passed; cleanup deferred, approved-original E2E remains separate |
+| Last-required-signature payment deadline | Live signed-chain verifier checked actual last signature, audit/outbox, single generation/version and 1,100,000 CZK due 2 November 2026 | Final balance correctly awaits notice evidence; no invented due date |
 | Authoritative current unit areas | 19 catalogue PDFs compared with pilot; user confirmed them authoritative | Explicit apply approval still pending. No current areas, prices or signed snapshots were overwritten |
 | Actual appendix bundle | Existing exact-version selection/freezing pipeline | Two copied source PDFs remain unregistered pending the documented safety/classification checks; remaining required approved files/links must be complete |
 | Historical consistency findings | Last physical read audit: four old template/source checksum discrepancies and TECH60-BLOCKED reservation inconsistency | This is dated audit evidence, not a fresh global count. No historical repair/reclassification is authorized or performed |
@@ -37,10 +37,9 @@ claim Microsoft Word desktop verification from LibreOffice rendering.
 
 ## Safe next sequence
 
-1. After the user manually completes or cancels the pending synthetic SBK
-   signature, inspect actual persisted state. If completed, run the strengthened
-   read-only verifier and check UI stage/financial deadline after reload. Do not
-   fabricate completion or record a signature through another channel.
+1. The manual synthetic signatures and strengthened read-only verification have
+   now passed. Preserve the technical files/evidence; do not confuse this result
+   with the outstanding original-profile activation and content gates.
 2. Resolve the separately requested appendix safety/classification confirmations
    and content selection; preserve originals and least-privilege site access.
 3. Receive the legally harmonized RS source and explicit content approval of the

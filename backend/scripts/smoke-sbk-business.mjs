@@ -88,6 +88,20 @@ export function assertSignedChainEvidence({contracts,unit,next,terms,payments}){
     fail('SMOKE_SBK_PAYMENT_PLAN_INVALID');
 }
 
+export async function loadSignedSmokePaymentTerms(sql,{tenantId,projectId,contractId,versionId,membershipId}){
+  // The preparation repository deliberately excludes signed contracts.
+  // Read the immutable signed version, not a mutable preparation context.
+  const persisted=(await sql(`SELECT v.payment_terms_snapshot FROM contract_versions v
+    JOIN contracts c ON c.tenant_id=v.tenant_id AND c.project_id=v.project_id AND c.id=v.contract_id
+    WHERE c.tenant_id=$1 AND c.project_id=$2 AND c.id=$3 AND v.id=$4
+      AND c.current_status='signed' AND v.version_status='signed' AND v.locked_at IS NOT NULL
+      AND app.has_project_permission(c.tenant_id,$5,c.project_id,'contract.read')`,
+    [tenantId,projectId,contractId,versionId,membershipId])).rows[0];
+  const terms=signaturePaymentTerms(persisted?.payment_terms_snapshot);
+  if(!terms)fail('SMOKE_SBK_PAYMENT_SNAPSHOT_INVALID');
+  return terms;
+}
+
 export async function runSbkSmoke(input){
   assertSmokeInput(input);
   if(['prepare_rs','prepare_sbk'].includes(input.mode))for(const kind of ['rs','sbk']){
@@ -258,8 +272,8 @@ export async function runSbkSmoke(input){
         const exact=await evidence.exactFile({...context,contractId:c.id,versionId:v.id});if(inspectDocxTemplate(exact.bytes).tokens.length)fail('SMOKE_UNRESOLVED_FIELDS');
         result.push({type,contractId:c.id,versionId:v.id,documentVersionId:exact.evidence.documentVersionId,exactHashVerified:true});}
       const sbk=await contract('sbk');
-      const source=await preparationRepo.load({...context,contractId:sbk.id,permission:'contract.read'});
-      const terms=signaturePaymentTerms(source?.paymentTerms);if(!terms)fail('SMOKE_SBK_PAYMENT_SNAPSHOT_INVALID');
+      const signedVersion=await latest(sbk.id);
+      const terms=await loadSignedSmokePaymentTerms(sql,{tenantId,projectId,contractId:sbk.id,versionId:signedVersion.id,membershipId});
       const rows=(await sql(`SELECT schedule_key,amount::text,(due_at AT TIME ZONE 'Europe/Prague')::date::text "dueOn",
         contract_version_id "contractVersionId",unit_id "unitId",sales_case_id "salesCaseId"
         FROM payment_obligations WHERE tenant_id=$1 AND project_id=$2 AND contract_id=$3 AND cancelled_at IS NULL`,[tenantId,projectId,sbk.id])).rows;
