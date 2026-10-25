@@ -3,6 +3,7 @@ import {before,afterEach,test,mock} from 'node:test';
 import React from 'react';
 import {JSDOM} from 'jsdom';
 import {DocumentUploadModal} from '../app/components/document-upload-modal';
+import {DocumentOpenAction} from '../app/components/document-open-action';
 import {documentUploadProjects,validateDocumentFile} from '../app/lib/document-upload';
 import {documentRepository,type DocumentRecord,type DocumentFileUploadInput} from '../app/repositories/document-repository';
 import {entraAuth} from '../app/lib/entra-auth';
@@ -14,6 +15,10 @@ const projects=[{id:projectA,name:'Projekt A'},{id:projectB,name:'Projekt B'}];
 before(async()=>{dom=new JSDOM('<!doctype html><html><body></body></html>',{url:'https://develocrm.test'});Object.assign(globalThis,{self:dom.window,window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,Node:dom.window.Node,FileReader:dom.window.FileReader,CustomEvent:dom.window.CustomEvent});Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});({render,screen,cleanup,fireEvent,waitFor}=await import('@testing-library/react'));});
 afterEach(()=>{cleanup();mock.restoreAll();});
 const file=()=>new dom.window.File(['%PDF-1.4\nTechnical test only'],'test.pdf',{type:'application/pdf'});
+test('document open action links to the configured SharePoint file, not unsafe URLs',()=>{
+  const {rerender}=render(<DocumentOpenAction webUrl="https://tenant.sharepoint.com/sites/crm/file.pdf"/>);assert.equal(screen.getByRole('link',{name:'Otevřít v SharePointu'}).getAttribute('target'),'_blank');
+  for(const webUrl of [null,'javascript:alert(1)','https://tenant.sharepoint.com.evil.invalid/file','http://tenant.sharepoint.com/file','https://user:password@tenant.sharepoint.com/file']){rerender(<DocumentOpenAction webUrl={webUrl}/>);assert.equal(screen.queryByRole('link'),null);}
+});
 function selectFile(){fireEvent.change(screen.getByLabelText('Soubor'),{target:{files:[file()]}});}
 
 test('upload form requires a physical file, uses UUID links and resets them when the project changes',async()=>{
