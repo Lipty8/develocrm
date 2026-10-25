@@ -109,6 +109,7 @@ export async function forwardBackendMutation(request: Request, options: Mutation
       method: options.method,
       headers,
       body: options.method === "DELETE" ? undefined : body,
+      ...(body instanceof ReadableStream?{duplex:'half' as const}:{}),
       cache: "no-store",
       // Cloudflare Workers do not implement redirect:"error". Keep redirects
       // manual and reject them explicitly so authorization is never forwarded

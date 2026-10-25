@@ -103,14 +103,14 @@ test("správa role používá kompaktní funkční oblasti a volitelnou technick
   assert.match(roleModal, /title=\{permission\.description\}/);
   assert.match(css, /\.role-permission-areas\{[^}]*max-height:520px/);
   assert.match(css, /\.role-permission-areas>section>div\{[^}]*grid-template-columns:repeat\(2/);
-  assert.match(app, /className=\{`modal form-modal \$\{className\}`\}/);
+  assert.match(fs.readFileSync(new URL('../app/components/form-modal.tsx',import.meta.url),'utf8'), /className=\{`modal form-modal \$\{className\}`\}/);
   assert.match(css, /\.form-modal\s*\{[^}]*max-height:calc\(100dvh - 40px\)/s);
   assert.match(css, /\.form-modal>\.modal-form\s*\{[^}]*overflow-y:auto/s);
 });
 
 test("sdílený modal ani administrace nevysvětlují interní implementaci", () => {
   assert.doesNotMatch(app, /Změna se uloží přes řízenou doménovou operaci/);
-  assert.match(app, /\{subtitle&&<p>\{subtitle\}<\/p>\}/);
+  assert.match(fs.readFileSync(new URL('../app/components/form-modal.tsx',import.meta.url),'utf8'), /\{subtitle&&<p>\{subtitle\}<\/p>\}/);
   assert.doesNotMatch(app, /Efektivní práva jsou vynucena backendem a RLS/);
   assert.doesNotMatch(app, /Projektový rozsah i role jsou kontrolovány také na backendu/);
   assert.doesNotMatch(app, /Každá změna se zapisuje do auditu a outboxu/);

@@ -3,6 +3,7 @@ import { mediaRepository } from "./media-repository";
 import { responseAllowsBrowserFallback } from "../lib/data-mode";
 import { apiFetch } from "../lib/api-client";
 import {readError} from '../lib/read-state';
+import {isDocumentEntityId,readDocumentBase64,validateDocumentFile} from '../lib/document-upload';
 
 export type DocumentCategory = "contract" | "floor_plan" | "project_documentation" | "client_document" | "price_document" | "reservation" | "other";
 export type DocumentStatus = "draft" | "ready" | "sent" | "negotiation" | "signed" | "archived";
@@ -21,6 +22,8 @@ export type DocumentRecord = {
 export type DocumentListResponse={documents:DocumentRecord[];connection:DocumentConnectionState;source:"backend-api"|"preview-adapter"};
 export type DocumentFilters={documentId?:string;query?:string;category?:string;typeCode?:string;status?:string;projectId?:string;unitId?:string;partyId?:string;contractId?:string;clientChangeId?:string;complaintId?:string;handoverId?:string};
 export type NewDocumentInput={projectId:string;projectName:string;name:string;typeCode:string;typeName:string;status:DocumentStatus;note?:string;unit?:string;party?:string;contract?:string;salesCase?:string;author?:string};
+export type DocumentFileUploadInput={projectId:string;documentId?:string;typeCode:string;documentName:string;versionLabel:string;status:'draft'|'ready';note:string;file:File;idempotencyKey:string;unitId?:string;partyId?:string};
+export type DocumentFileUploadResult={documentId:string;documentVersionId:string;replayed:boolean;webUrl:string|null};
 export type DocumentWorkflowLink={type:"client_change"|"complaint"|"handover";targetId:string};
 
 export const documentTypeOptions=[
@@ -44,6 +47,7 @@ export interface DocumentRepository {
   listHandover(handoverId:string,signal?:AbortSignal):Promise<DocumentListResponse>;
   get(documentId:string,signal?:AbortSignal):Promise<DocumentRecord|null>;
   create(input:NewDocumentInput):Promise<DocumentRecord>;
+  uploadFile(input:DocumentFileUploadInput):Promise<DocumentFileUploadResult>;
   update(document:DocumentRecord,input:{name:string;typeCode:string;typeName:string;status:DocumentStatus;note:string}):Promise<void>;
   addVersion(document:DocumentRecord,input:{label:string;status:DocumentStatus;note:string;author?:string}):Promise<void>;
   link(documentId:string,target:DocumentWorkflowLink):Promise<void>;
@@ -51,6 +55,19 @@ export interface DocumentRepository {
 }
 
 class ApiDocumentRepository implements DocumentRepository {
+  async uploadFile(input:DocumentFileUploadInput):Promise<DocumentFileUploadResult>{
+    if(!isDocumentEntityId(input.projectId)||input.documentId&&!isDocumentEntityId(input.documentId)||input.unitId&&!isDocumentEntityId(input.unitId)||input.partyId&&!isDocumentEntityId(input.partyId))throw new Error('Vazba dokumentu není platná.');
+    if(!standaloneDocumentTypeOptions.some(type=>type.code===input.typeCode))throw new Error('Tento dokument se připravuje ve svém obchodním procesu.');
+    const mimeType=validateDocumentFile(input.file),contentBase64=await readDocumentBase64(input.file);
+    const response=await apiFetch('/api/documents/sharepoint-upload',{method:'POST',dataInvalidation:'none',headers:{'content-type':'application/json'},body:JSON.stringify({
+      projectId:input.projectId,documentId:input.documentId,typeCode:input.typeCode,documentName:input.documentName,fileName:input.file.name,mimeType,contentBase64,
+      versionLabel:input.versionLabel,status:input.status,note:input.note,idempotencyKey:input.idempotencyKey,unitId:input.unitId,partyId:input.partyId,
+    })});
+    if(!response.ok){const correlation=response.headers.get('x-correlation-id');const message=response.status===403?'Nemáte oprávnění nahrát dokument.':response.status===413?'Soubor je příliš velký.':response.status===401?'Pro pokračování se prosím přihlaste.':'Dokument se nepodařilo uložit. Zkuste to prosím znovu.';throw new Error(`${message}${correlation?` ID chyby: ${correlation}`:''}`);}
+    const result=await response.json() as {upload?:DocumentFileUploadResult};
+    if(!result.upload||!isDocumentEntityId(result.upload.documentId)||!isDocumentEntityId(result.upload.documentVersionId))throw new Error('Výsledek nahrání se nepodařilo ověřit. Zkuste to prosím znovu.');
+    return result.upload;
+  }
   async listAll(filters:DocumentFilters={},signal?:AbortSignal){return mergePreview(await requestDocuments(filters,signal),filters);}
   async listProject(projectId:string,filters:DocumentFilters={},signal?:AbortSignal){return mergePreview(await requestDocuments({projectId,...filters},signal),{projectId,...filters});}
   async listUnit(unitId:string,filters:DocumentFilters={},signal?:AbortSignal){

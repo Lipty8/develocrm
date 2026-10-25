@@ -296,6 +296,9 @@ button.summary-stat:hover { border-color:#b8c8d7; background:#fff; }
 .form-modal { display:flex;flex-direction:column;max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px); }
 .form-modal>.modal-head,.form-modal>.modal-foot { flex:0 0 auto; }
 .form-modal>.modal-form { min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable; }
+.document-upload-fields { border:0;padding:0;margin:0;min-width:0;display:flex;flex-direction:column;gap:13px; }
+.document-upload-fields .form-row>label { min-width:0; }
+@media(max-width:480px){.document-upload-fields .form-row{flex-direction:column}}
 .contract-document-chooser{width:min(720px,100%)}
 .document-choice-groups{gap:18px}
 .document-choice-groups section{display:grid;grid-template-columns:1fr 1fr;gap:8px}

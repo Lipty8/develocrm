@@ -31,11 +31,13 @@ test("Contracts use a compact hybrid list and a real tabbed detail",async()=>{
 });
 
 test("obecný modul Dokumenty nevytváří smlouvy, dodatky ani předávací protokoly",async()=>{
-  const [app,repository]=await Promise.all([read("app/CRMApp.tsx"),read("app/repositories/document-repository.ts")]);
+  const [app,repository,upload]=await Promise.all([read("app/CRMApp.tsx"),read("app/repositories/document-repository.ts"),read("app/components/document-upload-modal.tsx")]);
   assert.match(repository,/workflowManagedDocumentTypes=new Set\(\["reservation_contract","future_purchase_contract","purchase_contract","amendment","handover_protocol"\]\)/);
   assert.match(repository,/standaloneDocumentTypeOptions=documentTypeOptions\.filter/);
   assert.match(app,/<StandaloneDocumentCreateModal/);
-  assert.match(app,/Smlouvy, dodatky a předávací protokoly vznikají ve svém obchodním procesu/);
+  assert.match(upload,/Smlouvy, dodatky a předávací protokoly vznikají ve svém obchodním procesu/);
+  assert.match(app,/documentRepository\.uploadFile\(value\)/);
+  assert.match(upload,/DocumentUploadModal/);
   assert.doesNotMatch(app,/page === "contracts" \? searchParams\.get\("view"\)==="documents"\?"Nový dokument":"Nová smlouva"/);
 });
 
