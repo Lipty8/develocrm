@@ -1,8 +1,8 @@
 # Dejvice: current catalogue area reconciliation
 
 Adam confirmed the supplied catalogue sheets as the authoritative current area
-source. This report is not an executed data repair. Explicit application
-approval has been requested separately because these are real pilot units.
+source. The original 23 October report below was read-only. Application was
+separately approved and performed on 25 October as recorded in the follow-up.
 
 ## 25 October approval
 
@@ -65,3 +65,30 @@ Before any future generation, normal readiness/difference checks must still
 show the current authorized data; old signed documents remain historical facts.
 Verify the exact changed unit set, untouched non-area fields and immutable
 evidence after commit, then confirm the UI after reload.
+
+## 25 October execution
+
+- Operator implementation commit `7682108` is pushed to private GitHub. Seven
+  operator guard/idempotence tests, three existing domain-edit database tests,
+  changed-file lint and diff checks passed.
+- Existing job preflight `job-develocrm-hold-expiry-iu737rq` Succeeded: exact
+  19-unit set, all 19 still matched the audited old pairs, none already updated.
+- Approved apply execution `job-develocrm-hold-expiry-0fzyg95` returned: 19 changed,
+  exactly the 19 listed unit codes, 19 domain audit entries and 19 outbox events.
+  Fourteen protected business/history tables had identical before/after
+  fingerprints inside the transaction. Every non-area unit field other than
+  the expected update timestamp was unchanged. The source PDF hashes and
+  approval reference are recorded in the project reconciliation audit.
+- This used the existing matching API image, application RLS role, actor and
+  Key Vault database secret reference through a one-execution job override.
+  No new backend/frontend deployment or migration was required. The scheduled
+  job configuration was not changed.
+- Apply execution status was Succeeded (ended 18:13:24 UTC). Independent read-only
+  verification `job-develocrm-hold-expiry-9yyu173` also Succeeded; its result is
+  total 19, pending 0, alreadyApplied 19. This is a new transaction after the
+  apply commit, not a check of uncommitted values.
+- Authenticated browser navigation to unit 417 displayed floor 125.26 m² and
+  usable 114.39 m², with the existing 32,000,000 CZK price and historical business
+  review warning unchanged. The unit's activity showed the new audited detail
+  edit. An explicit subsequent page reload retained both new areas. No attempt
+  was made to settle its old sales case.

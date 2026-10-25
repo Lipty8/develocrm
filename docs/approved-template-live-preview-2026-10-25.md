@@ -44,13 +44,14 @@ added; the local PDFs/images were QA intermediates only.
   normally. This is not a general loss of user access and does not require a
   broader backend Graph grant. No permissions were changed and no blocked PDF
   content was opened or ingested through an alternate route.
-- Exact target standards-PDF metadata still confirms the known 10,183,053-byte
-  file, not an antivirus verdict. The Microsoft 365 administrator has been asked
-  to clarify whether it is marked malicious/quarantined; a generic content
-  approval is not treated as overriding the earlier security stop.
-- The separate explicit approval request to apply the 19 authoritative catalogue
-  area corrections remains distinct from approval of Word content/appendices.
-  No area repair has been executed.
+- Exact target standards-PDF metadata confirms the known 10,183,053-byte file.
+  Adam subsequently explicitly confirmed that it is neither malicious nor in
+  quarantine. The prior ambiguity is therefore clarified for normal controlled
+  ingestion; no scanning/protection setting is disabled or bypassed. Registration
+  through the existing document pipeline remains to be performed.
+- Adam separately approved applying the 19 authoritative catalogue area
+  corrections. See the reconciliation report for the guarded operation and its
+  execution evidence. This is not permission to alter prices/signed snapshots.
 - Exact per-position appendix mapping and original-profile business E2E remain
   incomplete. No coordination plan, power of attorney, client-change rules or KS
   wording is inferred from a similarly named file.
@@ -92,3 +93,17 @@ three-page situation file. This inventory does not establish a coordination
 plan, power of attorney or client-change rules. Those must be located and
 classified explicitly; absence from this inspected list is not claimed to prove
 absence from every location in the user's SharePoint.
+
+## Next integration gap found in current sources
+
+The backend already exposes the validated, idempotent SharePoint upload service
+at `/v1/documents/sharepoint-upload`. The current general document frontend
+repository/BFF and standalone document list expose metadata creation/versioning
+but no ordinary physical-file upload action. Template and final-contract upload
+are separate supported contextual actions. Therefore a business user cannot yet
+simply upload an approved PDF appendix from the normal document list and then
+select it in the existing contract appendix panel. This is a specific remaining
+product integration task: connect the existing upload endpoint to a shared
+standalone-document upload action, using the existing model, permissions, limits,
+project UUID and idempotency. Do not create another upload implementation or
+allow legal-contract types to bypass their contextual workflow.
