@@ -4,6 +4,14 @@ This is a completion audit, not activation approval. The full objective remains
 open. A synthetic template with a compatible schema does not prove the legal
 original's complete business workflow.
 
+**Update, 25 October:** Adam has now explicitly confirmed the parameterized
+Word artifacts and complete appendix package, instructing that RS/SBK legal text
+remain unchanged. The content-approval and request-for-harmonized-RS blockers
+below are historical, not missing user decisions. See
+`rs-sbk-content-approval-2026-10-25.md` for the exact hashes, scope and remaining
+technical execution/safety checks. This confirmation alone is not a claim of
+runtime activation or completed original-profile E2E.
+
 ## Evidence and remaining work
 
 | Requirement | Current evidence | Remaining gate |
