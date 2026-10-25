@@ -6,11 +6,19 @@ import {RsGenerationPanel,RsPreparationReturn} from '../app/components/rs-genera
 import {commercialRepository,type RsReadiness} from '../app/repositories/commercial-repository';
 import {formatMoney} from '../app/crm-data';
 import {ContractAppendicesPanel} from '../app/components/contract-appendices-panel';
+import {parseCrmRoute} from '../app/crm-routing.mjs';
 import {documentRepository,type DocumentRecord} from '../app/repositories/document-repository';
 let render:typeof import('@testing-library/react').render,screen:typeof import('@testing-library/react').screen,cleanup:typeof import('@testing-library/react').cleanup,fireEvent:typeof import('@testing-library/react').fireEvent,waitFor:typeof import('@testing-library/react').waitFor;
 before(async()=>{const dom=new JSDOM('<!doctype html><html><body></body></html>',{url:'https://develocrm.test',pretendToBeVisual:true});Object.assign(globalThis,{self:dom.window,window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,Node:dom.window.Node});Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});({render,screen,cleanup,fireEvent,waitFor}=await import('@testing-library/react'));});
 afterEach(()=>{cleanup();mock.restoreAll();});
 const contractId='10000000-0000-4000-8000-000000000001';
+test('přílohy otevírají přímo dokumentovou záložku správného projektu i po reloadu',()=>{
+  const projectId='648b5e62-9784-4de9-929d-c89b7ffc3c50';
+  render(<ContractAppendicesPanel contractId={contractId} projectId={projectId} summary={{contractVersionId:null,editable:false,items:[]}} disabled={false} onSaved={async()=>{}}/>);
+  const href=screen.getByRole('link',{name:'Otevřít dokumenty projektu'}).getAttribute('href');
+  assert.equal(href,`/projects/${projectId}/documents`);
+  const route=parseCrmRoute(href!);assert.equal(route.projectId,projectId);assert.equal(route.projectTab,'documents');
+});
 function ready():RsReadiness{return{ready:true,contractId,issues:[],summary:{project:{id:'p',label:'Testovací projekt'},unit:{id:'u',label:'TEST-101'},buyers:[{id:'b',label:'Jan Testovací'}],seller:'Testovací společnost',unitPrice:7_000_000,totalPrice:7_500_000,reservationFee:150_000,reservationFeeDueDays:5,reservationPeriodDays:30,accessories:['P1','S1'],template:{name:'Projektová RS',version:'v2',effectiveFrom:'2026-10-01'}}};}
 test('přehled a konkrétní odkazy, chybějící údaj blokuje generování',async()=>{
   mock.method(commercialRepository,'getRsReadiness',async()=>({...ready(),ready:false,issues:[{code:'buyer_address',field:'buyer.address',message:'Kupující nemá adresu.',action:{href:'/clients/b',label:'Doplnit kupujícího'}}]}));

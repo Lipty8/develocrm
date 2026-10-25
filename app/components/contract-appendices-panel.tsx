@@ -4,6 +4,7 @@ import Link from 'next/link';
 import type {ContractAppendixSummary} from '../../backend/src/shared/contract-appendices';
 import {commercialRepository} from '../repositories/commercial-repository';
 import {documentRepository,type DocumentRecord,type DocumentVersionRecord} from '../repositories/document-repository';
+import {projectRoute} from '../crm-routing.mjs';
 
 export function ContractAppendicesPanel({contractId,projectId,summary,disabled,onSaved}:{contractId:string;projectId:string;summary:ContractAppendixSummary;disabled:boolean;onSaved:()=>Promise<void>}){
   const [editing,setEditing]=useState<{number:number;expected:string|null}|null>(null);
@@ -54,7 +55,7 @@ export function ContractAppendicesPanel({contractId,projectId,summary,disabled,o
       {editable&&<button type="button" className="secondary-button compact" disabled={saving||loading} onClick={()=>void edit(item)} aria-label={`Vybrat přílohu ${item.number}`}>Vybrat dokument</button>}
     </li>)}</ol>
     {!summary.items.length&&<p>Pro vybranou variantu zatím není určen seznam příloh.</p>}
-    <Link href={`/projects/${projectId}?tab=documents`}>Otevřít dokumenty projektu</Link>
+    <Link href={projectRoute(projectId,'documents')}>Otevřít dokumenty projektu</Link>
     {editing&&editable&&<form onSubmit={event=>{event.preventDefault();void save();}} aria-label={`Výběr přílohy ${editing.number}`}>
       <h4>Příloha {editing.number}: {summary.items.find(item=>item.number===editing.number)?.label}</h4>
       {loading&&<p role="status">Načítám dokumenty…</p>}
