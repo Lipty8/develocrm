@@ -4,6 +4,19 @@ Adam confirmed the supplied catalogue sheets as the authoritative current area
 source. This report is not an executed data repair. Explicit application
 approval has been requested separately because these are real pilot units.
 
+## 25 October approval
+
+Adam explicitly approved updating only the current floor and usable areas for
+the 19 units below. Prices, accessories, signed contracts and historical
+snapshots must remain unchanged. The operator helper
+`backend/scripts/reconcile-dejvice-areas.mjs` uses the existing domain function,
+locks the exact UUID unit set in deterministic order, rejects values other than
+the audited old pair or approved target pair, and treats already applied pairs
+as a no-op. It verifies unchanged non-area fields and fingerprints fourteen
+business/history tables in the same transaction, checks per-unit audit/outbox
+counts and adds source PDF hashes to the reconciliation audit. No data outcome
+is claimed until the execution and independent verification are recorded.
+
 Source: supplied KL archive, 19 main unit PDFs. The separate 519 sauna variant
 is not substituted for the main 519 sheet. Unit identity was checked inside
 each PDF, not merely inferred from filenames. Read-only pilot comparison
