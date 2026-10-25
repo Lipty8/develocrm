@@ -236,11 +236,18 @@ for(const [kind,outputTypeCode] of [['rs','reservation_contract'],['sbk','future
     const archive=unzipSync(preview);
     assert.match(strFromU8(archive[kind==='rs'?'word/_rels/document.xml.rels':'word/document.xml']),/mailto:prodavajici@example.test/);
     assert.doesNotMatch(strFromU8(archive[kind==='rs'?'word/_rels/document.xml.rels':'word/document.xml']),/mailto:jaroslav.zahourek/);
-    assert.equal((await h.service.list({...context}))[0].generationSupported,false);
+    assert.equal((await h.service.list({...context}))[0].generationSupported,kind==='rs');
     let approved=false;h.repository.approve=async()=>{approved=true;};
-    await assert.rejects(h.service.approve({...context,templateId,versionId}),
-      (error:unknown)=>error instanceof TemplateManagementError&&error.code==='template_generation_not_ready');
-    assert.equal(approved,false);
+    if(kind==='rs'){
+      // Explicit service lifecycle still required; enabling the catalog alone
+      // neither calls approve nor changes the uploaded draft.
+      assert.equal(approved,false);assert.equal(view.versions[0].status,'draft');
+      view.versions[0].status='validated';await h.service.approve({...context,templateId,versionId});assert.equal(approved,true);
+    }else{
+      await assert.rejects(h.service.approve({...context,templateId,versionId}),
+        (error:unknown)=>error instanceof TemplateManagementError&&error.code==='template_generation_not_ready');
+      assert.equal(approved,false);
+    }
   });
 }
 

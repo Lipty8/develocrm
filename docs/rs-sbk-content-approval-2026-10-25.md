@@ -46,8 +46,8 @@ neměnné verze v CRM ani audit/outbox této operace.
   Soubor se situacemi parkingu/sklepů se nesmí bez důkazu označit za koordinační
   situaci; potvrzení balíku nedodává chybějící soubor ani konkrétní vazbu.
 - Dřívější bezpečnostní zastavení u PDF standardů se neobchází. Nově načtená
-  metadata potvrzují existenci souboru (10 183 053 bytů), nikoli antivirovou
-  nezávadnost. Metadata situací potvrzují 734 142 bytů. V této kontrole nebyl
+  metadata potvrzují existenci souboru (10 183 053 bajtů), nikoli antivirovou
+  nezávadnost. Metadata situací potvrzují 734 142 bajtů. V této kontrole nebyl
   žádný z těchto souborů nově zaregistrován ani přiřazen ke smlouvě.
 - Následuje technické zpřístupnění RS profilu při zachování explicitního
   schválení každé DB verze, otestování, matching nasazení a autorizovaná aktivace

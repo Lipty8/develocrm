@@ -21,7 +21,8 @@ test('RS odděluje původní variantu a nový kontrolní návrh bez změny vých
   fireEvent.change(screen.getByRole('combobox'),{target:{value:ORIGINAL_DOB_FULL_VARIANT}});
   assert.equal(selected,ORIGINAL_DOB_FULL_VARIANT);
   view.rerender(<TemplateProfilePicker type="reservation_contract" value={selected} onChange={()=>{}}/>);
-  assert.ok(screen.getByText(/Nelze ji aktivovat pro smlouvy/));
+  assert.ok(screen.getByText(/obsahové kontrole a výslovném schválení konkrétní verze/));
+  assert.equal(screen.queryByText(/Nelze ji aktivovat pro smlouvy/),null);
 });
 
 test('SBK nabízí skutečnou kompletní variantu s datem narození, ne neexistující legacy variantu',()=>{

@@ -130,9 +130,9 @@ test('mapování je deterministické, nemutuje zdroj a neobsahuje nepoužitá da
 });
 test('scalar mapper nezapíná schválení, právní fakta ani generationSupported',async()=>{
  for(const contractType of ['rs','sbk'] as const){const source=fixture(contractType);const readiness=await new RsGenerationService({load:async()=>source} as never,{} as never).readiness({tenantId:'technical-tenant',userId:'technical-user',membershipId:'technical-member',contractId:source.contractId});
-  assert.equal(readiness.ready,false);assert.ok(!readiness.issues.some(issue=>issue.code==='accessory_legal_basis'));assert.ok(readiness.issues.some(issue=>issue.code==='original_profile_review'));
+  assert.equal(readiness.ready,false);assert.ok(!readiness.issues.some(issue=>issue.code==='accessory_legal_basis'));assert.ok(readiness.issues.some(issue=>issue.code==='approved_template'));
  }
- assert.equal(ORIGINAL_TEMPLATE_CATALOGS.reservation_contract.generationSupported,false);assert.equal(ORIGINAL_TEMPLATE_CATALOGS.future_purchase_contract.generationSupported,false);
+ assert.equal(ORIGINAL_TEMPLATE_CATALOGS.reservation_contract.generationSupported,true);assert.equal(ORIGINAL_TEMPLATE_CATALOGS.future_purchase_contract.generationSupported,false);
 });
 test('smluvní forma se nedovozuje z kategorie, označení nebo popisu a nesprávný podíl blokuje mapper',()=>{
  const missing=fixture();delete missing.accessories[2].legalForm;
@@ -170,7 +170,7 @@ for(const type of ['rs','sbk'] as const)test(`${type}: připravenost pojmenuje n
   assert.throws(()=>buildSnapshot(source),OriginalContractSnapshotError);
   const result=await new RsGenerationService({load:async()=>source} as never,{} as never).readiness({tenantId:'technical-tenant',userId:'technical-user',membershipId:'technical-member',contractId:source.contractId});
   assert.ok(result.issues.some(item=>item.code===code),`${code}: ${JSON.stringify(changes)}`);
-  assert.equal(result.ready,false);assert.ok(result.issues.some(item=>item.code==='original_profile_review'));
+  assert.equal(result.ready,false);assert.ok(result.issues.some(item=>item.code==='approved_template'));
  }
 });
 test('platné haléřové částky a chybějící hodnoty zachovají existující pravidla připravenosti',async()=>{
@@ -207,7 +207,7 @@ for(const type of ['rs','sbk'] as const)test(`${type}: připravenost používá 
   if(scenario.privateValue)assert.ok(!JSON.stringify(readiness.issues).includes(scenario.privateValue));
   if(scenario.field.startsWith('buyer.'))assert.ok(found.action?.href.startsWith('/clients/technical-buyer?'));
   if(scenario.field.startsWith('project.'))assert.ok(found.action?.href.startsWith('/projects/technical-project?'));
-  assert.equal(readiness.ready,false);assert.ok(readiness.issues.some(item=>item.code==='original_profile_review'));
+  assert.equal(readiness.ready,false);assert.ok(readiness.issues.some(item=>item.code==='approved_template'));
   await assert.rejects(service.generate({...input,idempotencyKey:'technical-invalid-source'}),
    (error:unknown)=>error instanceof RsGenerationError&&error.code==='not_ready'&&error.issues.some(item=>item.code==='invalid_contract_value'));
   assert.equal(generationCalls,0);

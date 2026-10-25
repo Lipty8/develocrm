@@ -94,8 +94,8 @@ test('neplatný čas nebo neúplné rezervované názvy nesmí tiše vytvořit n
   await assert.rejects(mappedOperation(new Date(),{original_file_name:'legacy.docx',document_name:'',version_label:'v1'}),/invalid reserved generation naming/);
 });
 
-test('obecný generation endpoint nemůže obejít review-only profil právní RS/SBK',async()=>{
-  for(const [outputTypeCode,variantKey] of [['reservation_contract',ORIGINAL_DOB_FULL_VARIANT],['future_purchase_contract',ORIGINAL_DOB_FULL_VARIANT]]){
+test('obecný generation endpoint nemůže obejít review-only profil starší SBK',async()=>{
+  for(const [outputTypeCode,variantKey] of [['future_purchase_contract',ORIGINAL_DOB_FULL_VARIANT]]){
     const h=harness();const original=await h.repository.getTemplate();
     h.repository.getTemplate=async()=>({...original,outputTypeCode,variantKey});
     await assert.rejects(h.service.generate({...context,projectId,templateVersionId,idempotencyKey:'review-only-generation',contractId:'contract',snapshot:{}}),
@@ -104,10 +104,11 @@ test('obecný generation endpoint nemůže obejít review-only profil právní R
   }
 });
 
-test('technická podpora SBK v2 nikdy nenahradí schválení konkrétní neměnné verze',async()=>{
+for(const [outputTypeCode,variantKey] of [['reservation_contract',ORIGINAL_DOB_FULL_VARIANT],['future_purchase_contract',SBK_DOB_DELIVERY_VARIANT]])
+test(`${outputTypeCode}: technická podpora nikdy nenahradí schválení konkrétní neměnné verze`,async()=>{
   for(const approvalStatus of ['draft','validated','retired',undefined]){
     const h=harness();const original=await h.repository.getTemplate();
-    h.repository.getTemplate=async()=>({...original,outputTypeCode:'future_purchase_contract',variantKey:SBK_DOB_DELIVERY_VARIANT,approvalStatus});
+    h.repository.getTemplate=async()=>({...original,outputTypeCode,variantKey,approvalStatus});
     await assert.rejects(h.service.generate({...context,projectId,templateVersionId,idempotencyKey:'sbk-unapproved-version',contractId:'contract',snapshot:{}}),
       (error:unknown)=>error instanceof DocumentGenerationError&&error.code==='template_not_approved');
     assert.equal(h.uploads,0);assert.equal(h.completions,0);

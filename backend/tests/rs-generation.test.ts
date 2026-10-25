@@ -17,7 +17,7 @@ test('original readiness requires every numbered exact appendix and never treats
   current=source({...current,appendixSelections:selections});
   result=await service.readiness({...context,contractId:current.contractId});
   assert.equal(result.issues.filter(item=>item.code==='contract_appendix').length,0);
-  assert.equal(result.ready,false);assert.ok(result.issues.some(item=>item.code==='original_profile_review'));
+  assert.equal(result.ready,false);assert.ok(result.issues.some(item=>item.code==='approved_template'));
   current=source({...current,appendixSelections:[...selections.slice(0,5),{...selections[5],available:false}]});
   result=await service.readiness({...context,contractId:current.contractId});
   assert.deepEqual(result.issues.filter(item=>item.code==='contract_appendix').map(item=>item.field),['contract.appendices.6']);
@@ -38,7 +38,7 @@ test('original preparation requires a current payment plan but never activates t
   const service=new RsGenerationService({load:async()=>current} as never,{} as never);
   let result=await service.readiness({...context,contractId:current.contractId});
   assert.equal(result.issues.some(i=>i.code==='contract_payment_terms'),false);assert.equal(result.ready,false);
-  assert.ok(result.issues.some(i=>i.code==='original_profile_review'));assert.equal(result.summary?.paymentPlan?.variableSymbol,'417');
+  assert.ok(result.issues.some(i=>i.code==='approved_template'));assert.equal(result.summary?.paymentPlan?.variableSymbol,'417');
   for(const update of [{paymentTerms:null},{totalPrice:23000000},{reservationFee:260000},{buyers:[{...base.buyers[0],id:context.userId}]}]){
     current=source({templateVariant:ORIGINAL_DOB_FULL_VARIANT,paymentTerms,...update});
     result=await service.readiness({...context,contractId:current.contractId});assert.ok(result.issues.some(i=>i.code==='contract_payment_terms'));
@@ -136,7 +136,7 @@ test('původní kompletní varianta rozliší terasu a číselné podlaží bez 
     floorNumber:3,balconyM2:0,terraceM2:15,gardenM2:12,variableSymbol:'417',settings:{...source().settings,signatureName:'Testovací zástupce'},
     accessories:[{code:'S1',type:'cellar',legalForm:'cellar_unit',amount:100,floorLabel:'1.PP',description:null},{code:'P1',type:'parking',legalForm:'outdoor_parking_use_right',amount:100,floorLabel:null,description:null},{code:'G1',type:'garage',legalForm:'garage_coownership',shareNumerator:1,shareDenominator:25,amount:100,floorLabel:'1.PP',description:null}]});
   const result=await new RsGenerationService({load:async()=>current} as never,{} as never).readiness({...context,contractId:current.contractId});
-  assert.equal(result.ready,false);assert.ok(result.issues.some(i=>i.code==='original_profile_review'));
+  assert.equal(result.ready,false);assert.ok(result.issues.some(i=>i.code==='contract_payment_terms'));
   for(const code of ['unsupported_terrace','unit_floor_number','outdoor_space_variant','accessory_variant','accessory_classification'])assert.ok(!result.issues.some(i=>i.code===code),code);
 });
 

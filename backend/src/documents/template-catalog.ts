@@ -79,7 +79,7 @@ function scalarFields(values:Record<string,[string,string]>):Record<string,Templ
   return Object.fromEntries(Object.entries(values).map(([token,[label,sample]])=>[token,{label,sample,required:true}]));
 }
 export const ORIGINAL_TEMPLATE_CATALOGS:Record<string,TemplateCatalog>={
-  reservation_contract:{outputTypeCode:'reservation_contract',contractType:'rs',label:'RS Dejvice · kompletní varianta · datum narození',generationSupported:false,mailToTokens:['seller.email'],
+  reservation_contract:{outputTypeCode:'reservation_contract',contractType:'rs',label:'RS Dejvice · kompletní varianta · datum narození',generationSupported:true,mailToTokens:['seller.email'],
     fields:scalarFields({...originalCommon,
       'buyer.dataBox':['Datová schránka kupujícího','neuvedena'],
       'payment.reservationFeeAmount':['Rezervační poplatek','250 000'],

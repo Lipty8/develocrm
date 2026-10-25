@@ -1,6 +1,6 @@
 "use client";
 
-import {ORIGINAL_DOB_FULL_VARIANT,SBK_DOB_DELIVERY_VARIANT,isOriginalContractVariant} from '../../backend/src/documents/template-catalog';
+import {ORIGINAL_DOB_FULL_VARIANT,SBK_DOB_DELIVERY_VARIANT,isOriginalContractVariant,templateCatalog} from '../../backend/src/documents/template-catalog';
 
 export {ORIGINAL_DOB_FULL_VARIANT,SBK_DOB_DELIVERY_VARIANT};
 
@@ -12,7 +12,7 @@ export function TemplateProfilePicker({type,value,onChange}:{type:string;value:s
     {value!=='default'&&!isOriginalContractVariant(value)&&<option value={value}>Stávající projektová varianta</option>}
     <option value={ORIGINAL_DOB_FULL_VARIANT}>Dejvice · datum narození · kompletní příslušenství · ke kontrole</option>
     {type==='future_purchase_contract'&&<option value={SBK_DOB_DELIVERY_VARIANT}>Dejvice · doručování prodávajícímu z projektu · ke kontrole</option>}
-  </select>{isOriginalContractVariant(value)&&<small>{type==='future_purchase_contract'&&value===SBK_DOB_DELIVERY_VARIANT
+  </select>{isOriginalContractVariant(value)&&<small>{templateCatalog(type,value)?.generationSupported===true
     ?'Šablona se nahraje jako koncept. Pro smlouvy ji lze použít až po obsahové kontrole a výslovném schválení konkrétní verze.'
     :'Tuto variantu lze zatím pouze nahrát a zkontrolovat. Nelze ji aktivovat pro smlouvy.'}</small>}</label>;
 }

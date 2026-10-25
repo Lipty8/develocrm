@@ -13,7 +13,7 @@ import type {DocumentUploadReservation} from '../src/documents/repository.js';
 import {SharePointDocumentUploadService} from '../src/documents/upload-service.js';
 import type {GraphFileMetadata,MicrosoftGraphAdapter} from '../src/documents/graph-adapter.js';
 import {inspectDocxTemplate} from '../src/documents/docx-template.js';
-import {SBK_DOB_DELIVERY_VARIANT,templateCatalog} from '../src/documents/template-catalog.js';
+import {ORIGINAL_DOB_FULL_VARIANT,SBK_DOB_DELIVERY_VARIANT,templateCatalog} from '../src/documents/template-catalog.js';
 import {contractAppendixRequirements} from '../src/shared/contract-appendices.js';
 
 const id=(n:number)=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
@@ -51,14 +51,26 @@ function source():RsSource{
 
 /** Real business mapper, renderer and upload service. Only persistence and
  * Microsoft Graph are in-memory ports; this is not a live SharePoint test. */
-async function harness(failFinalizationOnce=false){
-  const current=source();const templateBytes=await readFile(new URL('../templates/review/sbk-dejvice-original-delivery-review.docx',import.meta.url));
-  const catalog=templateCatalog('future_purchase_contract',SBK_DOB_DELIVERY_VARIANT)!;
+async function harness(failFinalizationOnce=false,kind:'rs'|'sbk'='sbk'){
+  const current=source();
+  const outputTypeCode=kind==='rs'?'reservation_contract':'future_purchase_contract';
+  const variant=kind==='rs'?ORIGINAL_DOB_FULL_VARIANT:SBK_DOB_DELIVERY_VARIANT;
+  if(kind==='rs'){
+    current.contractType='rs';current.templateVariant=variant;current.signedRsCount=0;current.signedRsContractId=null;current.paidReservationFee=0;
+    current.paymentTerms={version:1,profile:ORIGINAL_DOB_FULL_VARIANT,calendarPolicy:'cz-2026-v1',signatureAnchor:'last_required_signature',
+      contractType:'rs',totalPrice:'5000000.03',reservationFee:'250000',paidReservationFee:'0',precedingRsContractId:null,
+      buyerPartyId:current.buyers[0].id,variableSymbol:'701001',rows:originalPaymentPlan({type:'rs',reservationFeeAmount:'250000'})};
+    current.appendixSelections=contractAppendixRequirements('rs',variant).map(({number})=>({number,documentId:id(100+number),
+      documentVersionId:id(200+number),name:`Technická příloha ${number}`,version:'v1',available:true}));
+  }
+  const file=kind==='rs'?'rs-dejvice-original-review.docx':'sbk-dejvice-original-delivery-review.docx';
+  const templateBytes=await readFile(new URL(`../templates/review/${file}`,import.meta.url));
+  const catalog=templateCatalog(outputTypeCode,variant)!;
   const template:TemplateSource={templateId:id(12),templateVersionId:id(11),projectId:current.projectId,templateCode:'technical-sbk',
-    templateName:'TECH SBK',outputTypeCode:'future_purchase_contract',versionLabel:'technical-v2',contentHash:sha(templateBytes),
+    templateName:`TECH ${kind.toUpperCase()}`,outputTypeCode,versionLabel:'technical-v2',contentHash:sha(templateBytes),
     schema:{fields:Object.fromEntries(Object.entries(catalog.fields).map(([key,value])=>[key,{required:value.required}])),
-      appendices:contractAppendixRequirements('sbk',SBK_DOB_DELIVERY_VARIANT)},approvalStatus:'approved',effectiveFrom:'2026-01-01',
-    driveId:'drive',itemId:'source',externalVersionId:'1.0',variantKey:SBK_DOB_DELIVERY_VARIANT};
+      appendices:contractAppendixRequirements(kind,variant)},approvalStatus:'approved',effectiveFrom:'2026-01-01',
+    driveId:'drive',itemId:'source',externalVersionId:'1.0',variantKey:variant};
   current.templateHash=template.contentHash;
   let operation:GenerationOperation|undefined,upload:DocumentUploadReservation|undefined;
   let uploadCalls=0,bindCalls=0,finalizeCalls=0;let persisted:Uint8Array|undefined;let bound=false;let reservedRequestHash:string|undefined;
@@ -103,12 +115,39 @@ async function harness(failFinalizationOnce=false){
       Object.assign(operation!,{state:'completed',outputDocumentId:input.documentId,outputDocumentVersionId:input.documentVersionId});
     }};
   const generator=new DocumentTemplateGenerationService(generationRepository as never,documents as never,uploads,graph);
-  const repository={load:async()=>current,completedGeneration:async()=>bound?{contractType:'sbk',operationId:operation!.id,documentId:id(17),documentVersionId:id(18),templateVersionId:id(11),snapshot:operation!.snapshot}:null,
+  const repository={load:async()=>current,completedGeneration:async()=>bound?{contractType:kind,operationId:operation!.id,documentId:id(17),documentVersionId:id(18),templateVersionId:id(11),snapshot:operation!.snapshot}:null,
     bind:async(input:Record<string,unknown>)=>{bindCalls++;assert.equal(operation?.state,'completed');assert.equal(input.documentVersionId,id(18));
       assert.deepEqual(input.snapshot,operation?.snapshot);bound=true;return{versionId:id(9),versionNumber:1};}};
   return{service:new RsGenerationService(repository as never,generator),current,template,generationRepository,
     get uploads(){return uploadCalls;},get binds(){return bindCalls;},get bytes(){return persisted;},get operation(){return operation;},get upload(){return upload;}};
 }
+
+test('RS originál: všech 32 polí, šest přesných příloh, skutečný renderer/upload a idempotentní vazba',async()=>{
+  const h=await harness(false,'rs'),before=JSON.stringify(h.current);
+  const input={...context,contractId:h.current.contractId,idempotencyKey:'original-rs-pipeline'};
+  const ready=await h.service.readiness(input);assert.deepEqual(ready.issues,[]);assert.equal(ready.ready,true);
+  const first=await h.service.generate(input);assert.equal(h.uploads,1);assert.equal(first.contractVersionId,id(9));
+  assert.equal(Object.keys(h.operation!.snapshot).length,32);assert.equal(h.template.schema.appendices!.length,6);
+  assert.deepEqual(inspectDocxTemplate(h.bytes!).tokens,[]);
+  assert.deepEqual(h.operation!.snapshot,buildSnapshot(h.current));assert.equal(h.operation!.template.contentHash,h.current.templateHash);
+  const xml=strFromU8(unzipSync(h.bytes!)['word/document.xml']);assert.match(xml,/Testovací Kupující/);assert.match(xml,/G-1/);
+  const retry=await h.service.generate(input);assert.equal(retry.replayed,true);assert.equal(h.uploads,1);
+  assert.equal(retry.documentVersionId,first.documentVersionId);assert.equal(JSON.stringify(h.current),before);
+});
+test('RS originál: neschválená verze, chybějící příloha a ukončený obchod nesmějí vytvořit upload',async()=>{
+  for(const change of [(s:RsSource)=>{s.templateApprovalStatus=undefined;},(s:RsSource)=>{s.templateApprovalStatus='draft';},
+    (s:RsSource)=>{s.appendixSelections![5].available=false;},(s:RsSource)=>{s.caseStatus='cancelled';}]){
+    const h=await harness(false,'rs');change(h.current);
+    await assert.rejects(h.service.generate({...context,contractId:h.current.contractId,idempotencyKey:'original-rs-rejected'}),
+      (error:unknown)=>error instanceof RsGenerationError&&error.code==='not_ready');
+    assert.equal(h.uploads,0);assert.equal(h.operation,undefined);
+  }
+});
+test('RS originál: DB failure po uploadu nesmí při retry vytvořit druhou kopii',async()=>{
+  const h=await harness(true,'rs'),input={...context,contractId:h.current.contractId,idempotencyKey:'original-rs-recovery'};
+  await assert.rejects(h.service.generate(input),/synthetic DB failure/);assert.equal(h.uploads,1);
+  await h.service.generate(input);assert.equal(h.uploads,1);assert.equal(h.operation?.state,'completed');
+});
 
 test('SBK v2: schválená verze, autorizovaná data, strict DOCX, existující upload a přesná contract vazba',async()=>{
   const h=await harness();const input={...context,contractId:h.current.contractId,idempotencyKey:'technical-sbk-pipeline'};

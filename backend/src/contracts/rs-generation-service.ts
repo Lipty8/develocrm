@@ -88,7 +88,9 @@ function validate(source:RsSource):RsReadinessIssue[]{
   if(source.caseStatus&&source.caseStatus!=='active')issues.push(issue('closed_case','contract','Obchod již byl ukončen. Historickou smlouvu nelze znovu připravit ani podepsat.'));
   if(!source.settings)issues.push(issue("seller_settings","project.seller","Projekt nemá vyplněné smluvní údaje prodávajícího."));
   else for(const field of sellerSettingFields)if(!source.settings[field.key]?.trim())issues.push(issue("seller_field",`project.seller.${field.key}`,`Prodávající: doplňte ${field.label.toLocaleLowerCase('cs-CZ')}.`));
-  if(!source.templateVersionId||source.templateApprovalStatus&&source.templateApprovalStatus!=='approved'||source.approvedTemplateCount===0)
+  const templateNotApproved=isOriginalContractVariant(source.templateVariant)
+    ?source.templateApprovalStatus!=='approved':Boolean(source.templateApprovalStatus&&source.templateApprovalStatus!=='approved');
+  if(!source.templateVersionId||templateNotApproved||source.approvedTemplateCount===0)
     issues.push(issue("approved_template","template","Pro tento typ smlouvy není schválená účinná projektová šablona."));
   if((source.approvedTemplateCount??1)>1)issues.push(issue('ambiguous_template','template','Pro tento typ smlouvy je dostupných více účinných šablon. Je nutné jednoznačně určit odpovídající variantu.'));
   if(original){
