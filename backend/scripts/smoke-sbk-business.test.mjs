@@ -53,6 +53,12 @@ test('mutating phases require explicit synthetic confirmation and exact context'
   assert.throws(()=>assertSmokeInput({...context,mode:'prepare_sbk',confirmSyntheticOnly:true}),/PROJECT_ID_REQUIRED/);
   assert.throws(()=>assertSmokeInput({...context,mode:'verify',projectId:'417'}),/PROJECT_ID_INVALID/);
 });
+test('generated-document verification is read-only but still needs an explicit owned project',()=>{
+  assert.doesNotThrow(()=>assertSmokeInput({...context,mode:'verify_generated',projectId:actor,profile:'approved-original'}));
+  assert.throws(()=>assertSmokeInput({...context,mode:'verify_generated',profile:'approved-original'}),/PROJECT_ID_REQUIRED/);
+  assert.throws(()=>assertSmokeProject(project,null,actor,'verify_generated'),/NOT_OWNED/);
+  assert.doesNotThrow(()=>assertSmokeProject({...project,archived_at:'2026-10-26'},marker,actor,'verify_generated'));
+});
 test('project name alone never authorizes adopting an existing fixture',()=>{
   assert.throws(()=>assertSmokeProject(project,null,actor,'prepare_rs'),/NOT_OWNED/);
   assert.throws(()=>assertSmokeProject({...project,code:'DEJ'},marker,actor,'verify'),/NOT_OWNED/);

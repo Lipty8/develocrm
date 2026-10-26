@@ -24,6 +24,7 @@ import {RS_PLACEHOLDERS,ORIGINAL_DOB_FULL_VARIANT,SBK_DOB_DELIVERY_VARIANT,templ
 import {contractAppendixRequirements} from '../dist/shared/contract-appendices.js';
 import {signaturePaymentTerms} from '../dist/contracts/signature-payment-terms.js';
 import {originalPaymentPlan} from '../dist/contracts/original-payment-plan.js';
+import {snapshotHash} from '../dist/shared/snapshot-integrity.js';
 
 export const SMOKE_KEY='technical-sbk-business-pipeline-v1';
 const CODE='TECH72',NAME='TECH SMOKE 0072 – synthetic RS SBK';
@@ -57,15 +58,15 @@ export function assertTechnicalAppendix(file){
 
 export function assertSmokeInput(input){
   if(input?.profile!==undefined&&input.profile!=='approved-original')fail('SMOKE_PROFILE_INVALID');
-  if(!input||!['prepare_rs','prepare_sbk','verify','cleanup','recover_empty_fixture'].includes(input.mode))fail('SMOKE_MODE_REQUIRED');
+  if(!input||!['prepare_rs','prepare_sbk','verify_generated','verify','cleanup','recover_empty_fixture'].includes(input.mode))fail('SMOKE_MODE_REQUIRED');
   if(!uuid.test(input.tenantId??'')||!uuid.test(input.membershipId??''))fail('SMOKE_CONTEXT_REQUIRED');
   if(input.projectId&&!uuid.test(input.projectId))fail('SMOKE_PROJECT_ID_INVALID');
   if(input.mode!=='prepare_rs'&&!input.projectId)fail('SMOKE_PROJECT_ID_REQUIRED');
-  if(input.mode!=='verify'&&input.confirmSyntheticOnly!==true)fail('SMOKE_EXPLICIT_SYNTHETIC_CONFIRMATION_REQUIRED');
+  if(!['verify','verify_generated'].includes(input.mode)&&input.confirmSyntheticOnly!==true)fail('SMOKE_EXPLICIT_SYNTHETIC_CONFIRMATION_REQUIRED');
 }
 export function assertSmokeProject(project,marker,actor,mode,profile){
   const original=profile==='approved-original';
-  if(!project||project.code!==(original?'TECH74':CODE)||project.name!==(original?'TECH SMOKE 0074 – approved original profiles':NAME)||(project.archived_at&&!['verify','cleanup'].includes(mode))||marker?.smokeKey!==(original?'technical-approved-original-pipeline-v1':SMOKE_KEY)||marker?.actor!==actor)
+  if(!project||project.code!==(original?'TECH74':CODE)||project.name!==(original?'TECH SMOKE 0074 – approved original profiles':NAME)||(project.archived_at&&!['verify','verify_generated','cleanup'].includes(mode))||marker?.smokeKey!==(original?'technical-approved-original-pipeline-v1':SMOKE_KEY)||marker?.actor!==actor)
     fail('SMOKE_PROJECT_NOT_OWNED_SYNTHETIC_FIXTURE');
 }
 export function assertSyntheticTemplate(bytes,expectedHash,kind){
@@ -145,7 +146,7 @@ export async function runSbkSmoke(input){
     const actor=await database.withContext({tenantId},async c=>(await c.query("SELECT user_id FROM tenant_memberships WHERE tenant_id=$1 AND id=$2 AND status='active'",[tenantId,membershipId])).rows[0],{readOnly:true});
     if(!actor)fail('SMOKE_ACTIVE_ACTOR_REQUIRED');
     const context={tenantId,membershipId,userId:actor.user_id};
-    const sql=(q,values=[])=>database.withContext(context,c=>c.query(q,values),input.mode==='verify'?{readOnly:true}:undefined);
+    const sql=(q,values=[])=>database.withContext(context,c=>c.query(q,values),['verify','verify_generated'].includes(input.mode)?{readOnly:true}:undefined);
     const safe=(await sql("SELECT NOT rolsuper AND NOT rolbypassrls AND pg_has_role(current_user,'develocrm_app','member') safe,app.current_user_has_permission('system.manage') allowed FROM pg_roles WHERE rolname=current_user")).rows[0];
     if(!safe?.safe||!safe.allowed)fail('SMOKE_NON_ADMIN_RUNTIME_AND_SYSTEM_PERMISSION_REQUIRED');
     const inventory=new InventoryRepository(database),imports=new InventoryImportService(database),sales=new SalesRepository(database),commercial=new CommercialService(database),payments=new PaymentService(database);
@@ -258,7 +259,58 @@ export async function runSbkSmoke(input){
       return{contractId:c.id,versionId:(await latest(c.id)).id,exactFileVerified:true,bytes:exact.bytes.length};
     }
 
-    if(input.mode==='prepare_rs'){
+    if(input.mode==='verify_generated'){
+      phase='verify_generated';
+      const results=[];
+      const connection=await documents.getConnectionForUpload(scoped);
+      if(!connection)fail('SMOKE_CONNECTION_REQUIRED');
+      for(const type of ['rs','sbk']){
+        const c=await contract(type);if(!c)continue;
+        const v=await latest(c.id);
+        const rows=(await sql(`SELECT g.*,dv.content_hash,dv.external_version_id,d.external_drive_id,d.external_item_id,
+          (SELECT count(*)::int FROM audit_log a WHERE a.tenant_id=g.tenant_id AND a.entity_id=g.output_document_version_id AND a.action='document.generated') audit_count,
+          (SELECT count(*)::int FROM outbox_events o WHERE o.tenant_id=g.tenant_id AND o.aggregate_id=g.output_document_id AND o.event_type='document.generated' AND o.payload->>'versionId'=g.output_document_version_id::text) outbox_count,
+          (SELECT count(*)::int FROM document_upload_operations u WHERE u.tenant_id=g.tenant_id AND u.document_version_id=g.output_document_version_id AND u.state='completed') upload_count
+          FROM document_generation_operations g
+          JOIN contract_versions cv ON cv.tenant_id=g.tenant_id AND cv.generation_operation_id=g.id AND cv.id=$4
+          JOIN document_versions dv ON dv.tenant_id=g.tenant_id AND dv.id=g.output_document_version_id AND dv.id=cv.document_version_id
+          JOIN documents d ON d.tenant_id=dv.tenant_id AND d.id=dv.document_id AND d.project_id=g.project_id
+          WHERE g.tenant_id=$1 AND g.project_id=$2 AND g.contract_id=$3 AND g.state='completed'
+            AND app.has_project_permission(g.tenant_id,$5,g.project_id,'contract.read')
+            AND app.has_project_permission(g.tenant_id,$5,g.project_id,'documents.read')`,[tenantId,projectId,c.id,v.id,membershipId])).rows;
+        if(rows.length!==1)fail('SMOKE_GENERATED_VERSION_REQUIRED');
+        const operation=rows[0];
+        if(operation.audit_count!==1||operation.outbox_count!==1||operation.upload_count!==1)fail('SMOKE_GENERATION_EVENTS_INVALID');
+        if(snapshotHash(operation.generation_snapshot)!==operation.snapshot_hash)fail('SMOKE_GENERATION_SNAPSHOT_HASH_INVALID');
+        const template=await generationRepo.getTemplate({...scoped,templateVersionId:operation.template_version_id});
+        if(!template||template.driveId!==connection.driveId||operation.external_drive_id!==connection.driveId)fail('SMOKE_TEMPLATE_CONTEXT_INVALID');
+        const source=await graph.downloadFile(connection,template.itemId,template.externalVersionId);
+        if(`sha256:${hash(source)}`!==template.contentHash)fail('SMOKE_TEMPLATE_HASH_MISMATCH');
+        const catalog=templateCatalog(template.outputTypeCode,template.variantKey);
+        const expected=renderDocxTemplate(source,operation.generation_snapshot,{allowedTokens:Object.keys(template.schema.fields),
+          requiredTokens:Object.entries(template.schema.fields).filter(([,value])=>value.required).map(([key])=>key),mailToTokens:catalog.mailToTokens}).bytes;
+        if(`sha256:${hash(expected)}`!==operation.rendered_content_hash)fail('SMOKE_RENDER_REPRODUCTION_FAILED');
+        const actual=await graph.downloadFile(connection,operation.external_item_id,operation.external_version_id);
+        if(`sha256:${hash(actual)}`!==operation.content_hash||inspectDocxTemplate(actual).tokens.length)fail('SMOKE_NATIVE_DOCUMENT_HASH_INVALID');
+        assertPersistedWordParts(expected,actual);
+        const required=contractAppendixRequirements(type,template.variantKey),frozen=operation.appendix_snapshot;
+        if(frozen.length!==required.length||frozen.some((item,index)=>item.number!==required[index].number))fail('SMOKE_FROZEN_APPENDICES_REQUIRED');
+        const selected=(await sql(`SELECT appendix_number number,document_id,document_version_id FROM contract_documents
+          WHERE tenant_id=$1 AND project_id=$2 AND contract_id=$3 AND contract_version_id=$4 AND appendix_number IS NOT NULL ORDER BY appendix_number`,
+        [tenantId,projectId,c.id,v.id])).rows;
+        if(selected.length!==frozen.length||selected.some((item,index)=>item.number!==frozen[index].number||item.document_id!==frozen[index].documentId||item.document_version_id!==frozen[index].documentVersionId))fail('SMOKE_APPENDIX_BINDING_MISMATCH');
+        for(const item of frozen){
+          if(item.driveId!==connection.driveId)fail('SMOKE_APPENDIX_DRIVE_MISMATCH');
+          const bytes=await graph.downloadFile(connection,item.itemId,item.externalVersionId);
+          if(`sha256:${hash(bytes)}`!==item.hash)fail('SMOKE_APPENDIX_HASH_MISMATCH');
+        }
+        results.push({type,contractId:c.id,versionId:v.id,documentVersionId:v.document_version_id,fields:Object.keys(operation.generation_snapshot).length,
+          nativeHashVerified:true,templateHashVerified:true,snapshotHashVerified:true,reproducedWordParts:true,frozenAppendices:frozen.length,
+          generatedAuditCount:operation.audit_count,generatedOutboxCount:operation.outbox_count});
+      }
+      if(!results.length)fail('SMOKE_GENERATED_VERSION_REQUIRED');
+      console.log(JSON.stringify({event:'smoke.original_documents_verified',projectId,results,readOnly:true}));
+    }else if(input.mode==='prepare_rs'){
       phase='prepare_rs';let rs=await contract('rs');
       if(!rs){
         await inventory.updateProject({...scoped,name:NAME,lifecycleStatus:'active',plannedHandoverFrom:'2027-12-01',contractSettings:{name:'NEPLATNÝ TECHNICKÝ PRODÁVAJÍCÍ',registrationNumber:'00000000',address:`Technická ${original?'74':'72'}, Test`,
