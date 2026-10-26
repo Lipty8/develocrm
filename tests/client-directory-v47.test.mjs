@@ -3,6 +3,7 @@ import {readFile} from "node:fs/promises";
 import test from "node:test";
 
 const crm=await readFile(new URL("../app/CRMApp.tsx",import.meta.url),"utf8");
+const duplicateReview=await readFile(new URL("../app/components/client-duplicate-review.tsx",import.meta.url),"utf8");
 const repository=await readFile(new URL("../backend/src/sales/repository.ts",import.meta.url),"utf8");
 const migration=await readFile(new URL("../backend/migrations/0025_client_directory_integrity.sql",import.meta.url),"utf8");
 const migration26=await readFile(new URL("../backend/migrations/0026_party_removal_and_duplicate_check.sql",import.meta.url),"utf8");
@@ -43,8 +44,10 @@ test("kontrola duplicit i archivace jsou backendové a auditované",()=>{
   assert.match(migration,/duplicateWarningOverridden/);
   assert.match(migration,/CREATE OR REPLACE FUNCTION app\.archive_party/);
   assert.match(migration,/party\.archived\.v1/);
-  assert.match(crm,/Použít existujícího klienta/);
-  assert.match(crm,/Přesto vytvořit nového/);
+  assert.match(duplicateReview,/Použít existujícího klienta/);
+  assert.match(duplicateReview,/Přesto vytvořit nového/);
+  assert.match(crm,/function SalesActionModal[\s\S]*?<ClientDuplicateReview/);
+  assert.match(crm,/function NewClientModal[\s\S]*?<ClientDuplicateReview/);
 });
 
 test("duplicate check používá projektové clients.create a technická chyba zůstává blokující",()=>{

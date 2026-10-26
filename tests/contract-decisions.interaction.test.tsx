@@ -30,7 +30,8 @@ import {clientRepository} from '../app/repositories/client-repository';
 import {commercialRepository} from '../app/repositories/commercial-repository';
 import {ContractEndResult} from '../app/components/contract-end-result';
 import type {PaymentRecord} from '../app/repositories/payment-repository';
-import {EditAccessoryModal,CreateUnitModal} from '../app/CRMApp';
+import {EditAccessoryModal,CreateUnitModal,SalesActionModal} from '../app/CRMApp';
+import {ClientDuplicateReview} from '../app/components/client-duplicate-review';
 import {clients as sampleClients,units as sampleUnits,contracts as sampleContracts} from '../app/crm-data';
 
 for(const [input,expected] of [['5 100 000',5100000],['5\u00a0100\u00a0000,50',5100000.5],['5\u202f100\u202f000',5100000],['0',0],['',null],['   ',null]] as const){
@@ -68,6 +69,50 @@ test('opakování vytvoření jednotky zachová cenu i idempotency key a neplatn
  await user.click(screen.getByRole('button',{name:'Vytvořit jednotku'}));await screen.findByText('Zkuste znovu');
  await user.click(screen.getByRole('button',{name:'Vytvořit jednotku'}));await waitFor(()=>assert.equal(saved.length,2));
  assert.deepEqual(saved[0],saved[1]);assert.equal(saved[1].price,5100000);assert.equal(saved[1].usableAreaM2,50.1);
+});
+
+const duplicateFixture:import('../app/repositories/client-repository').DuplicateMatch={id:'duplicate-outside-loaded-page',name:'TECH Test',kind:'FO',strength:'strong',reasons:['Stejný e-mail'],email:'test@example.test',phone:'+420777000743',projects:['Technical project'],units:['7403']};
+const duplicateUnit={...sampleUnits[0],id:'TEST-DUP',backendId:'c6fdff2d-b304-4df9-a8fb-688c50ee8703',projectBackendId:'cd3605bd-9ef7-461b-b3f2-54f0447fff60'};
+async function fillDuplicateParty(){
+ await userEvent.setup({document}).click(screen.getByRole('button',{name:'Klient v databázi není – založit nový'}));
+ fireEvent.change(screen.getByLabelText('Jméno'),{target:{value:'TECH'}});fireEvent.change(screen.getByLabelText('Příjmení'),{target:{value:'Test'}});
+ fireEvent.change(screen.getByLabelText('E-mail'),{target:{value:'test@example.test'}});
+}
+for(const mode of ['interest','pre_reservation'] as const)test(`duplicita v ${mode}: výběr existujícího klienta zachová UUID bez založení další party`,async()=>{
+ const find=clientRepository.findDuplicates,create=clientRepository.createParty;let creates=0;
+ const saved:Array<{partyId:string;newParty?:unknown}>=[];
+ clientRepository.findDuplicates=async input=>{assert.equal(input.projectId,duplicateUnit.projectBackendId);assert.equal('duplicateOverride' in input,false);return[duplicateFixture];};clientRepository.createParty=async()=>{creates++;return{id:'unwanted'};};
+ try{render(<SalesActionModal action={{unit:duplicateUnit,mode}} clientRows={[]} close={()=>{}} save={async value=>{saved.push(value);}}/>);await fillDuplicateParty();
+  const user=userEvent.setup({document});await user.click(screen.getByRole('button',{name:'Pokračovat'}));
+  await screen.findByText('Klient s těmito údaji už pravděpodobně existuje.');assert.equal(saved.length,0);assert.ok(screen.getByText('Technical project · 7403'));
+  assert.equal(screen.getByRole('link',{name:'Otevřít klienta'}).getAttribute('href'),'/clients/duplicate-outside-loaded-page');
+  await user.click(screen.getByRole('button',{name:'Použít existujícího klienta'}));assert.equal((screen.getByRole('radio') as HTMLInputElement).checked,true);
+  await user.click(screen.getByRole('button',{name:'Pokračovat'}));await waitFor(()=>assert.equal(saved.length,1));assert.equal(saved[0].partyId,duplicateFixture.id);assert.equal(saved[0].newParty,undefined);assert.equal(creates,0);
+ }finally{clientRepository.findDuplicates=find;clientRepository.createParty=create;}
+});
+test('selhání duplicate checku v jednání nedovolí vytvoření a lze bezpečně opakovat kontrolu',async()=>{
+ const original=clientRepository.findDuplicates;let checks=0;let saved=0;
+ clientRepository.findDuplicates=async()=>{if(++checks===1)throw new Error('Kontrolu duplicit se nepodařilo provést. Zkuste to prosím znovu.');return[];};
+ try{render(<SalesActionModal action={{unit:duplicateUnit,mode:'pre_reservation'}} clientRows={[]} close={()=>{}} save={async()=>{saved++;}}/>);await fillDuplicateParty();const user=userEvent.setup({document});await user.click(screen.getByRole('button',{name:'Pokračovat'}));await screen.findByText('Kontrolu duplicit se nepodařilo provést. Zkuste to prosím znovu.');assert.equal(saved,0);
+  await user.click(screen.getByRole('button',{name:'Pokračovat'}));await waitFor(()=>assert.equal(saved,1));assert.equal(checks,2);
+ }finally{clientRepository.findDuplicates=original;}
+});
+test('explicitní override v jednání se po změně údajů zruší a musí být znovu potvrzen',async()=>{
+ const original=clientRepository.findDuplicates;let checks=0;const sent:Array<{duplicateOverride?:boolean}>=[];
+ clientRepository.findDuplicates=async()=>{checks++;return[{...duplicateFixture,strength:'possible'}];};
+ try{render(<SalesActionModal action={{unit:duplicateUnit,mode:'pre_reservation'}} clientRows={[]} close={()=>{}} save={async value=>{if(value.newParty)sent.push(value.newParty);}}/>);await fillDuplicateParty();const user=userEvent.setup({document});await user.click(screen.getByRole('button',{name:'Pokračovat'}));await screen.findByText('Našli jsme podobného klienta. Ověřte prosím další údaje.');await user.click(screen.getByRole('button',{name:'Přesto vytvořit nového'}));
+  fireEvent.change(screen.getByLabelText('Příjmení'),{target:{value:'Jiný test'}});await user.click(screen.getByRole('button',{name:'Pokračovat'}));assert.equal(sent.length,0);assert.equal(checks,2);
+  await user.click(screen.getByRole('button',{name:'Přesto vytvořit nového'}));await user.click(screen.getByRole('button',{name:'Pokračovat'}));await waitFor(()=>assert.equal(sent.length,1));assert.equal(sent[0].duplicateOverride,true);assert.equal(checks,2);
+ }finally{clientRepository.findDuplicates=original;}
+});
+test('nové jednání bez kontextu nevybere automaticky prvního klienta adresáře',async()=>{
+ let calls=0;render(<SalesActionModal action={{unit:duplicateUnit,mode:'pre_reservation'}} clientRows={[sampleClients[0]]} close={()=>{}} save={async()=>{calls++;}}/>);
+ assert.equal((screen.getByRole('radio') as HTMLInputElement).checked,false);
+ await userEvent.setup({document}).click(screen.getByRole('button',{name:'Pokračovat'}));await screen.findByText('Vyberte klienta nebo zájemce');assert.equal(calls,0);
+});
+test('sdílený přehled duplicit používá stejnou akci otevření pro samostatný formulář',async()=>{
+ let opened='';render(<ClientDuplicateReview matches={[duplicateFixture]} override={false} onOverride={()=>{}} onUse={()=>{}} onOpen={id=>{opened=id;}}/>);
+ await userEvent.setup({document}).click(screen.getByRole('button',{name:'Otevřít klienta'}));assert.equal(opened,duplicateFixture.id);
 });
 
 test('celý formulář příslušenství uloží právní formu a neúplný podíl zastaví před requestem',async()=>{
