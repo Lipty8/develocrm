@@ -56,6 +56,33 @@ No legal prose or template bytes changed. No frontend implementation changed.
 
 ## Deployment
 
-Pending. Existing healthy backend and Sites frontend remain unchanged until the
-matching API image is built and independently verified. No database migration
-is needed or to be run for this change.
+- Implementation commit `ea391e6b6b7f3a3c908b7df626ba25731edc82e5` pushed.
+- ACR run `cg52` Succeeded after 2m11s. Explicit archive allowlist included 155
+  committed package/config/backend-source/migration files, approximately 2.109 MB
+  unpacked. It excluded legal DOCX/PDF, templates, credentials, client data and
+  all untracked files. API digest:
+  `sha256:997ca5e991ebf887ba28580137e08d58b1248c9c6d09bae2c8b237c3a25cc246`.
+- Image-only revision `ca-develocrm-api-pilot--tpldiag-ea391e6` is
+  Healthy/Running/Provisioned, latest-ready, one replica, 100% traffic.
+  `/health` and `/ready` both returned 200. Liveness/readiness probes and the
+  existing identity/Key Vault configuration were preserved. No migration ran.
+- Sites 167 remains unchanged: there is no frontend code/API contract change
+  requiring republication. Full repository lint passed in addition to the
+  typecheck, builds and tests above.
+- Actual-image execution `job-develocrm-hold-expiry-jrgjov9` Succeeded. Unlike
+  the candidate test, it imported the checker directly from the deployed image:
+  Dejvice 0 critical / 5 warning / 7 legacy; TECH74 0 / 0 / 0; both complete for
+  their scoped 20 checks and physical evidence verified. No local checker code
+  was injected for this final run, and no business rows were changed.
+- Authenticated Adam browser reload of the TECH74 RS retained approved status,
+  document version 1, exact SharePoint link and ordinary authorized controls.
+  No signature, payment, regeneration or other business mutation was submitted.
+- New-revision Log Analytics observation after smoke: 185 console rows, 176
+  parseable structured rows; zero error-level entries, HTTP 5xx or RLS error
+  matches in the observed 15-minute window. This is bounded evidence, not a
+  guarantee about later activity. A transient CLI connection reset when reading
+  job logs was resolved by rereading the same execution, not restarting it.
+
+The original-profile live chain still waits on the variable-symbol business
+choice recorded in the TECH74 smoke report. Historical evidence warnings remain
+explicit; no historical source, contract, payment or signed snapshot was repaired.
