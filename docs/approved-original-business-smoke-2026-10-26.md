@@ -33,6 +33,34 @@ deadline. No original legal wording is modified by this operator.
 - 48 related backend tests for RS generation, original snapshots, signature
   payment terms and exact appendix evidence/input also passed.
 
+## Repeatable verification and native PostgreSQL safety pass
+
+The committed `run-sbk-smoke-job.mjs` now accepts an explicit optional third
+argument `approved-original`; omission retains the original TECH72 profile.
+For example, `node backend/scripts/run-sbk-smoke-job.mjs verify_generated
+cd3605bd-9ef7-461b-b3f2-54f0447fff60 approved-original` performs read-only
+verification of this owned TECH74 fixture. A failed start instructs the operator
+to inspect existing executions before any retry. The definition never updates
+the job schedule or API revision and keeps the runtime database secret reference.
+
+The live `argument list too long` regression is covered using both actual legal
+DOCX inputs: each environment entry is bounded and the Node command stays small.
+Six launcher tests plus 17 operator tests passed, as did changed-file lint.
+No arbitrary raw database URL is serialized into the definition.
+Versioned-launcher execution `job-develocrm-hold-expiry-o5lp76s` Succeeded:
+the exact RS, 32-field snapshot and six frozen physical appendix versions were
+verified again, with one generation audit and one outbox event.
+
+A fresh local PostgreSQL 17 cluster was started with only a private Unix socket,
+no TCP listener. All 134 focused backend tests passed with zero skips, including
+the real PostgreSQL variants: signature versus expiry/release, competing holds,
+duplicate signatures/expiry events, concurrent appendix selection, immutable
+signed evidence, initial-price races, contract termination and preservation of
+payments, native JSONB roundtrips and RS/SBK upload failure recovery. Each fixture
+removed its own temporary database; no databases remained beyond PostgreSQL's
+defaults. The cluster was then stopped. Frontend TypeScript check and backend
+TypeScript build also passed. These tests do not prove live browser signing.
+
 ## Pilot verification
 
 - Operator preparation commit `5fc43e3` pushed to private GitHub.
