@@ -14,6 +14,16 @@ runtime activation or completed original-profile E2E.
 
 ## Evidence and remaining work
 
+**Current follow-up, 26 October:** the legal content approval, original-profile
+runtime activation, 19 current-area corrections, and the complete technical
+original-profile RS-to-SBK generation/signature chain have now been verified.
+They are not pending decisions. See `approved-original-business-smoke-2026-10-26.md`
+and `dejvice-production-data-readiness-2026-10-26.md` for exact current evidence.
+The table below remains the dated 24 October audit. Actual-project blockers now
+include absent seller settings, missing accessory legal facts, unsupported
+buyer/accessory variants and exact/deferred appendix selection; do not confuse
+successful TECH74 fixtures with readiness of the existing real draft.
+
 | Requirement | Current evidence | Remaining gate |
 | --- | --- | --- |
 | Preserve approved legal originals while parameterizing | Pinned original/review manifests and preservation tests; filled RS and SBK Word review artifacts exist | Separate content approval of parameterized variants; original approval alone is insufficient |
