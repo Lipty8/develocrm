@@ -119,3 +119,62 @@ All four new Word pages were visually reviewed; only the symbol changed.
 Read-only physical evidence execution `job-develocrm-hold-expiry-s51hamp`
 Succeeded, including all six exact technical appendices. The real legal-package
 availability caveat above remains unchanged.
+
+## Signed RS and live original-profile SBK continuation
+
+The human manually confirmed TECH74 RS version 2. The authenticated UI now
+shows Signed and its 250,000 CZK reservation-fee obligation due 30 October 2026
+(three working days, excluding the 28 October public holiday). This supersedes
+the earlier unsigned fixture status; it is not a signature on a real contract.
+
+Preparation execution `job-develocrm-hold-expiry-s05465d` Succeeded against
+the existing healthy immutable backend revision
+`ca-develocrm-api-pilot--unit-vs-f0a6934`. Only the owned TECH74 fixture changed:
+a ledger-only technical fee receipt, the exact 38-field original-profile SBK
+template copy, five explicitly nonlegal appendices and the same sales case.
+No real pilot payment, buyer, unit, template or signature was edited.
+
+Authenticated ordinary UI readiness returned no issues. Twenty compared
+business fields matched signed RS v2; the SBK plan showed 1,100,000 CZK first
+instalment, 4,150,000 CZK balance, and unit-based variable symbol 7401.
+The ordinary Generate SBK action created:
+
+- contract `2228075b-b021-4cc3-a64d-081dabee91c5`;
+- contract version `a7b32374-ada8-4b75-b4c9-81aa2d2b7980`;
+- exact document version `28f65edf-4ca4-4590-9c6d-cdbf0833ad25`.
+
+The exact document downloaded through the normal UI had SHA-256
+`b7175487dea8fed4053f4955c69fa3f4c00a2535a350e991a1661095b04c09ce`.
+All eleven pages were rendered using the bundled renderer and individually
+reviewed: no unresolved fields, clipping, overlap or broken signature block.
+All `word/` parts other than the intended document text part remained identical
+to the pinned original-profile source. Its existing legal text/highlighting
+was not rewritten or harmonized. This is not Microsoft Word desktop testing.
+
+Independent read-only execution `job-develocrm-hold-expiry-dtvu44s` Succeeded:
+both latest RS/SBK exact native and template hashes, generation snapshot hashes,
+deterministic reproduction of every Word part, six/five physical frozen
+appendices and exactly one generation audit/outbox/upload operation per output.
+The runtime log summary over the observed 30-minute window contained 1,039 rows,
+zero error-level entries, zero HTTP 5xx and zero RLS violations.
+
+The SBK was moved through Sent to Approved only in this owned technical case.
+The deployed Sites 168 signature dialog correctly displayed its exact filename,
+version 1 and unchecked explicit confirmation, with disabled submit. Its
+optional note disclosure worked in the authenticated browser. Human completion
+was requested; at this checkpoint SBK signature/payment-deadline verification
+remains pending. Do not claim the signed original-profile chain is complete.
+
+## Contract-stage history display safety
+
+During the regenerated RS flow the detail could pair the newest entry into a
+stage with an exit from an earlier visit, displaying completion before start.
+The view previously ran two independent `find` calls over the whole history.
+The small shared `contractStageHistory` selector now pairs only the latest visit
+and its subsequent exit, and never marks the authoritative current stage
+completed. It preserves deterministic API tie order, ignores invalid dates and
+same-state metadata events for visits, and does not change persisted history or
+any business transition. Unit plus rendered-detail regression tests cover
+reopening, later completion, partial histories, same timestamps and empty input.
+All 141 frontend interaction tests and 143 frontend regression tests passed;
+typecheck, lint and production build passed. No migration/backend change.

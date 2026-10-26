@@ -13,6 +13,7 @@ import {TableColumnFilter} from "../app/components/table-column-filter";
 import {SummaryStats,toggledSummaryFilter} from "../app/components/summary-stats";
 import {projectSalesAggregation,projectUnitSalesBucket,type ProjectSalesBucket} from "../app/lib/project-sales-performance";
 import {contractSummaryCategory,contractSummaryCounts,type ContractSummaryCategory} from "../app/lib/contract-summary";
+import {contractStageHistory} from '../app/lib/contract-stage-history';
 import {PackageOpen,UserRound,Users} from "lucide-react";
 import {Projects,UnitContracts,ContractDetail,ContractWorkflowModal,ClientChangeStatusModal,ComplaintDetailModal,ContractAddendumModal,ContractNoteModal,FormModal,PaymentDetailModal,PaymentRefundForm,paymentRefundAvailability,EditClientModal} from "../app/CRMApp";
 import {paymentRepository} from '../app/repositories/payment-repository';
@@ -215,6 +216,48 @@ let fireEvent:typeof import("@testing-library/react").fireEvent;
 let waitFor:typeof import("@testing-library/react").waitFor;
 let act:typeof import("@testing-library/react").act;
 let userEvent:typeof import("@testing-library/user-event").default;
+
+test('historie kroku nespojí nové zahájení se starým dokončením',()=>{
+ const event=(id:string,fromStatus:string|null,toStatus:string,occurredAt:string)=>({id,fromStatus,toStatus,occurredAt,actor:'Test',note:id,source:'manual' as const});
+ const created=event('created',null,'draft','2026-10-20T08:00:00Z');
+ const oldExit=event('old-exit','draft','sent','2026-10-20T09:00:00Z');
+ const reopened=event('reopened','approved','draft','2026-10-26T08:00:00Z');
+ const newExit=event('new-exit','draft','sent','2026-10-26T09:00:00Z');
+ const history=[reopened,oldExit,created];
+ const current=contractStageHistory(history,'draft','draft');
+ assert.equal(current.started,reopened);assert.equal(current.completed,undefined);assert.equal(current.events.length,3);
+ const completed=contractStageHistory([newExit,...history],'draft','sent');
+ assert.equal(completed.started,reopened);assert.equal(completed.completed,newExit);
+ // Even a partial event feed cannot mark the authoritative current stage completed.
+ assert.equal(contractStageHistory([oldExit,created],'draft','draft').completed,undefined);
+ // Input order, bad timestamps and same-state metadata events must not invent a visit.
+ const noTransition=event('metadata','draft','draft','2026-10-26T08:30:00Z');
+ const bad=event('bad','draft','sent','invalid');
+ assert.equal(contractStageHistory([created,bad,newExit,oldExit,noTransition,reopened],'draft','sent').completed,newExit);
+ assert.equal(contractStageHistory([noTransition,...history],'draft','draft').started,reopened);
+ assert.equal(contractStageHistory([oldExit],'draft','sent').completed,undefined);
+ assert.equal(contractStageHistory([],'draft','draft').started,undefined);
+ // Equal timestamps retain the backend's recorded-at/id ordering.
+ const sameExit={...newExit,occurredAt:reopened.occurredAt};
+ assert.equal(contractStageHistory([sameExit,reopened,oldExit,created],'draft','sent').completed,sameExit);
+ assert.equal(contractStageHistory([reopened,sameExit,oldExit,created],'draft','draft').completed,undefined);
+ assert.deepEqual(history,[reopened,oldExit,created]);
+});
+
+test('detail opakovaně otevřeného kroku ukáže dokončení až pro stejný průchod',()=>{
+ const history=[
+  {id:'reset',fromStatus:'approved',toStatus:'draft',occurredAt:'2026-10-26T08:00:00Z',actor:'Test',note:'Nová verze',source:'manual' as const},
+  {id:'old-exit',fromStatus:'draft',toStatus:'sent',occurredAt:'2026-10-20T09:00:00Z',actor:'Test',note:'Původní odeslání',source:'manual' as const},
+  {id:'created',fromStatus:null,toStatus:'draft',occurredAt:'2026-10-20T08:00:00Z',actor:'Test',note:'Založeno',source:'manual' as const},
+ ];
+ const contract={...sampleContracts[0],id:'stage-history-only',typeCode:'other',statusCode:'draft',history,parties:[],versions:[]};
+ const props={close:()=>{},openUnit:()=>{},openClient:()=>{},openDocument:()=>{},canManage:false,isAdmin:false,onChanged:()=>{}};
+ const view=render(<ContractDetail contract={contract} {...props}/>);
+ const completion=()=>view.container.querySelector('.workflow-step-detail dl > div:nth-child(2) dd')?.textContent;
+ assert.equal(completion(),'—');assert.ok(screen.getByText('Nová verze'));
+ view.rerender(<ContractDetail contract={{...contract,statusCode:'sent',history:[{...history[1],id:'new-exit',occurredAt:'2026-10-26T09:00:00Z'},...history]}} {...props}/>);
+ assert.equal(completion(),'26. 10. 2026 10:00');
+});
 
 test('záložka Verze zpřístupní přesný starší dokument i když poslední verze nemá soubor',()=>{
   const meta={name:'Technická verze',basedOnVersionId:null,source:'generated',createdAt:'2026-10-23T10:00:00Z',signedAt:null};
