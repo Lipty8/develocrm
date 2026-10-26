@@ -30,8 +30,45 @@ import {clientRepository} from '../app/repositories/client-repository';
 import {commercialRepository} from '../app/repositories/commercial-repository';
 import {ContractEndResult} from '../app/components/contract-end-result';
 import type {PaymentRecord} from '../app/repositories/payment-repository';
-import {EditAccessoryModal} from '../app/CRMApp';
+import {EditAccessoryModal,CreateUnitModal} from '../app/CRMApp';
 import {clients as sampleClients,units as sampleUnits,contracts as sampleContracts} from '../app/crm-data';
+
+for(const [input,expected] of [['5 100 000',5100000],['5\u00a0100\u00a0000,50',5100000.5],['5\u202f100\u202f000',5100000],['0',0],['',null],['   ',null]] as const){
+ test(`nová jednotka zachová cenu ${JSON.stringify(input)} bez tichého vynechání`,async()=>{
+  const saved:import('../app/repositories/catalog-repository').InventoryImportRow[]=[];
+  render(<CreateUnitModal project={sampleProjects[0]} close={()=>{}} save={async row=>{saved.push(row);}}/>);
+  fireEvent.change(screen.getByLabelText('Označení'),{target:{value:'TECH-PRICE'}});
+  fireEvent.change(screen.getByLabelText('Podlahová plocha m²'),{target:{value:'54,2'}});
+  fireEvent.change(screen.getByLabelText('Ceníková cena'),{target:{value:input}});
+  await userEvent.setup({document}).click(screen.getByRole('button',{name:'Vytvořit jednotku'}));
+  await waitFor(()=>assert.equal(saved.length,1));assert.equal(saved[0].price,expected);assert.equal(saved[0].areaM2,54.2);assert.ok(saved[0].idempotencyKey);
+ });
+}
+for(const input of ['chyba','-100','1e6','0xFF','12,3,4','Infinity']){
+ test(`nová jednotka odmítne neplatnou cenu ${input} před requestem`,async()=>{
+  let calls=0;render(<CreateUnitModal project={sampleProjects[0]} close={()=>{}} save={async()=>{calls++;}}/>);
+  fireEvent.change(screen.getByLabelText('Označení'),{target:{value:'TECH-PRICE'}});
+  fireEvent.change(screen.getByLabelText('Podlahová plocha m²'),{target:{value:'54,2'}});
+  fireEvent.change(screen.getByLabelText('Ceníková cena'),{target:{value:input}});
+  await userEvent.setup({document}).click(screen.getByRole('button',{name:'Vytvořit jednotku'}));
+  await waitFor(()=>assert.ok(screen.getByText('Doplňte platnou nezápornou cenu')));assert.equal(calls,0);
+ });
+}
+
+test('opakování vytvoření jednotky zachová cenu i idempotency key a neplatná užitná plocha nezmizí',async()=>{
+ const saved:import('../app/repositories/catalog-repository').InventoryImportRow[]=[];
+ render(<CreateUnitModal project={sampleProjects[0]} close={()=>{}} save={async row=>{saved.push(row);if(saved.length===1)throw new Error('Zkuste znovu');}}/>);
+ fireEvent.change(screen.getByLabelText('Označení'),{target:{value:'TECH-RETRY'}});
+ fireEvent.change(screen.getByLabelText('Podlahová plocha m²'),{target:{value:'54,2'}});
+ fireEvent.change(screen.getByLabelText('Užitná plocha m²'),{target:{value:'neplatná'}});
+ fireEvent.change(screen.getByLabelText('Ceníková cena'),{target:{value:'5 100 000'}});
+ const user=userEvent.setup({document});await user.click(screen.getByRole('button',{name:'Vytvořit jednotku'}));
+ await waitFor(()=>assert.ok(screen.getByText('Doplňte platnou užitnou plochu')));assert.equal(saved.length,0);
+ fireEvent.change(screen.getByLabelText('Užitná plocha m²'),{target:{value:'50,1'}});
+ await user.click(screen.getByRole('button',{name:'Vytvořit jednotku'}));await screen.findByText('Zkuste znovu');
+ await user.click(screen.getByRole('button',{name:'Vytvořit jednotku'}));await waitFor(()=>assert.equal(saved.length,2));
+ assert.deepEqual(saved[0],saved[1]);assert.equal(saved[1].price,5100000);assert.equal(saved[1].usableAreaM2,50.1);
+});
 
 test('celý formulář příslušenství uloží právní formu a neúplný podíl zastaví před requestem',async()=>{
  const saved:Array<import('../backend/src/shared/accessory-legal-details').AccessoryUpdateInput>=[];
