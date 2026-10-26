@@ -106,3 +106,16 @@ The technical RS remains unsigned; the complete RS-to-SBK chain is not claimed.
 Adam also explicitly deferred the three missing real appendix files. They are
 not being searched for further in this package; technical appendix fixtures
 remain distinguished from real legal-package readiness.
+
+## Decision and corrected RS version
+
+Adam confirmed use of the exact numeric unit code for these RS/SBK profiles.
+Migrations 0072 and 0073 implement the calculation and safe explicit version
+repreparation, without rewriting historical documents or financial records.
+See `unit-variable-symbol-2026-10-26.md` for complete deployment/test evidence.
+Authenticated ordinary generation produced RS version 2 with symbol `7401`;
+the earlier Word remains downloadable with its original hash and symbol `74`.
+All four new Word pages were visually reviewed; only the symbol changed.
+Read-only physical evidence execution `job-develocrm-hold-expiry-s51hamp`
+Succeeded, including all six exact technical appendices. The real legal-package
+availability caveat above remains unchanged.
