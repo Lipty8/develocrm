@@ -95,9 +95,10 @@ for(const usePostgres of [false,true])test(`price creation and signed document i
           await client.query("SELECT set_config('app.contract_payment_terms_command','on',true)");
           await client.query("UPDATE contract_versions SET payment_terms_snapshot=jsonb_set(payment_terms_snapshot,'{variableSymbol}','\"74\"') WHERE id=$1",[c.version_id]);
         });
-        const previous=await read();const oldDocument=await f.external(c);
-        await assert.rejects(prepare(),/VERSION_IMMUTABLE/);
+        const previous=await read();const oldDocument=await f.external(c);await f.approve(c);
+        await assert.rejects(prepare(),/VERSION_IMMUTABLE|REQUIRE_ACTIVE_DRAFT/);
         const next=(await f.database.withContext(f.context,client=>client.query<{id:string}>("SELECT app.create_contract_version($1,$2,'Corrected unit symbol','manual',$3,$4,'{}'::jsonb) id",[f.context.tenantId,c.contract_id,f.context.membershipId,c.version_id]))).rows[0].id;
+        assert.equal((await f.db.query<{current_status:string}>('SELECT current_status FROM contracts WHERE id=$1',[c.contract_id])).rows[0].current_status,'draft','new version requires preparation and a new approval');
         assert.equal(await read(next),null,'explicit new version requires fresh terms instead of inheriting the obsolete symbol');
         await prepare();await prepare();assert.equal((await read(next)).variableSymbol,code);
         assert.deepEqual(await read(),previous,'old contract-version snapshot is not rewritten');
