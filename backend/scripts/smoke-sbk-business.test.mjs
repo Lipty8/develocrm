@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
-import {assertSmokeInput,assertSmokeProject,assertSyntheticTemplate,assertSignedChainEvidence,loadSignedSmokePaymentTerms,smokeFailure,SMOKE_KEY} from './smoke-sbk-business.mjs';
+import {assertSmokeInput,assertSmokeProject,assertSyntheticTemplate,assertApprovedOriginalTemplate,assertPersistedWordParts,assertTechnicalAppendix,assertSignedChainEvidence,loadSignedSmokePaymentTerms,smokeFailure,SMOKE_KEY} from './smoke-sbk-business.mjs';
+import {unzipSync,zipSync} from 'fflate';
 import {getSalesProcessState} from '../dist/shared/next-contract-action.js';
 import {originalPaymentPlan} from '../dist/contracts/original-payment-plan.js';
 
@@ -10,6 +11,41 @@ const actor='11111111-1111-4111-8111-111111111111';
 const project={code:'TECH72',name:'TECH SMOKE 0072 – synthetic RS SBK',archived_at:null};
 const marker={smokeKey:SMOKE_KEY,actor};
 const context={tenantId:actor,membershipId:actor};
+
+test('approved-original profile cannot adopt TECH72 or an unowned project',()=>{
+  assert.throws(()=>assertSmokeInput({...context,mode:'verify',projectId:actor,profile:'untrusted'}),/PROFILE_INVALID/);
+  assert.throws(()=>assertSmokeProject(project,marker,actor,'prepare_rs','approved-original'),/NOT_OWNED/);
+  const fixture={code:'TECH74',name:'TECH SMOKE 0074 – approved original profiles',archived_at:null};
+  const own={smokeKey:'technical-approved-original-pipeline-v1',actor};
+  assert.doesNotThrow(()=>assertSmokeProject(fixture,own,actor,'prepare_rs','approved-original'));
+  assert.throws(()=>assertSmokeProject(fixture,own,actor,'prepare_rs'),/NOT_OWNED/);
+  assert.throws(()=>assertSmokeProject(fixture,{...own,actor:'other'},actor,'prepare_rs','approved-original'),/NOT_OWNED/);
+});
+for(const kind of ['rs','sbk'])test(`${kind} approved profile pins the exact approved source, not a caller-supplied hash`,()=>{
+  const name=kind==='rs'?'rs-dejvice-original-review.docx':'sbk-dejvice-original-delivery-review.docx';
+  const bytes=readFileSync(new URL(`../templates/review/${name}`,import.meta.url));
+  assert.doesNotThrow(()=>assertApprovedOriginalTemplate(bytes,kind));
+  const changed=unzipSync(bytes);changed['word/document.xml']=Buffer.from('changed content');
+  assert.throws(()=>assertApprovedOriginalTemplate(zipSync(changed),kind),/APPROVED_SOURCE_HASH/);
+  assert.throws(()=>assertApprovedOriginalTemplate(bytes,kind==='rs'?'sbk':'rs'),/APPROVED_SOURCE_HASH/);
+  assert.throws(()=>assertSyntheticTemplate(bytes,createHash('sha256').update(bytes).digest('hex'),kind));
+});
+test('persisted fidelity accepts Office metadata normalization but rejects altered Word parts',()=>{
+  const source=readFileSync(new URL('../templates/review/rs-dejvice-original-review.docx',import.meta.url));
+  const normalized=unzipSync(source);normalized['docProps/core.xml']=Buffer.from('normalized');
+  assert.doesNotThrow(()=>assertPersistedWordParts(source,zipSync(normalized)));
+  normalized['word/styles.xml']=Buffer.from('changed');
+  assert.throws(()=>assertPersistedWordParts(source,zipSync(normalized)),/WORD_PARTS_CHANGED/);
+  delete normalized['word/styles.xml'];
+  assert.throws(()=>assertPersistedWordParts(source,zipSync(normalized)),/WORD_PARTS_CHANGED/);
+});
+test('technical appendix is pinned separately and cannot be substituted with a legal document',()=>{
+  const bytes=readFileSync(new URL('../templates/technical/TECH72-rs-synthetic-template.docx',import.meta.url));
+  const file={base64:bytes.toString('base64'),sha256:createHash('sha256').update(bytes).digest('hex')};
+  assert.doesNotThrow(()=>assertTechnicalAppendix(file));
+  assert.throws(()=>assertTechnicalAppendix({...file,base64:Buffer.from('bad').toString('base64')}),/HASH_MISMATCH/);
+  assert.throws(()=>assertTechnicalAppendix({...file,sha256:'0'.repeat(64)}),/TECHNICAL_APPENDIX/);
+});
 
 test('mutating phases require explicit synthetic confirmation and exact context',()=>{
   assert.throws(()=>assertSmokeInput({...context,mode:'prepare_rs'}),/EXPLICIT_SYNTHETIC/);
