@@ -89,13 +89,13 @@ export function smokeFailure(error,phase,projectId){
 
 // Assertions only: expected stages and due dates come from the existing domain
 // projections/calendar. This harness must not become another workflow engine.
-export function assertSignedChainEvidence({contracts,unit,next,terms,payments}){
+export function assertSignedChainEvidence({contracts,unit,next,terms,payments,expectedVersions={rs:1,sbk:1}}){
   if(contracts.length!==2||!['rs','sbk'].every(type=>contracts.filter(c=>c.type===type).length===1))fail('SMOKE_SIGNED_CHAIN_REQUIRED');
   for(const c of contracts){
     if(c.status!=='signed'||!c.signedAt||c.signedAt!==c.lastRequiredSignatureAt||!c.allRequiredSigned
       ||c.versionStatus!=='signed'||c.versionSignedAt!==c.signedAt||!c.locked||!c.documentVersionId
-      ||c.signatureAudits!==1||c.signatureEvents!==1||c.signatureOutbox!==1||c.versionCount!==1
-      ||c.generationCount!==1)fail('SMOKE_SIGNATURE_EVIDENCE_INVALID');
+      ||c.signatureAudits!==1||c.signatureEvents!==1||c.signatureOutbox!==1||c.versionCount!==expectedVersions[c.type]
+      ||c.generationCount!==expectedVersions[c.type])fail('SMOKE_SIGNATURE_EVIDENCE_INVALID');
     if(c.unitId!==unit.id||c.salesCaseId!==unit.salesCaseId)fail('SMOKE_BUSINESS_CONTEXT_MISMATCH');
   }
   if(unit.caseStatus!=='active'||unit.commercialStatus!=='contracted'||unit.stage!=='sbk'
@@ -382,11 +382,12 @@ export async function runSbkSmoke(input){
         (SELECT count(*)::int FROM outbox_events e WHERE e.tenant_id=c.tenant_id AND e.aggregate_id=c.id AND e.event_type='contract.signed.v1') "signatureOutbox",
         (SELECT count(*)::int FROM contract_versions x WHERE x.tenant_id=c.tenant_id AND x.contract_id=c.id) "versionCount",
         (SELECT count(*)::int FROM document_generation_operations g WHERE g.tenant_id=c.tenant_id AND g.contract_id=c.id AND g.state='completed') "generationCount"
-        FROM contracts c JOIN contract_versions v ON v.tenant_id=c.tenant_id AND v.contract_id=c.id
+        FROM contracts c JOIN LATERAL(SELECT * FROM contract_versions x WHERE x.tenant_id=c.tenant_id AND x.contract_id=c.id ORDER BY x.version_number DESC LIMIT 1) v ON true
         WHERE c.tenant_id=$1 AND c.project_id=$2 AND c.id=ANY($3::uuid[])`,[tenantId,projectId,result.map(item=>item.contractId)])).rows
         .map(row=>({...row,signedAt:row.signedAt?.toISOString(),versionSignedAt:row.versionSignedAt?.toISOString(),lastRequiredSignatureAt:row.lastRequiredSignatureAt?.toISOString()}));
       const next=await commercial.nextContractAction({...context,unitId:u});
-      assertSignedChainEvidence({contracts:facts,unit:unitState[0],next,terms,payments:rows});
+      assertSignedChainEvidence({contracts:facts,unit:unitState[0],next,terms,payments:rows,
+        expectedVersions:original?{rs:2,sbk:1}:{rs:1,sbk:1}});
       console.log(JSON.stringify({event:'smoke.sbk_chain_verified',projectId,results:result,payments:rows,nextAction:next.kind,
         nextContractType:next.contractType,commercialStatus:unitState[0].commercialStatus,signatureAuditVerified:true,syntheticOnly:true}));
     }

@@ -107,6 +107,14 @@ test('signed-chain verification uses central projection and Czech holiday-aware 
   const early=signedChain();early.payments[0].dueOn='2026-10-30';
   assert.throws(()=>assertSignedChainEvidence(early),/PAYMENT_PLAN_INVALID/);
 });
+test('original-profile correction expects exactly two RS versions, not arbitrary duplicate generations',()=>{
+  const state=signedChain();state.expectedVersions={rs:2,sbk:1};
+  assert.throws(()=>assertSignedChainEvidence(state),/SIGNATURE_EVIDENCE_INVALID/);
+  state.contracts[0].versionCount=2;state.contracts[0].generationCount=2;
+  assert.doesNotThrow(()=>assertSignedChainEvidence(state));
+  state.contracts[0].generationCount=3;
+  assert.throws(()=>assertSignedChainEvidence(state),/SIGNATURE_EVIDENCE_INVALID/);
+});
 test('signed-chain verification rejects stale stage, free unit or repeated RS CTA',()=>{
   for(const mutate of [s=>{s.unit.commercialStatus='available';},s=>{s.unit.stage='rs';},s=>{s.next.contractType='rs';},
     s=>{s.next.salesProcess.steps.find(step=>step.code==='sbk').state='current';}]){
