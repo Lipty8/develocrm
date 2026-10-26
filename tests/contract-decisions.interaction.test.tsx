@@ -13,7 +13,8 @@ import {TableColumnFilter} from "../app/components/table-column-filter";
 import {SummaryStats,toggledSummaryFilter} from "../app/components/summary-stats";
 import {projectSalesAggregation,projectUnitSalesBucket,type ProjectSalesBucket} from "../app/lib/project-sales-performance";
 import {contractSummaryCategory,contractSummaryCounts,type ContractSummaryCategory} from "../app/lib/contract-summary";
-import {contractStageHistory} from '../app/lib/contract-stage-history';
+import {contractStageHistory,contractWorkflowPresentation} from '../app/lib/contract-stage-history';
+import {ContractWorkflowSteps} from '../app/components/contract-workflow-steps';
 import {PackageOpen,UserRound,Users} from "lucide-react";
 import {Projects,UnitContracts,ContractDetail,ContractWorkflowModal,ClientChangeStatusModal,ComplaintDetailModal,ContractAddendumModal,ContractNoteModal,FormModal,PaymentDetailModal,PaymentRefundForm,paymentRefundAvailability,EditClientModal} from "../app/CRMApp";
 import {paymentRepository} from '../app/repositories/payment-repository';
@@ -257,6 +258,44 @@ test('detail opakovaně otevřeného kroku ukáže dokončení až pro stejný p
  assert.equal(completion(),'—');assert.ok(screen.getByText('Nová verze'));
  view.rerender(<ContractDetail contract={{...contract,statusCode:'sent',history:[{...history[1],id:'new-exit',occurredAt:'2026-10-26T09:00:00Z'},...history]}} {...props}/>);
  assert.equal(completion(),'26. 10. 2026 10:00');
+});
+
+test('přeskočené nebo nedoložené kroky nejsou dokončené jen kvůli pozici v pořadí',()=>{
+ const event=(fromStatus:string|null,toStatus:string,occurredAt:string)=>({fromStatus,toStatus,occurredAt});
+ const history=[event('approved','signed','2026-10-26T11:00:00Z'),event('sent','approved','2026-10-26T10:00:00Z'),event('draft','sent','2026-10-26T09:00:00Z'),event(null,'draft','2026-10-26T08:00:00Z')];
+ const steps=contractWorkflowPresentation(history,'signed');
+ assert.deepEqual(steps.map(s=>s.state),['complete','complete','unrecorded','complete','current']);
+ assert.equal(steps[2].stateLabel,'Bez záznamu');
+ assert.deepEqual(contractWorkflowPresentation([],'approved').map(s=>s.state),['unrecorded','unrecorded','unrecorded','current','pending']);
+ for(const status of ['cancelled','terminated'])assert.equal(contractWorkflowPresentation(history,status).some(s=>s.state==='current'),false);
+ const reopened=[event('approved','draft','2026-10-26T12:00:00Z'),...history];
+ assert.deepEqual(contractWorkflowPresentation(reopened,'draft').map(s=>s.state),['current','pending','pending','pending','pending']);
+ const invalid=[event(null,'negotiation','invalid'),...history];
+ assert.equal(contractWorkflowPresentation(invalid,'signed')[2].state,'unrecorded');
+ // Old signing is the same visible Approved stage, not an invented extra stage.
+ const legacy=[event('signing','signed','2026-10-26T11:00:00Z'),event('approved','signing','2026-10-26T10:30:00Z'),...history.slice(1)];
+ assert.equal(contractWorkflowPresentation(legacy,'signed')[3].state,'complete');
+ const visit=contractStageHistory(legacy,'approved','signed');
+ assert.equal(visit.started?.occurredAt,'2026-10-26T10:00:00Z');assert.equal(visit.completed?.occurredAt,'2026-10-26T11:00:00Z');
+ assert.equal(contractWorkflowPresentation(legacy,'signing')[3].state,'current');
+});
+
+test('seznam i detail používají stejné doložené kroky a detail zachová interakci',()=>{
+ const history=[
+  {id:'signed',fromStatus:'approved',toStatus:'signed',occurredAt:'2026-10-26T11:00:00Z',actor:'Test',note:'',source:'manual' as const},
+  {id:'approved',fromStatus:'sent',toStatus:'approved',occurredAt:'2026-10-26T10:00:00Z',actor:'Test',note:'',source:'manual' as const},
+  {id:'sent',fromStatus:'draft',toStatus:'sent',occurredAt:'2026-10-26T09:00:00Z',actor:'Test',note:'',source:'manual' as const},
+  {id:'created',fromStatus:null,toStatus:'draft',occurredAt:'2026-10-26T08:00:00Z',actor:'Test',note:'',source:'manual' as const},
+ ];
+ let selected='';
+ const view=render(<><div data-testid="compact"><ContractWorkflowSteps compact history={history} status="signed"/></div><div data-testid="detail"><ContractWorkflowSteps history={history} status="signed" selected="signed" onSelect={code=>{selected=code;}}/></div></>);
+ const states=(testId:string)=>[...screen.getByTestId(testId).querySelectorAll('[data-state]')].map(e=>[e.getAttribute('data-stage'),e.getAttribute('data-state')]);
+ assert.deepEqual(states('compact'),states('detail'));
+ const negotiation=screen.getByRole('button',{name:'Ve vyjednávání · Bez záznamu'});
+ assert.equal(negotiation.classList.contains('done'),false);fireEvent.click(negotiation);assert.equal(selected,'negotiation');
+ assert.equal(screen.getByRole('button',{name:'Podepsaná · Aktuální krok'}).getAttribute('aria-pressed'),'true');
+ view.rerender(<ContractWorkflowSteps compact history={history} status="terminated"/>);
+ assert.equal(view.container.querySelector('.current'),null);
 });
 
 test('záložka Verze zpřístupní přesný starší dokument i když poslední verze nemá soubor',()=>{
