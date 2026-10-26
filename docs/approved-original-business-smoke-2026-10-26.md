@@ -178,3 +178,43 @@ any business transition. Unit plus rendered-detail regression tests cover
 reopening, later completion, partial histories, same timestamps and empty input.
 All 141 frontend interaction tests and 143 frontend regression tests passed;
 typecheck, lint and production build passed. No migration/backend change.
+
+## Human signature completion and final technical-chain verification
+
+Adam subsequently confirmed the technical SBK manually. After a full browser
+reload its exact version 1 remained Signed, with the explicit nonlegal-test
+note, 1,100,000 CZK first instalment due 3 November 2026, and 4,150,000 CZK
+balance awaiting evidenced notice delivery. No balance obligation or due date
+was invented. Re-downloading the signed Word produced the same SHA-256
+`b7175487dea8fed4053f4955c69fa3f4c00a2535a350e991a1661095b04c09ce`
+as the pre-sign download.
+
+Read-only execution `job-develocrm-hold-expiry-18ifgqu` Succeeded. The verifier
+checked both exact native documents; all required parties signed; the last
+required signature timestamp matched the contract and locked version; exactly
+one signature audit, status event and outbox event per contract; exactly two RS
+business/generation versions and one SBK version; same unit and sales case;
+the existing central pricing/payment/calendar projection; unit status
+`contracted`, sales stage `sbk`, RS/SBK complete and next action KS.
+Both contract types use sales case `6ac6fa74-6eb3-4733-9d6d-48eda1267737`.
+
+Authenticated unit UI agreed: SBK commercial state, RS and SBK complete, KS
+the next step, unchanged 5,500,000 CZK price and same synthetic buyer. Only the
+owned technical project was used. No real signature or payment was created.
+This completes the approved-original-profile **technical** RS-to-SBK chain,
+not the availability of the actual project's missing legal appendix files or
+approval of additional buyer/accessory variants.
+
+History implementation `6bec8bc` was pushed to private GitHub. Publication was
+initially stopped by the automatic approval review's usage limit, not a code or
+build failure. After the stated reset had passed, the normal approved helper
+completed; no review bypass or access change was used. Sites **169** source
+`2802118ba4deae02f1a01d30ba76e1cf45ea2f00`, deployment
+`appgdep_6adfb6c43cb08191a335cdae2b931a93`, Succeeded. Its 581-file tree
+`3067b9840df3a3e5b4cfefce98deeee8a70235a8` exactly matches the implementation.
+Backend and migration 0073 remained unchanged; health/ready returned 200.
+
+Post-publication authenticated read-only E2E opened the regenerated signed RS
+and selected its Preparation stage: latest entry 26 October 09:52, completion
+10:01, correctly paired within the new-version visit rather than the original
+earlier departure. No historical record was rewritten by this check.
