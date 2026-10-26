@@ -77,6 +77,39 @@ async function fixture(postgresUrl?:string){
 
 for(const usePostgres of [false,true])test(`price creation and signed document integrity (${usePostgres?'PostgreSQL':'PGlite'})`,{skip:usePostgres&&!process.env.WORKFLOW_TEST_DATABASE_URL},async t=>{
   const f=await fixture(usePostgres?process.env.WORKFLOW_TEST_DATABASE_URL:undefined);try{
+    await t.test('RS payment symbol is the exact numeric unit code, not the contract reference; retries and old evidence are preserved',async()=>{
+      for(const code of ['007401','7402']){
+        await f.inventory.createUnit({...f.context,projectId:f.projectId,row:{rowNumber:1,code,areaM2:50,price:5000000},idempotencyKey:randomUUID()});
+        const unit=(await f.db.query<{id:string}>('SELECT id FROM units WHERE tenant_id=$1 AND project_id=$2 AND code=$3',[f.context.tenantId,f.projectId,code])).rows[0];
+        const c=await f.database.withContext(f.context,()=>f.start(unit.id,true));
+        const read=async(id=c.version_id)=>(await f.db.query<{payment_terms_snapshot:Record<string,unknown>}>('SELECT payment_terms_snapshot FROM contract_versions WHERE id=$1',[id])).rows[0].payment_terms_snapshot;
+        const prepare=()=>f.database.withContext(f.context,client=>client.query('SELECT app.prepare_signature_payment_terms($1,$2,$3)',[f.context.tenantId,c.contract_id,f.context.membershipId]));
+        assert.equal((await read()).variableSymbol,code);
+        // A reference with no digits is valid; no fallback to its spelling.
+        await f.db.query("UPDATE contracts SET reference='REFERENCE-WITHOUT-DIGITS-'||$2 WHERE id=$1",[c.contract_id,code==='7402'?'B':'A']);
+        await prepare();await prepare();assert.equal((await read()).variableSymbol,code);
+        const audits=(await f.db.query<{n:number}>("SELECT count(*)::int n FROM audit_log WHERE entity_id=$1 AND action='contract.payment_terms_prepared'",[c.contract_id])).rows[0].n;
+        assert.equal(audits,1);
+        // Simulate a pre-0072 persisted plan, then freeze it with a document.
+        await f.database.withContext(f.context,async client=>{
+          await client.query("SELECT set_config('app.contract_payment_terms_command','on',true)");
+          await client.query("UPDATE contract_versions SET payment_terms_snapshot=jsonb_set(payment_terms_snapshot,'{variableSymbol}','\"74\"') WHERE id=$1",[c.version_id]);
+        });
+        const previous=await read();const oldDocument=await f.external(c);
+        await assert.rejects(prepare(),/VERSION_IMMUTABLE/);
+        const next=(await f.database.withContext(f.context,client=>client.query<{id:string}>("SELECT app.create_contract_version($1,$2,'Corrected unit symbol','manual',$3,$4,'{}'::jsonb) id",[f.context.tenantId,c.contract_id,f.context.membershipId,c.version_id]))).rows[0].id;
+        assert.equal(await read(next),null,'explicit new version requires fresh terms instead of inheriting the obsolete symbol');
+        await prepare();await prepare();assert.equal((await read(next)).variableSymbol,code);
+        assert.deepEqual(await read(),previous,'old contract-version snapshot is not rewritten');
+        assert.equal((await f.db.query<{document_version_id:string}>('SELECT document_version_id FROM contract_versions WHERE id=$1',[c.version_id])).rows[0].document_version_id,oldDocument.documentVersionId);
+      }
+    });
+    await t.test('nonnumeric unit codes fail closed without extracting or inventing a payment symbol',async()=>{
+      await f.inventory.createUnit({...f.context,projectId:f.projectId,row:{rowNumber:1,code:'A-7403',areaM2:50,price:5000000},idempotencyKey:randomUUID()});
+      const unit=(await f.db.query<{id:string}>('SELECT id FROM units WHERE tenant_id=$1 AND project_id=$2 AND code=$3',[f.context.tenantId,f.projectId,'A-7403'])).rows[0];
+      await assert.rejects(f.database.withContext(f.context,()=>f.start(unit.id,true)),/PAYMENT_TERMS_UNIT_CODE_REQUIRED/);
+      assert.equal((await f.db.query<{n:number}>('SELECT count(*)::int n FROM contracts WHERE unit_id=$1',[unit.id])).rows[0].n,0,'the entire failed create rolls back');
+    });
     await t.test('SQL calendar matches the canonical Czech calendar for every supported date',async()=>{
       const days=(await f.db.query<{day:string;working:boolean}>("SELECT to_char(d,'YYYY-MM-DD') AS day,app.contract_working_day_2026_v1(d::date) working FROM generate_series(DATE '2016-01-01',DATE '2099-12-31',interval '1 day') d")).rows;
       assert.equal(days.length,30681);
@@ -170,6 +203,9 @@ for(const usePostgres of [false,true])test(`price creation and signed document i
       const create=()=>run("SELECT * FROM app.create_contract_with_signature_payments($1,$2,'sbk','TECH66-SBK','Technical SBK',$3,$4,NULL,NULL)",[f.context.tenantId,rs.salesCaseId,f.context.membershipId,key]);
       const created=(await create()).rows[0] as {contract_id:string;version_id:string};
       assert.deepEqual((await create()).rows[0],created);
+      const symbols=(await f.db.query<{symbol:string;code:string}>(`SELECT v.payment_terms_snapshot->>'variableSymbol' symbol,u.code FROM contract_versions v
+        JOIN contracts c ON c.id=v.contract_id JOIN units u ON u.id=c.unit_id WHERE c.id IN($1,$2)`,[rs.contract_id,created.contract_id])).rows;
+      assert.equal(symbols.length,2);for(const row of symbols)assert.equal(row.symbol,row.code,'RS and SBK share their exact unit number');
       const rows=async()=>(await f.db.query<{id:string;schedule_key:string;amount:string;due_day:string}>("SELECT id,schedule_key,amount::text,to_char(due_at AT TIME ZONE 'Europe/Prague','YYYY-MM-DD') due_day FROM payment_obligations WHERE contract_id=$1 ORDER BY schedule_key",[created.contract_id])).rows;
       assert.equal((await rows()).length,0);
       const doc=await f.external(created);created.version_id=doc.versionId;await f.approve(created);

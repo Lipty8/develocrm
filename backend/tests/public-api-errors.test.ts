@@ -26,7 +26,7 @@ test('doménový kód stále vyvolá bezpečnou srozumitelnou chybu',()=>{
   assert.equal(result.message,'Obchod již byl ukončen. Historickou smlouvu nelze posunout ani podepsat.');
 });
 test('missing contractual payment data is not misreported as a permission failure',()=>{
-  for(const code of ['PAYMENT_TERMS_FEE_REQUIRED','PAYMENT_TERMS_CURRENT_VERSION_REQUIRED','PAYMENT_TERMS_DELIVERY_EVIDENCE_REQUIRED']){
+  for(const code of ['PAYMENT_TERMS_FEE_REQUIRED','PAYMENT_TERMS_CURRENT_VERSION_REQUIRED','PAYMENT_TERMS_DELIVERY_EVIDENCE_REQUIRED','PAYMENT_TERMS_UNIT_CODE_REQUIRED']){
     const result=mapApiError(new Error(code),409,'terms-test');
     assert.equal(result.code,code);assert.doesNotMatch(result.message,/oprávnění|PAYMENT_TERMS|SELECT|undefined/);
     assert.deepEqual(mapApiError(result,409,'terms-test'),result);

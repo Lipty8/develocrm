@@ -79,6 +79,7 @@ export function mapApiError(input: unknown, statusCode: number, correlationId: s
       PAYMENT_TERMS_PAID_RS_MISMATCH:'Úhrada rezervačního poplatku neodpovídá podmínkám této SBK.',
       PAYMENT_TERMS_SIGNED_RS_REQUIRED:'Pro přípravu plateb SBK je potřeba jednoznačná účinná podepsaná RS.',
       PAYMENT_TERMS_FEE_REQUIRED:'Doplňte platný rezervační poplatek.',
+      PAYMENT_TERMS_UNIT_CODE_REQUIRED:'Variabilní symbol musí odpovídat číselnému označení jednotky. Zkontrolujte její označení.',
       PAYMENT_TERMS_DELIVERY_EVIDENCE_REQUIRED:'Vyberte uložený doklad o doručení výzvy patřící k této smlouvě.',
       PAYMENT_TERMS_INVALID_DELIVERY_DATE:'Datum doručení musí být mezi účinným podpisem smlouvy a dneškem.',
       PAYMENT_TERMS_DELIVERY_ALREADY_RECORDED:'Doručení výzvy již bylo zaevidováno s jinými údaji.',
