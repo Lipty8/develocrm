@@ -2264,17 +2264,26 @@ export function ContractSignedModal({contract,close,save}:{contract:(typeof cont
   const latest:ContractDocumentVersion|undefined=contract.versions?.[0];const today=localDateKey(new Date());
   const [signedDate,setSignedDate]=useState(today);const [note,setNote]=useState("");const [confirmedFor,setConfirmedFor]=useState<string|null>(null);
   const confirmationKey=JSON.stringify([contract.id,latest?.id,latest?.documentVersionId,signedDate]);
-  return <FormModal title="Evidovat podpis smlouvy" close={close} saveLabel="Evidovat podpis" onSave={async()=>{
+  const confirmed=confirmedFor===confirmationKey;
+  const versionLabel=`v${String(latest?.number??1).padStart(2,"0")}`;
+  return <FormModal title="Evidovat podpis smlouvy" subtitle="Podpis máte hotový. Teď jej zaznamenejte ke správnému dokumentu." className="signature-record-modal"
+    headerAside={<span className="signature-record-emblem" aria-hidden="true"><FileCheck2 size={24}/></span>}
+    close={close} saveLabel="Evidovat podpis" submitDisabled={!confirmed} onSave={async()=>{
     if(!latest)throw new Error("Smlouvu nelze podepsat, protože nemá platnou aktuální verzi.");
     if(!signedDate)throw new Error("Vyberte datum podpisu");
     if(signedDate>today)throw new Error("Datum podpisu nesmí být v budoucnosti");
     if(confirmedFor!==confirmationKey)throw new Error("Potvrďte, že zobrazená verze smlouvy byla skutečně podepsána.");
     await save({signedAt:(signedDate===today?new Date():new Date(`${signedDate}T12:00:00`)).toISOString(),note:note.trim()||undefined});
-  }}><div className="contract-sign-confirm"><FileCheck2 size={22}/><div><strong>{contract.reference??`${contract.type} · ${contract.unit}`}</strong><small>Aktuální verze v{String(latest?.number??1).padStart(2,"0")} · {contract.client}</small>{latest?.documentName&&<small>{latest.documentName}</small>}</div></div>
-    <p className="form-help">Evidujete již provedený podpis. DeveloCRM dokument elektronicky nepodepisuje.</p>
-    <label><span>Datum podpisu</span><input type="date" value={signedDate} max={today} onChange={event=>{setSignedDate(event.target.value);setConfirmedFor(null);}}/></label>
-    <label><span>Poznámka (volitelné)</span><textarea rows={3} value={note} onChange={event=>setNote(event.target.value)} placeholder="Například kde je podepsaný originál uložen"/></label>
-    <label className="checkbox-label"><input type="checkbox" checked={confirmedFor===confirmationKey} onChange={event=>setConfirmedFor(event.target.checked?confirmationKey:null)}/><span>Potvrzuji, že smlouva {contract.reference??contract.type} ve verzi v{String(latest?.number??1).padStart(2,"0")} byla skutečně podepsána.</span></label>
+  }}><section className="signature-document-card" aria-label="Podepsaný dokument">
+      <div className="signature-document-title"><span className="signature-document-icon" aria-hidden="true"><FileText size={22}/></span><div><small>Podepsaný dokument</small><strong>{contract.reference??`${contract.type} · ${contract.unit}`}</strong></div><span className="signature-version">{versionLabel}</span></div>
+      {latest?.documentName&&<p className="signature-document-name">{latest.documentName}</p>}
+      <div className="signature-document-context"><span><Home size={14} aria-hidden="true"/>Jednotka {contract.unit}</span><span><UserRound size={14} aria-hidden="true"/>{contract.client}</span></div>
+      {contract.id&&latest?.documentVersionId&&latest.documentReady&&<div className="signature-document-action"><ContractVersionDocumentAction contractId={contract.id} version={latest}/></div>}
+    </section>
+    <div className="signature-date-section"><label><span><CalendarDays size={16} aria-hidden="true"/>Datum podpisu</span><input type="date" value={signedDate} max={today} onChange={event=>{setSignedDate(event.target.value);setConfirmedFor(null);}}/></label><p>Uveďte den, kdy byla tato verze podepsána.</p></div>
+    <details className="signature-note"><summary><MessageSquare size={16} aria-hidden="true"/><strong>Přidat poznámku</strong><small>Volitelné</small><ChevronDown size={15} aria-hidden="true"/></summary><label><span>Poznámka (volitelné)</span><textarea rows={2} value={note} onChange={event=>setNote(event.target.value)} placeholder="Například kde je podepsaný originál uložen"/></label></details>
+    <label className={`signature-confirmation${confirmed?' is-confirmed':''}`}><input type="checkbox" checked={confirmed} onChange={event=>setConfirmedFor(event.target.checked?confirmationKey:null)}/><span><strong>Potvrzuji, že smlouva {contract.reference??contract.type} ve verzi {versionLabel} byla skutečně podepsána.</strong><small aria-live="polite">{confirmed?'Připraveno k uložení.':'Potvrzení se vztahuje právě k této verzi a datu.'}</small></span><CheckCircle2 size={20} className="signature-confirmation-check" aria-hidden="true"/></label>
+    <p className="signature-record-notice"><Info size={15} aria-hidden="true"/><span>Evidujete již provedený podpis. DeveloCRM dokument elektronicky nepodepisuje.</span></p>
   </FormModal>;
 }
 export function ContractNoteModal({close,save}:{close:()=>void;save:(text:string)=>Promise<void>}){const [text,setText]=useState("");return <FormModal title="Přidat interní poznámku" close={close} saveLabel="Uložit poznámku" onSave={async()=>{if(!text.trim())throw new Error("Napište text poznámky");await save(text.trim());}}><label><span>Poznámka</span><textarea autoFocus rows={4} maxLength={5000} value={text} onChange={event=>setText(event.target.value)}/></label><p className="form-help"><History size={14}/> Poznámka bude opatřena autorem a časem. Později ji lze pouze archivovat.</p></FormModal>}

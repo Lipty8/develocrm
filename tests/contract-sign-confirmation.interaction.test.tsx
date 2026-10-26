@@ -23,8 +23,10 @@ test('signature requires explicit visible confirmation and never opens native co
   mock.method(window,'confirm',()=>{throw new Error('Native confirm must not run');});let calls=0;
   render(<ContractSignedModal contract={contract} close={()=>{}} save={async()=>{calls++;}}/>);
   assert.ok(screen.getByText(version.documentName));assert.ok(screen.getByText(/již provedený podpis/));
-  submit();await screen.findByText('Potvrďte, že zobrazená verze smlouvy byla skutečně podepsána.');assert.equal(calls,0);
-  fireEvent.click(confirm());submit();await waitFor(()=>assert.equal(calls,1));
+  assert.equal((screen.getByRole('button',{name:'Evidovat podpis'}) as HTMLButtonElement).disabled,true);
+  submit();assert.equal(calls,0);
+  fireEvent.click(confirm());assert.equal((screen.getByRole('button',{name:'Evidovat podpis'}) as HTMLButtonElement).disabled,false);
+  assert.ok(screen.getByText('Připraveno k uložení.'));submit();await waitFor(()=>assert.equal(calls,1));
 });
 
 test('past signature date is sent as that day, not the recording date',async()=>{
@@ -40,7 +42,19 @@ test('changing date invalidates the previous confirmation',async()=>{
   let calls=0;render(<ContractSignedModal contract={contract} close={()=>{}} save={async()=>{calls++;}}/>);
   fireEvent.click(confirm());fireEvent.change(screen.getByLabelText('Datum podpisu'),{target:{value:'2020-01-16'}});
   assert.equal((confirm() as HTMLInputElement).checked,false);submit();
-  await screen.findByText('Potvrďte, že zobrazená verze smlouvy byla skutečně podepsána.');assert.equal(calls,0);
+  assert.equal((screen.getByRole('button',{name:'Evidovat podpis'}) as HTMLButtonElement).disabled,true);assert.equal(calls,0);
+});
+
+test('compact signature card identifies the exact file and version, with optional note disclosure',()=>{
+  const view=render(<ContractSignedModal contract={{...contract,versions:[{...version,documentReady:true}]}} close={()=>{}} save={async()=>{}}/>);
+  assert.ok(screen.getByRole('region',{name:'Podepsaný dokument'}));
+  assert.ok(screen.getByText('v01'));assert.ok(screen.getByRole('button',{name:'Stáhnout dokument v1'}));
+  const note=screen.getByText('Přidat poznámku').closest('details');assert.ok(note);assert.equal(note.open,false);
+  fireEvent.click(note.querySelector('summary')!);assert.equal(note.open,true);
+  fireEvent.change(screen.getByLabelText('Poznámka (volitelné)'),{target:{value:'Technická poznámka'}});
+  fireEvent.click(note.querySelector('summary')!);assert.equal(note.open,false);
+  assert.equal((screen.getByLabelText('Poznámka (volitelné)') as HTMLTextAreaElement).value,'Technická poznámka');
+  view.unmount();
 });
 
 test('a different contract or exact document version cannot reuse confirmation',()=>{
