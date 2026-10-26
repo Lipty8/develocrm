@@ -25,6 +25,7 @@ import {ConsistencyChecker} from '../src/diagnostics/consistency-checker.js';
 import {ORIGINAL_DOB_FULL_VARIANT,templateCatalog} from '../src/documents/template-catalog.js';
 import {createHash} from 'node:crypto';
 import {isCzechWorkingDay} from '../src/contracts/czech-working-days.js';
+import {unzipSync,zipSync,strFromU8,strToU8} from 'fflate';
 
 async function fixture(postgresUrl?:string){
   const memory=postgresUrl?undefined:new PGlite();
@@ -472,6 +473,41 @@ for(const usePostgres of [false,true])test(`price creation and signed document i
       assert(generated);assert(!report.findings.some(v=>v.entityId===generated.id||v.entityId===generated.version_id));
       assert(report.findings.some(v=>v.code==='SIGNED_EVIDENCE_MISSING'&&v.severity==='critical')); // different tenant seed cannot inherit pilot exceptions
       assert.deepEqual(await counts(),before);
+    });
+    await t.test('template diagnostics pin exact native source, not the earlier Office upload hash',async()=>{
+      const download=f.graph.downloadFile;let sourceReads=0;
+      f.graph.downloadFile=async(connection,item,version)=>{
+        const stored=f.files.get(item);
+        if(stored?.meta.name.startsWith('normalized-template')&&++sourceReads===2){
+          const parts=unzipSync(stored.bytes);
+          parts['docProps/core.xml']=strToU8(strFromU8(parts['docProps/core.xml'])+'<!--Office normalization fixture-->');
+          stored.bytes=zipSync(parts);
+        }
+        return download(connection,item,version);
+      };
+      try{
+        const bytes=await readFile(new URL('../templates/rs/rezidence-dejvice-rs-v1.docx',import.meta.url));
+        const uploaded=await f.management.upload({...f.context,projectId:f.projectId,code:'rs-integrity',name:'Technical normalization proof',
+          outputTypeCode:'reservation_contract',versionLabel:'normalization-v2',fileName:'normalized-template.docx',
+          mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',bytes,effectiveFrom:'2026-01-01'});
+        const target={...f.context,templateId:uploaded.templateId,versionId:uploaded.templateVersionId};
+        await f.management.validate(target);await f.management.approve(target);
+        const source=(await f.db.query<{content_hash:string;document_hash:string;external_item_id:string}>(`SELECT tv.content_hash,v.content_hash document_hash,d.external_item_id
+          FROM document_template_versions tv JOIN document_versions v ON v.id=tv.source_document_version_id
+          JOIN documents d ON d.id=v.document_id WHERE tv.id=$1`,[uploaded.templateVersionId])).rows[0];
+        assert.notEqual(source.content_hash,source.document_hash,'reproduces delayed Office normalization after upload finalization');
+        const checker=new ConsistencyChecker(f.database,f.graph);
+        const metadata=await checker.run(f.context);
+        assert(metadata.findings.some(item=>item.entityId===uploaded.templateVersionId&&item.code==='TEMPLATE_UPLOAD_HASH_DIFFERENT'&&item.severity==='warning'),'metadata discrepancy remains visible without claiming corruption');
+        assert(!metadata.findings.some(item=>item.entityId===uploaded.templateVersionId&&item.severity==='critical'));
+        assert.equal(metadata.physicalEvidence,'not_checked','metadata alone must not claim physical verification');
+        const identity=(await f.db.query<{credential_reference:string}>('SELECT credential_reference FROM sharepoint_connections WHERE tenant_id=$1',[f.context.tenantId])).rows[0].credential_reference.replace('managed-identity://','');
+        const physical=await new ConsistencyChecker(f.database,f.graph,identity).run({...f.context,physical:true});
+        assert(!physical.findings.some(item=>item.entityId===uploaded.templateVersionId&&item.severity==='critical'),'exact approved native source is verified');
+        f.files.get(source.external_item_id)!.bytes=Buffer.from('tampered exact native template');
+        const tampered=await new ConsistencyChecker(f.database,f.graph,identity).run({...f.context,physical:true});
+        assert(tampered.findings.some(item=>item.entityId===uploaded.templateVersionId&&item.code==='PHYSICAL_DOCUMENT_HASH_MISMATCH'&&item.severity==='critical'));
+      }finally{f.graph.downloadFile=download;}
     });
   }finally{await f.db.close();}
 });

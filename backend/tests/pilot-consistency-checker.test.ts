@@ -83,6 +83,21 @@ test('Graph failure and hash mismatch fail closed, without raw errors',async()=>
  }
 });
 
+test('older upload hash discrepancy stays visible but never excuses a physical template mismatch',async()=>{
+ const metadata:Fact={...fact,entity_type:'template_version',code:'TEMPLATE_UPLOAD_HASH_DIFFERENT',details:{}};
+ assert.equal(classifyFact(metadata,ctx.tenantId,'run').severity,'warning');
+ assert.equal(classifyFact({...metadata,code:'APPROVED_TEMPLATE_HASH_MISMATCH'},ctx.tenantId,'run').severity,'critical');
+ const files=[{project_id:'a',entity_id:'template-v',entity_type:'template_version',label:'Technical',hash:`sha256:${'a'.repeat(64)}`,
+   drive_id:'private-drive',item_id:'private-item',version_id:'1.0',site_id:'private-site',configured:true}];
+ const f=fixture({facts:[metadata],files});
+ const graph={downloadFile:async()=>Buffer.from('unexpected source bytes')} as unknown as MicrosoftGraphAdapter;
+ const result=await new ConsistencyChecker(f.database,graph,'mi').run({...ctx,physical:true});
+ assert.equal(result.summary.warning,1);assert.equal(result.summary.critical,1);
+ assert.equal(result.physicalEvidence,'incomplete');
+ assert(result.findings.some(item=>item.code==='PHYSICAL_DOCUMENT_HASH_MISMATCH'));
+ assert(!JSON.stringify(result).includes('private-'));
+});
+
 test('physical appendix evidence is pinned, deduplicated, and safe on missing or unauthorized metadata',async()=>{
  const bytes=Buffer.from('pinned appendix'),hash=`sha256:${createHash('sha256').update(bytes).digest('hex')}`;
  const file={project_id:'a',entity_id:'appendix-a',entity_type:'contract_appendix',label:'RS · Příloha 1',hash,drive_id:'private-drive',item_id:'private-item',version_id:'1.0',site_id:'private-site',configured:true};

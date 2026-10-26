@@ -103,7 +103,17 @@ WITH scope AS (
  FROM document_template_versions tv JOIN document_templates t ON t.tenant_id=tv.tenant_id AND t.id=tv.template_id
  LEFT JOIN document_versions v ON v.tenant_id=tv.tenant_id AND v.id=tv.source_document_version_id
  WHERE tv.tenant_id=$1 AND tv.project_id IN(SELECT id FROM scope) AND tv.approval_status='approved'
- AND (tv.content_hash !~ '^sha256:[a-f0-9]{64}$' OR tv.content_hash IS DISTINCT FROM v.content_hash OR v.id IS NULL OR v.project_id IS DISTINCT FROM tv.project_id OR v.document_id IS DISTINCT FROM tv.source_document_id OR nullif(v.external_version_id,'') IS NULL)
+ AND (tv.content_hash !~ '^sha256:[a-f0-9]{64}$' OR v.content_hash IS NULL OR v.content_hash !~ '^sha256:[a-f0-9]{64}$' OR v.id IS NULL OR v.project_id IS DISTINCT FROM tv.project_id OR v.document_id IS DISTINCT FROM tv.source_document_id OR nullif(v.external_version_id,'') IS NULL)
+ UNION ALL
+ -- Registration pins the exact native source, which can differ from an earlier
+ -- upload hash after Office normalization. Preserve the discrepancy as a
+ -- warning, never as physical verification; the native hash is checked below.
+ SELECT tv.project_id,'template_version',tv.id,t.name,'TEMPLATE_UPLOAD_HASH_DIFFERENT','{}'::jsonb
+ FROM document_template_versions tv JOIN document_templates t ON t.tenant_id=tv.tenant_id AND t.id=tv.template_id
+ JOIN document_versions v ON v.tenant_id=tv.tenant_id AND v.id=tv.source_document_version_id
+ WHERE tv.tenant_id=$1 AND tv.project_id IN(SELECT id FROM scope) AND tv.approval_status='approved'
+ AND tv.content_hash~'^sha256:[a-f0-9]{64}$' AND v.content_hash~'^sha256:[a-f0-9]{64}$'
+ AND tv.content_hash<>v.content_hash AND v.project_id=tv.project_id AND v.document_id=tv.source_document_id AND nullif(v.external_version_id,'') IS NOT NULL
  UNION ALL
  SELECT g.project_id,'generation',g.id,t.name,'GENERATION_CONTEXT_MISMATCH','{}'::jsonb
  FROM document_generation_operations g JOIN document_template_versions tv ON tv.tenant_id=g.tenant_id AND tv.id=g.template_version_id
@@ -191,6 +201,7 @@ const descriptions:Record<string,string>={
  INITIAL_PRICE_DUPLICATED:'Jednotka má více záznamů označených jako počáteční cena.',
  DOCUMENT_CONTEXT_MISMATCH:'Dokumentová verze neodpovídá projektu nebo dokumentu.',
  APPROVED_TEMPLATE_HASH_MISMATCH:'Schválená šablona neodpovídá uložené zdrojové verzi.',
+ TEMPLATE_UPLOAD_HASH_DIFFERENT:'Otisk schválené šablony se liší od starší upload evidence. Přesný soubor musí ověřit kontrola SharePointu.',
  GENERATION_CONTEXT_MISMATCH:'Generování neodpovídá zdrojové šabloně nebo výstupní verzi.',
  GENERATION_SNAPSHOT_MISMATCH:'Smluvní verze neodpovídá uloženému vstupu generování.',
  GENERATION_APPENDIX_SNAPSHOT_MISMATCH:'Přílohy smlouvy neodpovídají přesným verzím uloženým při generování.',
@@ -200,7 +211,7 @@ const descriptions:Record<string,string>={
 export function classifyFact(fact:Fact,tenantId:string,runId:string,baseline:ReviewedException[]=reviewedLegacyEvidence):Finding{
  const legacy=fact.code==='SIGNED_EVIDENCE_MISSING'&&baseline.some(e=>e.tenantId===tenantId&&e.projectId===fact.project_id&&e.versionId===fact.entity_id&&e.contractId===fact.details.contractId&&
  new Date(e.signedAt).getTime()===new Date(String(fact.details.signedAt)).getTime());
- const severity:Severity=legacy?'legacy':fact.code==='PRICE_HISTORY_MISSING'?'warning':'critical';
+ const severity:Severity=legacy?'legacy':['PRICE_HISTORY_MISSING','TEMPLATE_UPLOAD_HASH_DIFFERENT'].includes(fact.code)?'warning':'critical';
  return{severity,code:fact.code,tenantId,projectId:fact.project_id,entityType:fact.entity_type,entityId:fact.entity_id,label:fact.label,runId,
  description:fact.code==='SIGNED_EVIDENCE_MISSING'&&!legacy?'Podepsaná verze nemá konkrétní dokument a není schválenou historickou výjimkou.':descriptions[fact.code]??'Nesoulad obchodních dat.'};
 }
