@@ -53,3 +53,36 @@ This fixes in-modal hold retry, not durable recovery after closing the browser,
 and not independent interest-event retry. Existing backend replay keys should
 also receive a separate audit of request/unit/payload binding; this frontend
 package does not claim to harden arbitrary hand-crafted API requests.
+
+## Published verification — 27 October 2026
+
+- GitHub source: `89810532a620927568959be9222dafe0d007d116`.
+- Sites source: `cce5262e6627a1d456213ce54c37d42793617fd5`.
+  Both Git trees equal `e160d2cd8b3b1118ea2b31d92ec901785fabdf37`.
+- Sites version 173, deployment
+  `appgdep_6ae04975551881918c84d25113f03068`: succeeded; existing
+  owner-only private audience preserved.
+- Backend unchanged; no migration. Live `/health` and `/ready`: HTTP 200.
+- Authenticated UI created only synthetic unit 7404 in the existing TECH74
+  project (`cd3605bd-9ef7-461b-b3f2-54f0447fff60`). Grouped price
+  `5 100 000` persisted as CZK 5,100,000.
+- Unit UUID: `4df7bf89-5374-4fa3-b529-90f7355597ee`.
+- The unit's standard sales modal created a new clearly synthetic client and
+  pre-reservation. It closed successfully and showed the buyer, current
+  negotiation stage, expiry 29 October 2026 07:50 Europe/Prague and activity.
+  All remained present after a full page reload. No actual customer's record,
+  agreement, payment or existing hold was changed in this smoke test.
+- Lost-response replay remains proven by the controlled automated transport
+  test, not by artificially disrupting the live pilot network.
+- Screenshot was inspected inline. Saving its file was denied by the current
+  filesystem sandbox; no screenshot file is claimed as a delivered artifact.
+
+## Next evidence-based safety audit
+
+Read-only review confirms that migration 0025's new-party hold wrapper and
+migration 0056's hold creation query replay by tenant/key without explicitly
+comparing the requested unit or payload. This is not changed by this package.
+Before claiming arbitrary API-request retry safety, add an adversarial test
+for reused keys across units and changed requests and inspect later migrations
+for replacement definitions. Do not infer authorization bypass or a particular
+runtime impact solely from these older SQL definitions.
