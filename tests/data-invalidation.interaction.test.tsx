@@ -6,10 +6,23 @@ import {createApiFetch} from "../app/lib/api-client";
 import {DATA_MUTATED_EVENT,type DataMutationDetail} from "../app/lib/data-invalidation";
 import {templateRepository} from "../app/repositories/template-repository";
 import {entraAuth} from "../app/lib/entra-auth";
+import {documentRepository} from '../app/repositories/document-repository';
 
 before(()=>{
   const dom=new JSDOM("<!doctype html><html><body></body></html>",{url:"https://develocrm.test"});
   Object.assign(globalThis,{window:dom.window,document:dom.window.document,CustomEvent:dom.window.CustomEvent});
+});
+test('workflow document link keeps the modal open by leaving refresh to its scoped panel',async()=>{
+ const originalFetch=globalThis.fetch;const token=mock.method(entraAuth,'getAccessToken',async()=> 'technical-token');
+ let invalidations=0;const listener=()=>{invalidations++;};const sent:Array<{url:string;body:unknown}>=[];
+ window.addEventListener(DATA_MUTATED_EVENT,listener);
+ globalThis.fetch=async(input,init)=>{sent.push({url:String(input),body:JSON.parse(String(init?.body))});return new Response('{}',{status:200});};
+ try{
+  for(const type of ['client_change','complaint','handover'] as const)await documentRepository.link('technical-document',{type,targetId:'exact-target'});
+  assert.equal(invalidations,0);
+  assert.equal(sent.length,3);for(const request of sent)assert.equal(request.url,'/api/documents?documentId=technical-document&action=link&targetId=exact-target');
+  assert.deepEqual(sent.map(request=>request.body),[{linkType:'client_change'},{linkType:'complaint'},{linkType:'handover'}]);
+ }finally{globalThis.fetch=originalFetch;token.mock.restore();window.removeEventListener(DATA_MUTATED_EVENT,listener);}
 });
 
 test("správa šablon obnovuje svůj seznam bez resetu projektového kontextu",async()=>{

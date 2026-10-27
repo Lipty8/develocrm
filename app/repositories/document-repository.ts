@@ -108,7 +108,9 @@ class ApiDocumentRepository implements DocumentRepository {
     edits[document.id]={...(edits[document.id]??{}),status:input.status,version:input.label,updatedAt:now,versions:[version,...(edits[document.id]?.versions??[])],events:[event,...(edits[document.id]?.events??[])]};localStorage.setItem("develocrm.documents.edits",JSON.stringify(edits));
   }
   async link(documentId:string,target:DocumentWorkflowLink){
-    const response=await apiFetch(`/api/documents?documentId=${encodeURIComponent(documentId)}&action=link&targetId=${encodeURIComponent(target.targetId)}`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({linkType:target.type})});
+    // The workflow panel owns its targeted refresh. Global invalidation resets
+    // the enclosing form and discards unsaved workflow fields after this link.
+    const response=await apiFetch(`/api/documents?documentId=${encodeURIComponent(documentId)}&action=link&targetId=${encodeURIComponent(target.targetId)}`,{method:"POST",dataInvalidation:'none',headers:{"content-type":"application/json"},body:JSON.stringify({linkType:target.type})});
     if(!response.ok)throw await responseError(response,"Dokument se nepodařilo připojit");
   }
   async connection(signal?:AbortSignal){

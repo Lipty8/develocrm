@@ -38,5 +38,36 @@ read/retry, delayed response, reset of selection, single-flight exact-target
 linking, late failure after project switch and safe mutation error/retry.
 Full verification passed: frontend typecheck, lint, production build,
 191 interaction tests and 143 static regressions (zero failures/skips).
-Private publication and live read-only evidence remain pending. No pilot
-mutation has been submitted for this package.
+The initial version was then published and tested with a new technical-only
+fixture as documented below. No real pilot business data was changed.
+
+## Live evidence and follow-up transport correction
+
+First source commit `19421eabcd01d15694ead633085ac49c9d1bdf26` was published
+privately as Sites 178 (matching Sites commit
+`d805e726d5e9da2923a8afb0c9c7919d0964d4be`, equal source tree
+`9eccddddaf37932262addc1c3f54b1a8746342aa`). Backend/migration unchanged.
+
+Authenticated browser created only an unpriced synthetic client change
+`TECH WF78 – ověření dokumentového kontextu` on owned TECH74 unit 7406,
+explicitly choosing its actual current technical buyer B. No approval, price,
+payment obligation or signature was created. The panel displayed only project
+documents and submitted a link to the clearly nonlegal technical appendix 6
+(`eca8dfd3-c8fe-424e-9c5e-f8cdc8142381`), not an upload or legal-document change.
+
+The real request exposed a second integration defect: repository.link used the
+default global invalidation, resetting the enclosing form despite successful
+persistence. The actual transport/listener regression failed with three global
+events for the three workflow targets. The follow-up uses the existing
+`dataInvalidation: none` option because this panel already reloads its linked
+and available document lists. It does not suppress invalidation for unrelated
+mutations, bypass authorization or introduce a new cache/event system.
+The complete follow-up frontend gates passed again: 192 interaction tests,
+143 static regressions, typecheck, lint and production build.
+
+Another independently observed P1: the new client-change form initially chose
+historical buyer A even while unit context correctly showed buyer B. The test
+did not submit with A. Its candidate source includes historical unit relations;
+the current backend permits a project-linked party with a nullable sales-case
+link. This needs a separate current-buyer/context safety package, not a silent
+historical data repair. Do not call the entire workflow ready before addressing it.
