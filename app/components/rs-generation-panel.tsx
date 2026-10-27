@@ -2,7 +2,7 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
 import Link from 'next/link';
 import {Clock3,ExternalLink,FileText,History} from 'lucide-react';
-import {commercialRepository,type RsReadiness} from '../repositories/commercial-repository';
+import {commercialRepository,ContractGenerationNotReadyError,type RsReadiness} from '../repositories/commercial-repository';
 import {formatMoney} from '../crm-data';
 import {formatPragueDate} from '../lib/date-time';
 import {signingPlanDay,type ContractSigningPlan} from '../../backend/src/shared/contract-signing-plan';
@@ -33,6 +33,7 @@ export function RsGenerationPanel({contractId,contractType='rs',canGenerate,onCh
   const [storedReadiness,setReadiness]=useState<RsReadiness|null>(null);
   const readiness=storedReadiness?.contractId===contractId?storedReadiness:null;
   const [error,setError]=useState('');const [working,setWorking]=useState(false);const [checking,setChecking]=useState(true);
+  const [pendingGeneration,setPendingGeneration]=useState(false);
   const request=useRef<AbortController|null>(null);const generationKey=useRef<string|null>(null);
   const reload=useCallback(async()=>{
     request.current?.abort();const controller=new AbortController();request.current=controller;setChecking(true);setError('');
@@ -43,14 +44,15 @@ export function RsGenerationPanel({contractId,contractType='rs',canGenerate,onCh
   useEffect(()=>{
     generationKey.current=null;
     const refresh=()=>{if(document.visibilityState!=='hidden')void reload();};
-    void Promise.resolve().then(refresh);window.addEventListener('focus',refresh);document.addEventListener('visibilitychange',refresh);
+    void Promise.resolve().then(()=>{setPendingGeneration(false);refresh();});window.addEventListener('focus',refresh);document.addEventListener('visibilitychange',refresh);
     return()=>{request.current?.abort();window.removeEventListener('focus',refresh);document.removeEventListener('visibilitychange',refresh);};
   },[reload]);
   async function generate(){
-    if(working||checking||!readiness?.ready)return;
-    setWorking(true);setError('');generationKey.current??=crypto.randomUUID();
-    try{await commercialRepository.generateContract(contractId,generationKey.current);generationKey.current=null;await reload();onChanged();}
+    if(working||checking||!canGenerate||!generationKey.current&&!readiness?.ready)return;
+    setWorking(true);setError('');generationKey.current??=crypto.randomUUID();setPendingGeneration(true);
+    try{await commercialRepository.generateContract(contractId,generationKey.current);generationKey.current=null;setPendingGeneration(false);await reload();onChanged();}
     catch(value){
+      if(value instanceof ContractGenerationNotReadyError){generationKey.current=null;setPendingGeneration(false);}
       // Data may have changed since the successful preflight. Do not leave a
       // stale ready CTA visible after the server refused generation.
       if(request.current&&!request.current.signal.aborted)await reload();
@@ -60,7 +62,7 @@ export function RsGenerationPanel({contractId,contractType='rs',canGenerate,onCh
   }
   async function preparePaymentPlan(){
     const preparation=readiness?.summary?.paymentPlanPreparation;
-    if(working||checking||!canGenerate||!preparation?.canPrepare)return;
+    if(working||checking||generationKey.current||!canGenerate||!preparation?.canPrepare)return;
     setWorking(true);setError('');
     try{await commercialRepository.preparePaymentTerms(contractId,preparation.versionId);await reload();onChanged();}
     catch(value){setError(value instanceof Error?value.message:'Platební plán se nepodařilo připravit.');}
@@ -73,9 +75,10 @@ export function RsGenerationPanel({contractId,contractType='rs',canGenerate,onCh
   return <section className="card detail-tab-card rs-generation-card" aria-label={title}>
     <div className="tab-card-header"><h2>{title}</h2>{readiness?.currentDocument?.webUrl&&<a className="secondary-button compact" href={readiness.currentDocument.webUrl} target="_blank" rel="noreferrer"><ExternalLink size={15}/> Otevřít dokument</a>}</div>
     {error&&<div className="form-error" role="alert">{error}</div>}
+    {pendingGeneration&&!working&&<p className="form-info" role="status">Výsledek předchozího pokusu zatím není potvrzený. Nejdříve ověřte nebo dokončete stejný dokument; další verzi můžete vytvořit potom.</p>}
     {checking&&<div className="empty-next" role="status"><Clock3 size={18}/><strong>Kontroluji připravenost…</strong></div>}
     {readiness&&<div className="rs-generation-status" aria-busy={checking}>
-      <div><span className={`badge ${readiness.ready?'success':'warning'}`}>{readiness.ready?'Připraveno ke generování':'Příprava vyžaduje doplnění'}</span>{readiness.currentDocument&&<strong>Dokument připraven · verze {readiness.currentDocument.version}</strong>}</div>
+      <div><span className={`badge ${readiness.ready&&!pendingGeneration?'success':'warning'}`}>{pendingGeneration?'Výsledek vyžaduje ověření':readiness.ready?'Připraveno ke generování':'Příprava vyžaduje doplnění'}</span>{readiness.currentDocument&&<strong>Dokument připraven · verze {readiness.currentDocument.version}</strong>}</div>
       {summary&&<dl className="rs-preparation-summary">
         <div><dt>Projekt</dt><dd><Link href={`/projects/${summary.project.id}?${returnTo}`}>{summary.project.label}</Link></dd></div>
         <div><dt>Prodávající</dt><dd>{summary.seller||'Není nastaven'}</dd></div>
@@ -91,7 +94,7 @@ export function RsGenerationPanel({contractId,contractType='rs',canGenerate,onCh
         {summary.template?.effectiveFrom&&<div><dt>Šablona účinná od</dt><dd>{formatPragueDate(summary.template.effectiveFrom)}</dd></div>}
       </dl>}
       {summary?.appendices&&<ContractAppendicesPanel key={`${contractId}:${summary.appendices.contractVersionId}`} contractId={contractId} projectId={summary.project.id}
-        summary={summary.appendices} disabled={!canGenerate||working||checking} onSaved={async()=>{await reload();onChanged();}}/>}
+        summary={summary.appendices} disabled={!canGenerate||working||checking||pendingGeneration} onSaved={async()=>{await reload();onChanged();}}/>}
       {summary?.precedingRsComparison&&<div className="contract-payment-terms" aria-label="Porovnání s podepsanou RS">
         <h3>Porovnání s podepsanou RS</h3><p>{summary.precedingRsComparison.message}</p>
         {summary.precedingRsComparison.contractId&&<p><Link href={`/contracts/${summary.precedingRsComparison.contractId}`}>Otevřít {summary.precedingRsComparison.reference??'podepsanou RS'} · verze {summary.precedingRsComparison.contractVersion}</Link></p>}
@@ -111,14 +114,14 @@ export function RsGenerationPanel({contractId,contractType='rs',canGenerate,onCh
       </div>}
       {!summary?.paymentPlan&&summary?.paymentPlanPreparation&&<div className="contract-payment-terms">
         {summary.paymentPlanPreparation.hasExistingObligations?<p>Smlouva již má platební předpisy. Touto akcí se jejich podmínky zpětně nemění.</p>:
-          canGenerate&&summary.paymentPlanPreparation.canPrepare&&<button className="secondary-button compact" disabled={working||checking} onClick={()=>void preparePaymentPlan()}>{working?'Připravuji…':'Připravit platební plán'}</button>}
+          canGenerate&&summary.paymentPlanPreparation.canPrepare&&<button className="secondary-button compact" disabled={working||checking||pendingGeneration} onClick={()=>void preparePaymentPlan()}>{working?'Připravuji…':'Připravit platební plán'}</button>}
       </div>}
-      {summary?.signingPlan&&(canGenerate&&summary.signingPlan.editable?<ContractSigningPlanForm key={`${summary.signingPlan.versionId}:${summary.signingPlan.sellerPlannedOn}:${summary.signingPlan.buyerPlannedOn}`} plan={summary.signingPlan} contractId={contractId} disabled={working||checking} onSaved={reload}/>:<div className="contract-payment-terms"><h3>Plánovaná data podpisu</h3><p>Prodávající: {formatPragueDate(summary.signingPlan.sellerPlannedOn)} · Kupující: {formatPragueDate(summary.signingPlan.buyerPlannedOn)}</p>{!summary.signingPlan.editable&&<p>Pro změnu dat v dokumentu vytvořte novou verzi smlouvy.</p>}</div>)}
+      {summary?.signingPlan&&(canGenerate&&summary.signingPlan.editable?<ContractSigningPlanForm key={`${summary.signingPlan.versionId}:${summary.signingPlan.sellerPlannedOn}:${summary.signingPlan.buyerPlannedOn}`} plan={summary.signingPlan} contractId={contractId} disabled={working||checking||pendingGeneration} onSaved={reload}/>:<div className="contract-payment-terms"><h3>Plánovaná data podpisu</h3><p>Prodávající: {formatPragueDate(summary.signingPlan.sellerPlannedOn)} · Kupující: {formatPragueDate(summary.signingPlan.buyerPlannedOn)}</p>{!summary.signingPlan.editable&&<p>Pro změnu dat v dokumentu vytvořte novou verzi smlouvy.</p>}</div>)}
       {readiness.issues.length>0&&<ul>{readiness.issues.map(item=><li key={`${item.code}-${item.field}`}><span>{item.message}</span>{item.action&&<Link href={item.action.href}>{item.action.label}</Link>}</li>)}</ul>}
-      <div className="project-detail-actions"><button className="secondary-button compact" onClick={()=>void reload()} disabled={working||checking}>Znovu zkontrolovat</button>
-        {readiness.currentDocument&&onShowVersions&&<button className="secondary-button compact" onClick={onShowVersions}><History size={15}/> Historie verzí</button>}
-        {canGenerate&&readiness.ready&&<button className="primary-button" disabled={working||checking} onClick={()=>void generate()}><FileText size={16}/>{working?'Vytvářím…':readiness.currentDocument?`Vytvořit novou verzi ${type}`:`Vygenerovat ${type}`}</button>}
-      </div>
     </div>}
+      <div className="project-detail-actions"><button className="secondary-button compact" onClick={()=>void reload()} disabled={working||checking}>Znovu zkontrolovat</button>
+        {readiness?.currentDocument&&onShowVersions&&<button className="secondary-button compact" onClick={onShowVersions}><History size={15}/> Historie verzí</button>}
+        {canGenerate&&(pendingGeneration||readiness?.ready)&&<button className="primary-button" disabled={working||checking} onClick={()=>void generate()}><FileText size={16}/>{working?'Zpracovávám…':pendingGeneration?'Ověřit předchozí generování':readiness?.currentDocument?`Vytvořit novou verzi ${type}`:`Vygenerovat ${type}`}</button>}
+      </div>
   </section>;
 }

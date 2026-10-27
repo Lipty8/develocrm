@@ -13,6 +13,13 @@ import type {RsReadiness,RsReadinessIssue} from '../../backend/src/shared/rs-rea
 import type {ContractAppendixInput} from '../../backend/src/shared/contract-appendices';
 export type {RsReadiness,RsReadinessIssue} from '../../backend/src/shared/rs-readiness';
 
+// This route returns 422 with structured issues only before reserving/rendering.
+// Other failures (including a generic 409) can follow a successful upload and
+// must keep the same operation key until its outcome is recovered.
+export class ContractGenerationNotReadyError extends Error {
+  constructor(message:string){super(message);this.name='ContractGenerationNotReadyError';}
+}
+
 export type CommercialSnapshot = {
   currentPrices: Record<string, number>;
   priceBreakdowns:Record<string,{unitPrice:number|null;accessoryPrice:number;totalPrice:number|null}>;
@@ -172,7 +179,14 @@ class ApiCommercialRepository implements CommercialRepository {
   async preparePaymentTerms(contractId:string,versionId:string){const response=await apiFetch(`/api/commercial/contracts/${encodeURIComponent(contractId)}/payment-terms`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({versionId})});if(response.ok)return;const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??'Platební plán se nepodařilo připravit.');}
   async setContractAppendix(contractId:string,input:ContractAppendixInput){const response=await apiFetch(`/api/commercial/contracts/${encodeURIComponent(contractId)}/appendices`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(input)});if(response.ok)return;const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??'Přílohu se nepodařilo uložit.');}
   async getRsReadiness(contractId:string,signal?:AbortSignal){const response=await apiFetch(`/api/commercial/contracts/${encodeURIComponent(contractId)}/preparation-readiness`,{signal,cache:"no-store"});const payload=await response.json().catch(()=>({})) as {readiness?:RsReadiness;error?:string};if(response.ok&&payload.readiness)return payload.readiness;throw new Error(payload.error??"Připravenost smlouvy nelze ověřit");}
-  async generateContract(contractId:string,idempotencyKey:string){const response=await apiFetch(`/api/commercial/contracts/${encodeURIComponent(contractId)}/generate`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({idempotencyKey})});const payload=await response.json().catch(()=>({})) as {generation?:{operationId:string;documentId:string;documentVersionId:string;contractVersionId:string;contractVersion:number;replayed:boolean};error?:string;issues?:RsReadinessIssue[]};if(response.ok&&payload.generation)return payload.generation;throw new Error(payload.issues?.map(item=>item.message).join(" ")||payload.error||"Smlouvu nelze vytvořit");}
+  async generateContract(contractId:string,idempotencyKey:string){
+    const response=await apiFetch(`/api/commercial/contracts/${encodeURIComponent(contractId)}/generate`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({idempotencyKey})});
+    const payload=await response.json().catch(()=>({})) as {generation?:{operationId:string;documentId:string;documentVersionId:string;contractVersionId:string;contractVersion:number;replayed:boolean};error?:string;issues?:RsReadinessIssue[]};
+    if(response.ok&&payload.generation)return payload.generation;
+    const message=payload.issues?.map(item=>item.message).join(" ")||payload.error||"Smlouvu nelze vytvořit";
+    if(response.status===422&&Array.isArray(payload.issues)&&payload.issues.length>0)throw new ContractGenerationNotReadyError(message);
+    throw new Error(message);
+  }
 }
 
 function readContractEdits(): Record<string, PreviewContractEdit> {

@@ -3,7 +3,8 @@ import {before,afterEach,test,mock} from 'node:test';
 import React from 'react';
 import {JSDOM} from 'jsdom';
 import {RsGenerationPanel,RsPreparationReturn} from '../app/components/rs-generation-panel';
-import {commercialRepository,type RsReadiness} from '../app/repositories/commercial-repository';
+import {commercialRepository,ContractGenerationNotReadyError,type RsReadiness} from '../app/repositories/commercial-repository';
+import {entraAuth} from '../app/lib/entra-auth';
 import {formatMoney} from '../app/crm-data';
 import {ContractAppendicesPanel} from '../app/components/contract-appendices-panel';
 import {parseCrmRoute} from '../app/crm-routing.mjs';
@@ -32,8 +33,48 @@ test('retry po síťové chybě zachová stejný klíč a nevytváří nový po�
   mock.method(commercialRepository,'generateContract',async(_id:string,key:string)=>{keys.push(key);if(keys.length===1)throw new Error('Dočasná chyba');return{operationId:'o',documentId:'d',documentVersionId:'dv',contractVersionId:'cv',contractVersion:1,replayed:true};});
   render(<RsGenerationPanel contractId={contractId} canGenerate onChanged={()=>{changes++;}}/>);
   fireEvent.click(await screen.findByRole('button',{name:'Vygenerovat RS'}));await screen.findByText('Dočasná chyba');
-  fireEvent.click(screen.getByRole('button',{name:'Vygenerovat RS'}));await waitFor(()=>assert.equal(changes,1));
+  fireEvent.click(screen.getByRole('button',{name:'Ověřit předchozí generování'}));await waitFor(()=>assert.equal(changes,1));
   assert.equal(keys.length,2);assert.equal(keys[0],keys[1]);
+});
+
+for(const contractType of ['rs','sbk'] as const)test(`${contractType}: ztracená odpověď po dokončeném renderu nenabízí falešnou novou verzi`,async()=>{
+  let changes=0;const keys:string[]=[],operations=new Map<string,number>();const type=contractType.toUpperCase();
+  mock.method(commercialRepository,'getRsReadiness',async()=>({...ready(),contractType,currentDocument:operations.size?{documentId:'document',documentVersionId:`exact-${operations.size}`,version:operations.size,webUrl:null}:null}));
+  mock.method(commercialRepository,'generateContract',async(_id:string,key:string)=>{keys.push(key);const replayed=operations.has(key),version=operations.get(key)??operations.size+1;operations.set(key,version);if(keys.length===1)throw new Error('Odpověď se ztratila.');return{operationId:`op-${version}`,documentId:'document',documentVersionId:`exact-${version}`,contractVersionId:`cv-${version}`,contractVersion:version,replayed};});
+  render(<RsGenerationPanel contractId={contractId} contractType={contractType} canGenerate onChanged={()=>{changes++;}}/>);
+  fireEvent.click(await screen.findByRole('button',{name:`Vygenerovat ${type}`}));await screen.findByText('Odpověď se ztratila.');
+  assert.equal(Boolean(screen.queryByRole('button',{name:`Vytvořit novou verzi ${type}`})),false);
+  fireEvent.click(screen.getByRole('button',{name:'Ověřit předchozí generování'}));await waitFor(()=>assert.equal(changes,1));
+  assert.equal(keys[0],keys[1]);assert.equal(operations.size,1);await screen.findByRole('button',{name:`Vytvořit novou verzi ${type}`});
+  fireEvent.click(screen.getByRole('button',{name:`Vytvořit novou verzi ${type}`}));await screen.findByText('Dokument připraven · verze 2');
+  assert.equal(changes,2);assert.equal(keys.length,3);assert.notEqual(keys[2],keys[1]);assert.equal(operations.size,2);
+});
+
+test('výslovně odmítnutá preflight validace dovolí po doplnění nový pokus',async()=>{
+  let fixed=false;const keys:string[]=[];
+  mock.method(commercialRepository,'getRsReadiness',async()=>fixed||!keys.length?ready():({...ready(),ready:false,issues:[{code:'buyer_address',field:'buyer.address',message:'Doplňte adresu.'}]}));
+  mock.method(commercialRepository,'generateContract',async(_id:string,key:string)=>{keys.push(key);if(keys.length===1)throw new ContractGenerationNotReadyError('Doplňte adresu.');return{operationId:'o',documentId:'d',documentVersionId:'dv',contractVersionId:'cv',contractVersion:1,replayed:false};});
+  render(<RsGenerationPanel contractId={contractId} canGenerate onChanged={()=>{}}/>);
+  fireEvent.click(await screen.findByRole('button',{name:'Vygenerovat RS'}));await screen.findByRole('alert');
+  assert.equal(Boolean(screen.queryByRole('button',{name:'Ověřit předchozí generování'})),false);
+  fixed=true;fireEvent.click(screen.getByRole('button',{name:'Znovu zkontrolovat'}));
+  fireEvent.click(await screen.findByRole('button',{name:'Vygenerovat RS'}));await waitFor(()=>assert.equal(keys.length,2));assert.notEqual(keys[0],keys[1]);
+});
+
+test('recovery zůstává dostupné i když následné načtení připravenosti selže',async()=>{
+  let failedRead=false;let generated=0;const keys:string[]=[];
+  mock.method(commercialRepository,'getRsReadiness',async()=>{if(failedRead)throw new Error('Načtení se nezdařilo.');return ready();});
+  mock.method(commercialRepository,'generateContract',async(_id:string,key:string)=>{keys.push(key);if(++generated===1){failedRead=true;throw new Error('Odpověď se ztratila.');}failedRead=false;return{operationId:'o',documentId:'d',documentVersionId:'dv',contractVersionId:'cv',contractVersion:1,replayed:true};});
+  render(<RsGenerationPanel contractId={contractId} canGenerate onChanged={()=>{}}/>);
+  fireEvent.click(await screen.findByRole('button',{name:'Vygenerovat RS'}));await screen.findByText('Odpověď se ztratila.');
+  fireEvent.click(screen.getByRole('button',{name:'Ověřit předchozí generování'}));await waitFor(()=>assert.equal(generated,2));assert.equal(keys[0],keys[1]);
+});
+
+for(const status of [409,422,503])test(`transport ${status} klasifikuje pouze prokazatelnou preflight validaci`,async()=>{
+  mock.method(entraAuth,'getAccessToken',async()=> 'technical-token');
+  const sent:string[]=[];mock.method(globalThis,'fetch',async(_input:RequestInfo|URL,init?:RequestInit)=>{sent.push(String(init?.body));return Response.json({error:'Smlouvu nelze vytvořit.',issues:[{code:'buyer_address',field:'buyer.address',message:'Doplňte adresu.'}]},{status});});
+  await assert.rejects(commercialRepository.generateContract(contractId,'fixed-generation-key'),error=>status===422?error instanceof ContractGenerationNotReadyError:error instanceof Error&&!(error instanceof ContractGenerationNotReadyError));
+  assert.deepEqual(JSON.parse(sent[0]),{idempotencyKey:'fixed-generation-key'});
 });
 
 test('server refusal refreshes readiness and removes stale generation CTA',async()=>{
