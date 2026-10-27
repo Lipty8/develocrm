@@ -2043,10 +2043,35 @@ export function ComplaintDetailModal({complaint,memberships,close,save}:{complai
   return <FormModal title={complaint.title} subtitle={`${complaint.unitCode} · ${complaint.partyName}`} close={close} saveLabel="Uložit reklamaci" onSave={async()=>{await save({status,note:note.trim(),assigneeMembershipId:assignee||null,dueAt:dueAt||null,idempotencyKey:key.current});key.current=crypto.randomUUID();setNote("");}}><p>{complaint.description}</p><div className="form-row"><label><span>Stav</span><select value={status} onChange={event=>setStatus(event.target.value as ComplaintRecord["status"])}><option value="new" disabled={complaint.status!=="new"}>Nová</option><option value="in_progress">Řeší se</option><option value="resolved">Vyřešena</option></select></label><label><span>Odpovědná osoba</span><select value={assignee} onChange={event=>setAssignee(event.target.value)}><option value="">Nepřiřazeno</option>{memberships.map(member=><option key={member.id} value={member.id}>{member.name}</option>)}</select></label></div><label><span>Termín</span><input type="date" value={dueAt} onChange={event=>setDueAt(event.target.value)}/></label><label><span>Poznámka k postupu</span><textarea rows={3} value={note} onChange={event=>setNote(event.target.value)}/></label><div className="change-status-history"><strong>Historie</strong>{complaint.history.map(event=><div key={event.id}><span>{formatPragueDateTime(event.occurredAt)} · {event.actor}</span><strong>{complaintStatusLabels[event.toStatus as ComplaintRecord["status"]]??"Změna stavu"}</strong>{event.note&&<small>{event.note}</small>}</div>)}</div><WorkflowDocuments projectId={complaint.projectId} target={{type:"complaint",id:complaint.id}} /></FormModal>;
 }
 
-function WorkflowDocuments({projectId,target}:{projectId:string;target:{type:"client_change"|"complaint"|"handover";id:string}}){
-  const [linked,setLinked]=useState<DocumentRecord[]>([]);const [available,setAvailable]=useState<DocumentRecord[]>([]);const [selected,setSelected]=useState("");const [loading,setLoading]=useState(true);const [error,setError]=useState("");const [version,setVersion]=useState(0);
-  useEffect(()=>{const controller=new AbortController();const scoped=target.type==="client_change"?documentRepository.listClientChange(target.id,controller.signal):target.type==="complaint"?documentRepository.listComplaint(target.id,controller.signal):documentRepository.listHandover(target.id,controller.signal);Promise.all([scoped,documentRepository.listProject(projectId,{},controller.signal)]).then(([current,project])=>{setLinked(current.documents);const ids=new Set(current.documents.map(item=>item.id));setAvailable(project.documents.filter(item=>!ids.has(item.id)));setError("");}).catch(problem=>{if((problem as Error).name!=="AbortError")setError("Dokumenty se nepodařilo načíst.");}).finally(()=>setLoading(false));return()=>controller.abort();},[projectId,target.id,target.type,version]);
-  return <section className="handover-form-section"><h3>Dokumenty</h3>{!loading&&available.length>0&&<div className="form-row"><label><span>Připojit existující dokument projektu</span><select value={selected} onChange={event=>setSelected(event.target.value)}><option value="">Vyberte dokument</option>{available.map(document=><option key={document.id} value={document.id}>{document.name}</option>)}</select></label><button type="button" className="secondary-button" disabled={!selected} onClick={()=>void documentRepository.link(selected,{type:target.type,targetId:target.id}).then(()=>{setSelected("");setVersion(value=>value+1);}).catch(problem=>setError(problem instanceof Error?problem.message:"Dokument se nepodařilo připojit."))}><Link2 size={16}/> Připojit</button></div>}{error&&<p className="form-error">{error}</p>}<DocumentList documents={linked} loading={loading}/></section>;
+export function WorkflowDocuments({projectId,target}:{projectId:string;target:{type:"client_change"|"complaint"|"handover";id:string}}){
+  return <WorkflowDocumentPanel key={`${projectId}:${target.type}:${target.id}`} projectId={projectId} target={target}/>;
+}
+function WorkflowDocumentPanel({projectId,target}:{projectId:string;target:{type:"client_change"|"complaint"|"handover";id:string}}){
+  const [selected,setSelected]=useState("");const [saving,setSaving]=useState(false);const [error,setError]=useState("");
+  const mutation=useRef<AbortController|null>(null);
+  useEffect(()=>()=>mutation.current?.abort(),[]);
+  const read=useAsyncRead(`workflow-documents:${projectId}:${target.type}:${target.id}`,useCallback(async(signal:AbortSignal)=>{
+    const scoped=target.type==="client_change"?documentRepository.listClientChange(target.id,signal):target.type==="complaint"?documentRepository.listComplaint(target.id,signal):documentRepository.listHandover(target.id,signal);
+    const [current,project]=await Promise.all([scoped,documentRepository.listProject(projectId,{},signal)]);
+    const ids=new Set(current.documents.map(item=>item.id));
+    return{linked:current.documents,available:project.documents.filter(item=>!ids.has(item.id))};
+  },[projectId,target.id,target.type]));
+  const available=read.data?.available??[];
+  async function link(){
+    if((mutation.current&&!mutation.current.signal.aborted)||read.loading||read.error||!available.some(item=>item.id===selected))return;
+    const controller=new AbortController();mutation.current=controller;setSaving(true);setError("");
+    try{await documentRepository.link(selected,{type:target.type,targetId:target.id});if(!controller.signal.aborted){setSelected("");read.retry();}}
+    catch{if(!controller.signal.aborted)setError("Dokument se nepodařilo připojit. Zkuste to znovu.");}
+    finally{if(!controller.signal.aborted){mutation.current=null;setSaving(false);}}
+  }
+  return <section className="handover-form-section"><h3>Dokumenty</h3>
+    {read.loading||read.error?<AsyncNotice loading={read.loading} error={read.error} retry={read.retry}/>:<>
+      {available.length>0&&<div className="form-row"><label><span>Připojit existující dokument projektu</span><select value={selected} disabled={saving} onChange={event=>{setSelected(event.target.value);setError("");}}><option value="">Vyberte dokument</option>{available.map(document=><option key={document.id} value={document.id}>{document.name}</option>)}</select></label>
+        <button type="button" className="secondary-button" disabled={saving||!selected} onClick={()=>void link()}><Link2 size={16}/> {saving?"Připojuji…":"Připojit"}</button></div>}
+      <DocumentList documents={read.data?.linked??[]} loading={false}/>
+    </>}
+    {error&&<p className="form-error" role="alert">{error}</p>}
+  </section>;
 }
 
 export function UnitDocuments({ unit }: { unit:UnitRecord }) {
