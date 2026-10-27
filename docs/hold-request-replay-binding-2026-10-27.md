@@ -58,7 +58,45 @@ create a reservation without a signed RS.
 
 ## Deployment status
 
-Implementation and isolated verification complete. Pilot migration/deployment
-and authenticated post-deployment smoke are not yet claimed. Frontend source is
-unchanged; Sites 173 remains the matching UI. Real pilot business data have not
-been modified for this package.
+Runtime source `c25377a2a3f3b17cffc548782258c4191351c714` was pushed to the
+private GitHub main. Frontend source is unchanged; Sites 173 remains the matching
+UI without an unnecessary frontend deployment.
+
+- Sanitized build context: 160 allowlisted committed files, about 424.8 KiB
+  compressed. No legal DOCX/PDF, attachments, local runtime data or secrets.
+- ACR `cg57` / `cg58`: Succeeded.
+- API digest: `sha256:1ae50bd0a41b4c38c4403697079ca6ba314c972d82debcfc3542e7cb7519c7fb`.
+- Migration digest: `sha256:8fa446aa04d5e34c65b425c4960cafd70476b4d60436e8c3e5d62d46322f9b0a`.
+- Read-only preflight `caj-develocrm-migrations-pilot-ws244e1`: Succeeded,
+  checksums for all 73 applied migrations match, only 0074 pending.
+- Initial execution `caj-develocrm-migrations-pilot-c8lkbhf` failed before any
+  database connection: Azure CLI image-only execution override dropped the
+  inherited env. Execution metadata confirmed env=null and logs reported the
+  missing `DATABASE_URL`. No backend was switched at this point.
+- Corrected one-execution definition explicitly retained the existing
+  `DATABASE_URL` → `database-admin-url` secretRef; no secret value was read or
+  changed. `caj-develocrm-migrations-pilot-3okzyhs`: Succeeded, applied only 0074.
+- Read-only postflight `caj-develocrm-migrations-pilot-hfgzi8i`: Succeeded,
+  74 matching checksums, no pending migration, replay guard installed.
+- Revision `ca-develocrm-api-pilot--hold-replay-c25377a`: Healthy, Running,
+  Provisioned; latestReady matches, 100% traffic. Health and ready HTTP 200.
+- Authenticated browser created only new synthetic unit 7405 and a synthetic
+  buyer/pre-reservation in the owned TECH74 project. Unit UUID:
+  `b4f8da2f-9770-41ed-a6c7-41a3d52a2ed0`. Buyer, expiry 29 October 2026 09:53
+  Europe/Prague, CZK 5,100,000 price, stage and activity survived a full reload.
+- Pilot replay verification `caj-develocrm-migrations-pilot-coucgx6`: Succeeded.
+  Under the regular application role and explicit tenant/user context, two
+  identical calls returned the original hold/case/party IDs; changed unit and
+  identity were rejected. Audit and outbox counts stayed unchanged. The entire
+  verification transaction was rolled back; no extra hold or party persisted.
+- Bounded new-revision log window: 188 rows, zero HTTP 5xx, RLS violations or
+  error-level entries. This is observed evidence, not a future-error guarantee.
+- Frontend production build, 166 interaction tests and 143 static regressions
+  also passed. Existing production bundle-size warning remains; no new failure.
+
+No real customer, historical agreement, payment, signed document or existing
+hold was changed. Only the new isolated technical fixture above was created.
+Native local PostgreSQL test cluster was stopped after verification. Browser
+proof was inspected, but screenshot file persistence was denied by the browser
+sandbox even after a primary-filesystem permission grant; no saved image file
+is claimed.
