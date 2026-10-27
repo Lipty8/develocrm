@@ -32,6 +32,8 @@ import {ContractEndResult} from '../app/components/contract-end-result';
 import type {PaymentRecord} from '../app/repositories/payment-repository';
 import {EditAccessoryModal,CreateUnitModal,SalesActionModal} from '../app/CRMApp';
 import {ClientDuplicateReview} from '../app/components/client-duplicate-review';
+import {salesCommandRepository,SalesCommandRejectedError} from '../app/repositories/sales-command-repository';
+import {entraAuth} from '../app/lib/entra-auth';
 import {clients as sampleClients,units as sampleUnits,contracts as sampleContracts} from '../app/crm-data';
 
 for(const [input,expected] of [['5 100 000',5100000],['5\u00a0100\u00a0000,50',5100000.5],['5\u202f100\u202f000',5100000],['0',0],['',null],['   ',null]] as const){
@@ -104,6 +106,30 @@ test('explicitní override v jednání se po změně údajů zruší a musí bý
   fireEvent.change(screen.getByLabelText('Příjmení'),{target:{value:'Jiný test'}});await user.click(screen.getByRole('button',{name:'Pokračovat'}));assert.equal(sent.length,0);assert.equal(checks,2);
   await user.click(screen.getByRole('button',{name:'Přesto vytvořit nového'}));await user.click(screen.getByRole('button',{name:'Pokračovat'}));await waitFor(()=>assert.equal(sent.length,1));assert.equal(sent[0].duplicateOverride,true);assert.equal(checks,2);
  }finally{clientRepository.findDuplicates=original;}
+});
+test('nový klient a hold po ztracené odpovědi zopakují stejný request bez falešné duplicity',async t=>{
+ const original=clientRepository.findDuplicates;let checks=0;let successes=0;const requests:Array<{idempotencyKey:string;newParty:unknown}>=[];
+ clientRepository.findDuplicates=async()=>{checks++;return checks===1?[]:[duplicateFixture];};
+ t.mock.method(entraAuth,'getAccessToken',async()=>null);t.mock.method(globalThis,'fetch',async(_url:unknown,init?:RequestInit)=>{
+  requests.push(JSON.parse(String(init?.body)));if(requests.length===1)throw new TypeError('test-only connection lost after commit');return Response.json({party_id:'replayed-party',hold_id:'replayed-hold',sales_case_id:'replayed-case'});
+ });
+ try{render(<SalesActionModal action={{unit:duplicateUnit,mode:'pre_reservation'}} clientRows={[]} close={()=>{}} save={async value=>{await salesCommandRepository.createHold({unitId:duplicateUnit.backendId,type:'pre_reservation',newParty:value.newParty,expiresAt:value.expiresAt,reason:value.reason,idempotencyKey:value.idempotencyKey});successes++;}}/>);await fillDuplicateParty();const user=userEvent.setup({document});
+  await user.click(screen.getByRole('button',{name:'Pokračovat'}));await screen.findByText('Výsledek uložení se nepodařilo ověřit. Zkuste to prosím znovu.');assert.equal(requests.length,1);
+  await user.click(screen.getByRole('button',{name:'Pokračovat'}));await waitFor(()=>assert.equal(successes,1));assert.equal(requests.length,2);assert.equal(checks,1);assert.deepEqual(requests[0],requests[1]);assert.equal(screen.queryByText('Výsledek uložení se nepodařilo ověřit. Zkuste to prosím znovu.'),null);
+ }finally{clientRepository.findDuplicates=original;}
+});
+test('změněné zadání dostane nový klíč a odmítnutý command znovu ověří duplicity',async()=>{
+ const original=clientRepository.findDuplicates;let checks=0;const keys:string[]=[];
+ clientRepository.findDuplicates=async()=>{checks++;return[];};
+ try{render(<SalesActionModal action={{unit:duplicateUnit,mode:'pre_reservation'}} clientRows={[]} close={()=>{}} save={async value=>{keys.push(value.idempotencyKey);throw new SalesCommandRejectedError('Technický konflikt',409);}}/>);await fillDuplicateParty();const user=userEvent.setup({document});
+  await user.click(screen.getByRole('button',{name:'Pokračovat'}));await screen.findByText('Technický konflikt');await user.click(screen.getByRole('button',{name:'Pokračovat'}));await waitFor(()=>assert.equal(keys.length,2));assert.equal(keys[0],keys[1]);assert.equal(checks,2);
+  fireEvent.change(screen.getByLabelText('Telefon'),{target:{value:'+420777000742'}});await user.click(screen.getByRole('button',{name:'Pokračovat'}));await waitFor(()=>assert.equal(keys.length,3));assert.notEqual(keys[1],keys[2]);assert.equal(checks,3);
+ }finally{clientRepository.findDuplicates=original;}
+});
+test('read-only duplicate check nespouští globální obnovu pracovního prostoru',async t=>{
+ t.mock.method(entraAuth,'getAccessToken',async()=>null);t.mock.method(globalThis,'fetch',async()=>Response.json({matches:[]}));
+ let mutations=0;const listen=()=>{mutations++;};window.addEventListener('develocrm:data-mutated',listen);
+ try{await clientRepository.findDuplicates({projectId:duplicateUnit.projectBackendId,kind:'individual',firstName:'TECH',lastName:'Test'});assert.equal(mutations,0);}finally{window.removeEventListener('develocrm:data-mutated',listen);}
 });
 test('nové jednání bez kontextu nevybere automaticky prvního klienta adresáře',async()=>{
  let calls=0;render(<SalesActionModal action={{unit:duplicateUnit,mode:'pre_reservation'}} clientRows={[sampleClients[0]]} close={()=>{}} save={async()=>{calls++;}}/>);
@@ -447,7 +473,7 @@ test('archivace projektu vyžaduje potvrzení, ukáže závazky a obnovuje bez z
 
 before(async()=>{
   const dom=new JSDOM("<!doctype html><html><body></body></html>",{url:"https://develocrm.test"});
-  Object.assign(globalThis,{self:dom.window,window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,Node:dom.window.Node,MouseEvent:dom.window.MouseEvent,KeyboardEvent:dom.window.KeyboardEvent,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:(callback:FrameRequestCallback)=>setTimeout(()=>callback(Date.now()),0),cancelAnimationFrame:clearTimeout});
+  Object.assign(globalThis,{self:dom.window,window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,Node:dom.window.Node,MouseEvent:dom.window.MouseEvent,CustomEvent:dom.window.CustomEvent,KeyboardEvent:dom.window.KeyboardEvent,getComputedStyle:dom.window.getComputedStyle,requestAnimationFrame:(callback:FrameRequestCallback)=>setTimeout(()=>callback(Date.now()),0),cancelAnimationFrame:clearTimeout});
   Object.defineProperty(globalThis,"navigator",{value:dom.window.navigator,configurable:true});
   const library=await import("@testing-library/react");
   ({cleanup,render,screen,fireEvent,waitFor,act,within}=library);
