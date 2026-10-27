@@ -4,7 +4,8 @@ import {randomUUID} from 'node:crypto';
 import {readFile,readdir} from 'node:fs/promises';
 import {PGlite} from '@electric-sql/pglite';
 import {Pool,type PoolClient} from 'pg';
-import type {SqlClient} from '../src/database.js';
+import type {SqlClient,Database} from '../src/database.js';
+import {SalesRepository} from '../src/sales/repository.js';
 import {bootstrapIds,bootstrapPilotWorkspace,normalizeBootstrapInput} from '../src/iam/pilot-bootstrap.js';
 
 async function fixture(url?:string){
@@ -86,6 +87,42 @@ for(const native of [false,true])test(`hold command replay binding (${native?'Po
       assert.equal((await f.db.query<{status:string}>('SELECT status FROM unit_holds WHERE id=$1',[original.hold_id])).rows[0].status,'cancelled');
       assert.deepEqual(await f.events(original.hold_id),{audit:1,outbox:1});
     });
+    for(const mode of ['cancel','expire'])await t.test(`${mode}: next buyer gets a new case; old draft and finances remain historical`,async()=>{
+      const unit=await f.unit(),first=(await f.run(c=>f.create(c,unit,randomUUID(),`Old-${mode}`))).rows[0];
+      await f.run(c=>c.query("SELECT app.record_unit_price($1,$2,'list_price',5000000,'CZK',now(),'Technical lifecycle',$3)",[f.ids.tenantId,unit,f.ids.membershipId]));
+      const contract=(await f.run(c=>c.query<{contract_id:string}>("SELECT * FROM app.create_contract_with_payment($1,$2,'rs',$3,'Technical historical RS',$4,NULL,$5,'fixed',250000,now()+interval '7 days')",[f.ids.tenantId,first.sales_case_id,`RS-${randomUUID()}`,f.ids.membershipId,randomUUID()]))).rows[0].contract_id;
+      const obligation=(await f.db.query<{id:string}>('SELECT id FROM payment_obligations WHERE contract_id=$1',[contract])).rows[0];assert.ok(obligation);
+      await f.run(c=>c.query("SELECT app.record_payment($1,$2,50000,now(),NULL,NULL,NULL,'Technical receipt before unsigned release',$3,$4)",[f.ids.tenantId,obligation.id,randomUUID(),f.ids.membershipId]));
+      const ledger=()=>Promise.all(['payment_transactions','payment_allocations','payment_refunds'].map(table=>f.db.query(`SELECT to_jsonb(row) value FROM ${table} row WHERE tenant_id=$1 ORDER BY id`,[f.ids.tenantId]).then(result=>result.rows)));
+      const ledgerBefore=await ledger();
+      const documentHistory=(await f.db.query('SELECT to_jsonb(v) value FROM contract_versions v WHERE contract_id=$1 ORDER BY version_number',[contract])).rows;
+      const financeBefore=(await f.db.query('SELECT to_jsonb(p) value FROM payment_obligations p WHERE sales_case_id=$1 ORDER BY id',[first.sales_case_id])).rows;
+      if(mode==='expire')await f.db.query("UPDATE unit_holds SET starts_at=now()-interval '2 days',expires_at=now()-interval '1 day' WHERE id=$1",[first.hold_id]);
+      const end=(c:SqlClient)=>mode==='cancel'?c.query("SELECT app.cancel_unit_hold($1,$2,$3,'Technical release') changed",[f.ids.tenantId,first.hold_id,f.ids.membershipId]):c.query('SELECT app.expire_unit_hold($1,$2,$3) changed',[f.ids.tenantId,first.hold_id,f.ids.membershipId]);
+      assert.equal((await f.run(c=>end(c))).rows[0].changed,true);
+      assert.equal((await f.run(c=>end(c))).rows[0].changed,false);
+      const closed=(await f.db.query<{status:string;closed_at:unknown}>('SELECT status,closed_at FROM sales_cases WHERE id=$1',[first.sales_case_id])).rows[0];
+      assert.equal(closed.status,mode==='cancel'?'cancelled':'expired');assert.ok(closed.closed_at);
+      assert.equal((await f.db.query('SELECT id FROM sales_case_parties WHERE sales_case_id=$1 AND left_at IS NULL',[first.sales_case_id])).rows.length,0);
+      const repository=new SalesRepository({withContext:async(context:{tenantId:string;userId:string},work:(c:SqlClient)=>Promise<unknown>)=>f.run(work,context)} as Database);
+      const snapshot=await repository.getDirectory({tenantId:f.ids.tenantId,userId:f.ids.userId,membershipId:f.ids.membershipId,projectId:f.projects[0]});
+      assert.equal(snapshot.unitContexts[unit].salesCaseId,null);assert.deepEqual(snapshot.unitContexts[unit].buyers,[]);
+      assert.equal(snapshot.unitContexts[unit].interests.find(interest=>interest.partyId===first.party_id)?.status,'closed');
+      await assert.rejects(f.run(c=>c.query("SELECT app.transition_contract_status($1,$2,'sent','Historical draft must stay historical',$3)",[f.ids.tenantId,contract,f.ids.membershipId])),/CONTRACT_CASE_CLOSED/);
+      const next=(await f.run(c=>f.create(c,unit,randomUUID(),`Next-${mode}`))).rows[0];
+      assert.notEqual(next.sales_case_id,first.sales_case_id);assert.notEqual(next.party_id,first.party_id);
+      const buyers=(await f.db.query<{party_id:string}>('SELECT party_id FROM sales_case_parties WHERE sales_case_id=$1 AND left_at IS NULL',[next.sales_case_id])).rows;
+      assert.deepEqual(buyers.map(row=>row.party_id),[next.party_id]);
+      const nextSnapshot=await repository.getDirectory({tenantId:f.ids.tenantId,userId:f.ids.userId,membershipId:f.ids.membershipId,projectId:f.projects[0]});
+      assert.equal(nextSnapshot.unitContexts[unit].salesCaseId,next.sales_case_id);
+      assert.deepEqual(nextSnapshot.unitContexts[unit].buyers.map(buyer=>buyer.partyId),[next.party_id]);
+      assert.deepEqual((await f.db.query('SELECT to_jsonb(v) value FROM contract_versions v WHERE contract_id=$1 ORDER BY version_number',[contract])).rows,documentHistory);
+      assert.deepEqual((await f.db.query('SELECT to_jsonb(p) value FROM payment_obligations p WHERE sales_case_id=$1 ORDER BY id',[first.sales_case_id])).rows,financeBefore);
+      assert.deepEqual(await ledger(),ledgerBefore);
+      assert.equal(Number((await f.db.query('SELECT app.payment_obligation_paid($1,$2) amount',[f.ids.tenantId,obligation.id])).rows[0].amount),50000);
+      assert.equal((await f.db.query("SELECT id FROM audit_log WHERE entity_id=$1 AND action='sales_case.closed_after_pre_reservation'",[first.sales_case_id])).rows.length,1);
+      assert.equal((await f.db.query("SELECT id FROM outbox_events WHERE aggregate_id=$1 AND event_type='sales_case.closed_after_pre_reservation.v1'",[first.sales_case_id])).rows.length,1);
+    });
     await t.test('legacy hashless commands fail closed without guessed historical data',async()=>{
       await f.db.query('UPDATE unit_holds SET creation_request_hash=NULL WHERE id=$1',[original.hold_id]);
       await assert.rejects(f.run(c=>f.create(c,a,key)),/HOLD_IDEMPOTENCY_CONFLICT/);
@@ -139,6 +176,24 @@ for(const native of [false,true])test(`hold command replay binding (${native?'Po
       assert.match(rejected.reason.message,/HOLD_IDEMPOTENCY_CONFLICT|duplicate key/);
       assert.equal((await f.db.query('SELECT id FROM unit_holds WHERE tenant_id=$1 AND idempotency_key=$2',[f.ids.tenantId,raceKey])).rows.length,1);
       assert.equal((await f.db.query("SELECT id FROM parties WHERE tenant_id=$1 AND display_name='Technical CrossUnit'",[f.ids.tenantId])).rows.length,1);
+    });
+    if(f.pool)for(const mode of ['cancel','expire'])await t.test(`${mode} vs new buyer serializes closure and creates only one new active case`,async()=>{
+      const unit=await f.unit(),old=(await f.run(c=>f.create(c,unit,randomUUID(),`OldRace-${mode}`))).rows[0];
+      if(mode==='expire')await f.db.query("UPDATE unit_holds SET starts_at=now()-interval '2 days',expires_at=now()-interval '1 day' WHERE id=$1",[old.hold_id]);
+      const left=await f.pool!.connect(),right=await f.pool!.connect();
+      try{
+        for(const c of [left,right]){await c.query('BEGIN');await c.query('SET LOCAL ROLE develocrm_app');await c.query("SET LOCAL statement_timeout='5s'");await c.query("SELECT set_config('app.tenant_id',$1,true),set_config('app.user_id',$2,true)",[f.ids.tenantId,f.ids.userId]);}
+        await left.query(mode==='cancel'?"SELECT app.cancel_unit_hold($1,$2,$3,'Technical concurrency release')":"SELECT app.expire_unit_hold($1,$2,$3)",[f.ids.tenantId,old.hold_id,f.ids.membershipId]);
+        const pid=(await right.query<{pid:number}>('SELECT pg_backend_pid() pid')).rows[0].pid;
+        const pending=f.create(right,unit,randomUUID(),`NewRace-${mode}`).then(value=>({value,error:null}),error=>({value:null,error}));
+        let waiting=false;for(let i=0;i<100&&!waiting;i++){waiting=(await f.pool!.query<{waiting:boolean}>("SELECT wait_event_type='Lock' waiting FROM pg_stat_activity WHERE pid=$1",[pid])).rows[0]?.waiting===true;if(!waiting)await new Promise(resolve=>setTimeout(resolve,10));}
+        assert.equal(waiting,true);await left.query('COMMIT');const result=await pending;
+        assert.equal(result.error,null);const fresh=result.value!.rows[0];assert.notEqual(fresh.sales_case_id,old.sales_case_id);await right.query('COMMIT');
+        assert.equal((await f.db.query("SELECT id FROM sales_cases WHERE unit_id=$1 AND status='active'",[unit])).rows.length,1);
+        assert.equal((await f.db.query("SELECT id FROM unit_holds WHERE unit_id=$1 AND status='active'",[unit])).rows.length,1);
+        assert.deepEqual((await f.db.query<{party_id:string}>('SELECT party_id FROM sales_case_parties WHERE sales_case_id=$1 AND left_at IS NULL',[fresh.sales_case_id])).rows.map(row=>row.party_id),[fresh.party_id]);
+        assert.equal((await f.db.query("SELECT id FROM audit_log WHERE entity_id=$1 AND action='sales_case.closed_after_pre_reservation'",[old.sales_case_id])).rows.length,1);
+      }finally{await left.query('ROLLBACK');await right.query('ROLLBACK');left.release();right.release();}
     });
   }finally{await f.close();}
 });

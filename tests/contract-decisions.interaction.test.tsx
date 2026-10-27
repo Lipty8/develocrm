@@ -19,6 +19,7 @@ import {PackageOpen,UserRound,Users} from "lucide-react";
 import {Projects,UnitContracts,ContractDetail,ContractWorkflowModal,ClientChangeStatusModal,ComplaintDetailModal,ContractAddendumModal,ContractNoteModal,FormModal,PaymentDetailModal,PaymentRefundForm,paymentRefundAvailability,EditClientModal} from "../app/CRMApp";
 import {paymentRepository} from '../app/repositories/payment-repository';
 import {relatedUnitHref,relatedClientHref} from '../app/lib/entity-navigation';
+import {preferredSalesPartyId} from '../app/lib/business-context';
 import {searchWorkspace} from '../app/lib/workspace-search';
 import {ClientContractLinks} from '../app/components/client-contract-links';
 import {ClientAddressSummary} from '../app/components/client-address-fields';
@@ -135,6 +136,14 @@ test('nové jednání bez kontextu nevybere automaticky prvního klienta adresá
  let calls=0;render(<SalesActionModal action={{unit:duplicateUnit,mode:'pre_reservation'}} clientRows={[sampleClients[0]]} close={()=>{}} save={async()=>{calls++;}}/>);
  assert.equal((screen.getByRole('radio') as HTMLInputElement).checked,false);
  await userEvent.setup({document}).click(screen.getByRole('button',{name:'Pokračovat'}));await screen.findByText('Vyberte klienta nebo zájemce');assert.equal(calls,0);
+});
+test('historický zájem ani starý kupující bez aktivního obchodu se nepředvyberou',()=>{
+ const context:import('../app/crm-data').UnitCommercialContext={salesCaseId:null,buyers:[{partyId:'old-buyer',name:'Historical',email:'',role:'buyer',share:null}],buyerHistory:[],stage:null,hold:null,interests:[{date:'',partyId:'old-interest',name:'Historical',type:'',result:'',status:'closed'}]};
+ assert.equal(preferredSalesPartyId(context),'');
+ context.interests.push({date:'',partyId:'active-interest',name:'Active',type:'',result:'',status:'active'});
+ assert.equal(preferredSalesPartyId(context),'active-interest');
+ context.salesCaseId='active-case';assert.equal(preferredSalesPartyId(context),'old-buyer');
+ assert.equal(preferredSalesPartyId({...context,salesCaseId:null,interests:context.interests.map(item=>({...item,status:undefined}))}),'');
 });
 test('sdílený přehled duplicit používá stejnou akci otevření pro samostatný formulář',async()=>{
  let opened='';render(<ClientDuplicateReview matches={[duplicateFixture]} override={false} onOverride={()=>{}} onUse={()=>{}} onOpen={id=>{opened=id;}}/>);

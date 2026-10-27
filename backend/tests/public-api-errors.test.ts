@@ -35,6 +35,12 @@ test('hold replay conflicts retain safe Czech messages and correlation ID',()=>{
     assert.deepEqual(mapApiError(result,409,'hold-replay-test'),result);
   }
 });
+test('hold release blockers retain a concrete safe reason through serialization',()=>{
+ for(const code of ['HOLD_RELEASE_OWNERSHIP_UNVERIFIED','HOLD_RELEASE_CONTRACT_BLOCKED','HOLD_RELEASE_UNIT_BLOCKED','HOLD_RELEASE_HANDOVER_EXISTS','HOLD_RELEASE_CONTEXT_CHANGED']){
+  const result=mapApiError(new Error(code),409,'release-test');assert.equal(result.code,code);
+  assert.doesNotMatch(result.message,/HOLD_|SQL|permission|undefined/);assert.deepEqual(mapApiError(result,409,'release-test'),result);
+ }
+});
 test('actual hold endpoint returns safe 409 for changed replay without exposing internal errors',async t=>{
   const identity={issuer:'https://identity.test',subject:'subject',entraTenantId:'entra',email:'test@example.test',displayName:'Technical Test'};
   const user={id:'user',email:identity.email,displayName:identity.displayName};

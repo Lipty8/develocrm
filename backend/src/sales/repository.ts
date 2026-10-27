@@ -25,7 +25,7 @@ export type UnitCommercialContext = {
   salesCaseId: string | null;
   buyers: Array<{ partyId: string; name: string; email: string; role: string; share: number | null }>;
   buyerHistory: Array<{ id:string; occurredAt:string; previousBuyers:Array<{partyId:string;name:string;role:string}>; currentBuyers:Array<{partyId:string;name:string;role:string}>; reason:string; actor:string; sourceContractId?:string|null;sourceContractReference?:string|null }>;
-  interests: Array<{ date: string; partyId: string; name: string; type: string; result: string }>;
+  interests: Array<{ date: string; partyId: string; name: string; type: string; result: string; status:'active'|'converted'|'closed' }>;
   stage: string | null;
   hold: { id: string; type: string; expiresAt: string } | null;
 };
@@ -275,7 +275,7 @@ export class SalesRepository {
          ) buyers ON true
          ${buyerHistoryJoin}
          LEFT JOIN LATERAL (
-           SELECT jsonb_agg(jsonb_build_object('date',COALESCE(to_char(interest.first_interest_at,'DD. MM. YYYY'),'Datum neuvedeno'),'partyId',party.id,'name',party.display_name,
+           SELECT jsonb_agg(jsonb_build_object('date',COALESCE(to_char(interest.first_interest_at,'DD. MM. YYYY'),'Datum neuvedeno'),'partyId',party.id,'name',party.display_name,'status',interest.status,
              'type',COALESCE(highest.label,CASE interest.status WHEN 'converted' THEN 'Obchodní proces' WHEN 'active' THEN 'Aktivní zájem' ELSE 'Ukončený zájem' END),
              'result',COALESCE(latest.outcome,CASE interest.status WHEN 'converted' THEN 'Pokračuje v obchodním procesu' WHEN 'active' THEN 'Aktivní' ELSE 'Bez realizace' END)) ORDER BY interest.first_interest_at DESC) items
            FROM unit_interests interest JOIN parties party ON party.tenant_id=interest.tenant_id AND party.id=interest.party_id

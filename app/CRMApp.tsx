@@ -24,7 +24,7 @@ import {ProjectArchiveAction} from './components/project-archive-action';
 import {PROJECT_VISIBILITY_OPTIONS,isArchivedProject,isActiveProject,matchesProjectVisibility,type ProjectVisibility} from './lib/project-visibility';
 import {apiFetch} from "./lib/api-client";
 import {RelatedUnitLink} from './components/entity-links';
-import {getUnitContext,unitContextKey,contractBelongsToUnit,currentCaseReleaseBlocker} from './lib/business-context';
+import {getUnitContext,unitContextKey,contractBelongsToUnit,currentCaseReleaseBlocker,preferredSalesPartyId} from './lib/business-context';
 import {AsyncNotice,useAsyncRead} from './components/async-content';
 import {paymentNeedsAttention,taskNeedsAttention} from './lib/dashboard-attention';
 import {ClientContractLinks} from './components/client-contract-links';
@@ -2202,7 +2202,7 @@ function AccessoryModal({unit,inventory,close,assign,remove,create}:{unit:UnitRe
 type NewPartyDraft={kind:"individual"|"organization";salutation?:string;firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;email?:string;phone?:string;duplicateOverride?:boolean};
 export function SalesActionModal({action,clientRows,close,save}:{action:{unit:UnitRecord;mode:"interest"|"pre_reservation"|"reservation"|"convert"|"cancel"};clientRows:typeof clients;close:()=>void;save:(value:{partyId:string;newParty?:NewPartyDraft;expiresAt:string;reason:string;idempotencyKey:string})=>Promise<void>}){
   const context=getUnitContext(action.unit,unitCommercialContexts);
-  const defaultParty=context?.buyers[0]?.partyId??context?.interests[0]?.partyId??"";
+  const defaultParty=preferredSalesPartyId(context);
   const [partyId,setPartyId]=useState(defaultParty);const [query,setQuery]=useState("");const [creatingNew,setCreatingNew]=useState(false);
   const [matches,setMatches]=useState<Awaited<ReturnType<typeof clientRepository.findDuplicates>>>([]);const [duplicateOverride,setDuplicateOverride]=useState(false);
   const [chosenDuplicate,setChosenDuplicate]=useState<import('./repositories/client-repository').DuplicateMatch|null>(null);

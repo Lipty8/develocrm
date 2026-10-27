@@ -82,7 +82,7 @@ export type UnitCommercialContext = {
   salesCaseId?: string | null;
   buyers: Array<{ partyId: string; name: string; email: string; role: string; share: number | null }>;
   buyerHistory?: Array<{ id:string; occurredAt:string; previousBuyers:Array<{partyId:string;name:string;role:string}>; currentBuyers:Array<{partyId:string;name:string;role:string}>; reason:string; actor:string; sourceContractId?:string|null; sourceContractReference?:string|null }>;
-  interests: Array<{ date: string; partyId: string; name: string; type: string; result: string }>;
+  interests: Array<{ date: string; partyId: string; name: string; type: string; result: string; status?:'active'|'converted'|'closed' }>;
   stage: string | null;
   hold: { id: string; type: string; expiresAt: string } | null;
 };

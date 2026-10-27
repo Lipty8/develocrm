@@ -58,7 +58,7 @@ async function fixture(postgresUrl?:string){
   const expire=(holdId:string,connection:SqlClient=client)=>connection.query<{changed:boolean}>("SELECT app.expire_unit_hold($1,$2,$3) changed",[ids.tenantId,holdId,ids.membershipId]);
   const cancel=(holdId:string,connection:SqlClient=client)=>connection.query("SELECT app.cancel_unit_hold($1,$2,$3,'Safety cancellation')",[ids.tenantId,holdId,ids.membershipId]);
   const sign=(c:{contract_id:string;version_id:string},connection:SqlClient=client)=>connection.query("SELECT * FROM app.sign_contract_externally($1,$2,$3,now(),$4,NULL)",[ids.tenantId,c.contract_id,c.version_id,ids.membershipId]);
-  async function state(unitId:string){return (await client.query<{commercial_status:string;current_stage:string}>("SELECT unit.commercial_status,sales_case.current_stage FROM units unit JOIN sales_cases sales_case ON sales_case.unit_id=unit.id AND sales_case.status='active' WHERE unit.id=$1",[unitId])).rows[0];}
+  async function state(unitId:string){return (await client.query<{commercial_status:string;current_stage:string}>("SELECT unit.commercial_status,sales_case.current_stage FROM units unit LEFT JOIN LATERAL (SELECT current_stage FROM sales_cases WHERE unit_id=unit.id ORDER BY (status='active') DESC,opened_at DESC,id DESC LIMIT 1) sales_case ON true WHERE unit.id=$1",[unitId])).rows[0];}
   async function events(holdId:string){return (await client.query<{audit:number;outbox:number}>("SELECT (SELECT count(*)::int FROM audit_log WHERE entity_id=$1 AND action='hold.expired') audit,(SELECT count(*)::int FROM outbox_events WHERE aggregate_id=$1 AND event_type='hold.expired.v1') outbox",[holdId])).rows[0];}
   async function close(){if(pool){await pool.end();await admin!.query(`DROP DATABASE "${databaseName}"`);await admin!.end();}else await memory!.close();}
   return {client,pool,connectionUrl:url?.toString(),ids,start,past,expire,cancel,sign,state,events,close};
@@ -360,9 +360,10 @@ test("reservation invariants across all current migrations",async t=>{
       assert.equal((await f.expire(c.holdId)).rows[0].changed,false);
       assert.deepEqual(await f.state(c.unitId),{commercial_status:"available",current_stage:"interest"});
       assert.deepEqual(await f.events(c.holdId),{audit:1,outbox:1});
-      const projection=getSalesProcessState({hasActiveSalesCase:true,commercialStatus:"available",salesStage:"interest",contracts:[]});
+      assert.equal((await f.client.query("SELECT id FROM sales_cases WHERE id=$1 AND status='active'",[c.caseId])).rows.length,0);
+      const projection=getSalesProcessState({hasActiveSalesCase:false,commercialStatus:"available",salesStage:null,contracts:[]});
       assert.equal(projection.currentStage,"interest");
-      assert.equal(projection.nextContractAction.kind,"create_contract");
+      assert.equal(projection.nextContractAction.kind,"missing_sales_case");
     });
     await t.test("signed RS protects reservation even when its legacy timestamp has elapsed",async()=>{
       const c=await f.start();await f.sign(c);
@@ -419,13 +420,25 @@ test("real PostgreSQL concurrency: signature, cancellation, expiry and unit seri
     for(const firstSigns of [false,true])await t.test(`expiry vs signature, signature first=${firstSigns}`,async()=>{
       const c=await f.start();await f.past(c.holdId);
       const result=firstSigns?await race(db=>f.sign(c,db),db=>f.expire(c.holdId,db)):await race(db=>f.expire(c.holdId,db),db=>f.sign(c,db));
-      assert.equal(result.error,null);assert.equal((await f.state(c.unitId)).commercial_status,"reserved");
-      assert.equal((await f.client.query<{count:number}>("SELECT count(*)::int count FROM unit_holds WHERE unit_id=$1 AND status='active'",[c.unitId])).rows[0].count,1);
+      if(firstSigns){
+        assert.equal(result.error,null);assert.equal((await f.state(c.unitId)).commercial_status,"reserved");
+        assert.equal((await f.client.query<{count:number}>("SELECT count(*)::int count FROM unit_holds WHERE unit_id=$1 AND status='active'",[c.unitId])).rows[0].count,1);
+      }else{
+        assert.match(result.error?.message??'',/CONTRACT_CASE_CLOSED/);
+        assert.equal((await f.state(c.unitId)).commercial_status,'available');
+        assert.equal((await f.client.query("SELECT id FROM contracts WHERE id=$1 AND current_status='signed'",[c.contract_id])).rows.length,0);
+        assert.equal((await f.client.query("SELECT id FROM sales_cases WHERE id=$1 AND status='active'",[c.caseId])).rows.length,0);
+      }
     });
     for(const firstSigns of [false,true])await t.test(`cancel vs signature, signature first=${firstSigns}`,async()=>{
       const c=await f.start();
       const result=firstSigns?await race(db=>f.sign(c,db),db=>f.cancel(c.holdId,db)):await race(db=>f.cancel(c.holdId,db),db=>f.sign(c,db));
-      assert.equal(result.error,null);assert.equal((await f.state(c.unitId)).commercial_status,"reserved");
+      if(firstSigns){assert.equal(result.error,null);assert.equal((await f.state(c.unitId)).commercial_status,"reserved");}
+      else{
+        assert.match(result.error?.message??'',/CONTRACT_CASE_CLOSED/);
+        assert.equal((await f.state(c.unitId)).commercial_status,'available');
+        assert.equal((await f.client.query("SELECT id FROM contracts WHERE id=$1 AND current_status='signed'",[c.contract_id])).rows.length,0);
+      }
     });
     await t.test("two expiries produce exactly one mutation/audit/outbox",async()=>{
       const c=await f.start();await f.past(c.holdId);

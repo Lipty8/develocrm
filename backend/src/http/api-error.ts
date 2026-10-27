@@ -50,7 +50,18 @@ export function mapApiError(input: unknown, statusCode: number, correlationId: s
   }
   const paymentTermsCode=source.match(/\bPAYMENT_TERMS_[A-Z_]+\b/)?.[0];
   const appendixCode=source.match(/\bCONTRACT_APPENDIX_[A-Z_]+\b/)?.[0];
-  if (/HOLD_IDEMPOTENCY_(?:CONFLICT|INVALID_KEY)/.test(source)) {
+  const holdReleaseCode=source.match(/\bHOLD_RELEASE_[A-Z_]+\b/)?.[0];
+  if (holdReleaseCode) {
+    code=holdReleaseCode;
+    const messages:Record<string,string>={
+      HOLD_RELEASE_OWNERSHIP_UNVERIFIED:'Jednotku nelze uvolnit bez ověření vlastnictví po kupní smlouvě. Kontaktujte administrátora.',
+      HOLD_RELEASE_CONTRACT_BLOCKED:'Jednotku chrání smlouva s evidovaným podpisem. Nejprve vyřešte její další trvání.',
+      HOLD_RELEASE_UNIT_BLOCKED:'Jednotka má samostatnou blokaci. Nejprve ověřte důvod blokace.',
+      HOLD_RELEASE_HANDOVER_EXISTS:'Jednotka má předání. Nejprve ověřte jeho stav a možnost dalšího prodeje.',
+      HOLD_RELEASE_CONTEXT_CHANGED:'Obchodní stav se změnil. Načtěte jednotku znovu a zkontrolujte aktivní obchod.',
+    };
+    message=messages[code]??'Jednotku zatím nelze uvolnit. Zkontrolujte aktivní smlouvy a blokace.';
+  } else if (/HOLD_IDEMPOTENCY_(?:CONFLICT|INVALID_KEY)/.test(source)) {
     code = source.includes('HOLD_IDEMPOTENCY_CONFLICT') ? 'HOLD_IDEMPOTENCY_CONFLICT' : 'HOLD_IDEMPOTENCY_INVALID_KEY';
     message = code === 'HOLD_IDEMPOTENCY_CONFLICT'
       ? 'Tento požadavek již byl použit s jinými údaji. Načtěte jednotku znovu a zkontrolujte její aktuální stav.'

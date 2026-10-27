@@ -7,6 +7,12 @@ export function getUnitContext(unit:Pick<UnitRecord,'id'|'backendId'>,contexts:R
   return contexts[unitContextKey(unit)];
 }
 
+/** History is never an implicit choice of buyer for a new sale. */
+export function preferredSalesPartyId(context:UnitCommercialContext|undefined){
+  return (context?.salesCaseId ? context.buyers[0]?.partyId : undefined)
+    ?? context?.interests.find(item=>item.status==='active')?.partyId ?? '';
+}
+
 export function contractBelongsToUnit(contract:ContractRecord,unit:Pick<UnitRecord,'id'|'backendId'|'projectBackendId'|'project'>){
   if(unit.backendId)return contract.unitId===unit.backendId;
   return contract.unit===unit.id&&(!contract.project||contract.project===unit.project);
