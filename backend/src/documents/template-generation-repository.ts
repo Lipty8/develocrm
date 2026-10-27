@@ -2,6 +2,7 @@ import type { Database } from "../database.js";
 import {snapshotHash} from '../shared/snapshot-integrity.js';
 import type { DocumentContext } from "./repository.js";
 import type {GenerationAppendixSelection} from '../shared/contract-appendices.js';
+import type {StoredGenerationRequest} from './generation-request.js';
 
 export type PlaceholderSchema={fields:Record<string,{required:boolean}>;appendices?:ReadonlyArray<{number:number;label:string}>};
 export type TemplateSource={templateId:string;templateVersionId:string;projectId:string;templateCode:string;templateName:string;outputTypeCode:string;
@@ -67,7 +68,7 @@ export class DocumentTemplateGenerationRepository{
     });
   }
 
-  async reserve(input:DocumentContext&{projectId:string;template:TemplateSource;idempotencyKey:string;requestHash:string;unitId?:string;partyId?:string;salesCaseId?:string;contractId?:string;documentId?:string;snapshot?:Record<string,string>;contractAppendices?:GenerationAppendixSelection}):Promise<GenerationOperation>{
+  async reserve(input:DocumentContext&{projectId:string;template:TemplateSource;idempotencyKey:string;requestHash:string;requestContext?:StoredGenerationRequest;unitId?:string;partyId?:string;salesCaseId?:string;contractId?:string;documentId?:string;snapshot?:Record<string,string>;contractAppendices?:GenerationAppendixSelection}):Promise<GenerationOperation>{
     return this.database.withContext({tenantId:input.tenantId,userId:input.userId},async client=>{
       if(input.contractId&&['reservation_contract','future_purchase_contract'].includes(input.template.outputTypeCode))await client.query("SELECT app.lock_workflow_unit($1,(SELECT unit_id FROM contracts WHERE tenant_id=$1 AND project_id=$2 AND id=$3))",[input.tenantId,input.projectId,input.contractId]);
       const existing=(await client.query<Record<string,unknown>>(`SELECT * FROM document_generation_operations WHERE tenant_id=$1 AND idempotency_key=$2`,[input.tenantId,input.idempotencyKey])).rows[0];
@@ -120,8 +121,8 @@ export class DocumentTemplateGenerationRepository{
         if(JSON.stringify(selected)!==JSON.stringify(input.contractAppendices.items))throw new Error('CONTRACT_APPENDIX_CHANGED');
         appendixSnapshot=canonical;
       }
-      const row=(await client.query<Record<string,unknown>>(`INSERT INTO document_generation_operations(tenant_id,project_id,idempotency_key,request_hash,template_version_id,unit_id,party_id,sales_case_id,contract_id,generation_snapshot,snapshot_hash,snapshot_hash_scheme,created_by_membership_id,contract_preparation_version_id,appendix_snapshot)
-        VALUES($1,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'canonical-json-v1',$2,$13,$14) RETURNING *`,[input.tenantId,input.membershipId,input.projectId,input.idempotencyKey,input.requestHash,input.template.templateVersionId,input.unitId??null,input.partyId??null,input.salesCaseId??null,input.contractId??null,snapshot,digest,input.contractAppendices?.versionId??null,JSON.stringify(appendixSnapshot)])).rows[0];
+      const row=(await client.query<Record<string,unknown>>(`INSERT INTO document_generation_operations(tenant_id,project_id,idempotency_key,request_hash,template_version_id,unit_id,party_id,sales_case_id,contract_id,generation_snapshot,snapshot_hash,snapshot_hash_scheme,created_by_membership_id,contract_preparation_version_id,appendix_snapshot,request_context)
+        VALUES($1,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'canonical-json-v1',$2,$13,$14,$15) RETURNING *`,[input.tenantId,input.membershipId,input.projectId,input.idempotencyKey,input.requestHash,input.template.templateVersionId,input.unitId??null,input.partyId??null,input.salesCaseId??null,input.contractId??null,snapshot,digest,input.contractAppendices?.versionId??null,JSON.stringify(appendixSnapshot),input.requestContext?JSON.stringify(input.requestContext):null])).rows[0];
       return mapOperation(row,input.template);
     });
   }

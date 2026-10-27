@@ -15,5 +15,6 @@ export type RsPreparationSummary={
   template:{name:string;version:string;effectiveFrom:string|null;approvalStatus?:string}|null;
 };
 export type RsReadiness={ready:boolean;issues:RsReadinessIssue[];contractType?:'rs'|'sbk';contractId:string;projectId?:string;templateVersionId?:string|null;
+  pendingGeneration?:{idempotencyKey:string;recoverable:boolean};
   summary?:RsPreparationSummary;
   currentDocument?:{documentId:string;documentVersionId:string;contractVersionId?:string;version:number;webUrl:string|null}|null};

@@ -6,6 +6,7 @@ import type { DocumentContext, DocumentRepository } from "./repository.js";
 import type { SharePointDocumentUploadService } from "./upload-service.js";
 import { DocumentTemplateGenerationRepository, type PlaceholderSchema } from "./template-generation-repository.js";
 import {contractAppendixRequirements,type GenerationAppendixSelection} from '../shared/contract-appendices.js';
+import {generationRequest} from './generation-request.js';
 
 export {RS_PLACEHOLDERS,TECHNICAL_PLACEHOLDERS};
 const SUPPORTED_PLACEHOLDERS=supportedTemplateTokens();
@@ -59,10 +60,9 @@ export class DocumentTemplateGenerationService{
       ||input.contractAppendices.items.some((item,index)=>item.number!==requiredAppendices[index].number)))
       throw new DocumentGenerationError('contract_appendices_required');
     if(!template.externalVersionId)throw new DocumentGenerationError("template_source_version_unavailable");
-    const requestHash=hash(JSON.stringify({projectId:input.projectId,templateVersionId:input.templateVersionId,unitId:input.unitId??null,
-      partyId:input.partyId??null,salesCaseId:input.salesCaseId??null,contractId:input.contractId??null,documentId:input.documentId??null,documentName:input.documentName??null,snapshot:input.snapshot??null,
-      ...(input.contractAppendices?{contractAppendices:input.contractAppendices}:{})}));
-    const operation=await this.repository.reserve({...input,template,requestHash});
+    const requestContext=generationRequest(input);
+    const requestHash=hash(JSON.stringify(requestContext));
+    const operation=await this.repository.reserve({...input,template,requestHash,requestContext});
     if(operation.state==="completed")return{operationId:operation.id,documentId:operation.outputDocumentId,documentVersionId:operation.outputDocumentVersionId,replayed:true};
     const connection=await this.documents.getConnectionForUpload(input);if(!connection||connection.driveId!==template.driveId)throw new DocumentGenerationError("template_drive_mismatch");
     const source=await this.graph.downloadFile({siteId:connection.siteId,driveId:connection.driveId},template.itemId,template.externalVersionId);

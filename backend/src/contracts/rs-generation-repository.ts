@@ -5,6 +5,8 @@ import {signingPlanDay,type ContractSigningPlan} from '../shared/contract-signin
 import {originalContractDate} from './original-contract-snapshot.js';
 import {projectContractTemplateSelectionSql} from './project-template-selection.js';
 import type {ContractAppendixInput,ContractAppendixSelection} from '../shared/contract-appendices.js';
+import {createHash} from 'node:crypto';
+import {restoreGenerationRequest,type StoredGenerationRequest} from '../documents/generation-request.js';
 
 export type RsBuyer={id:string;partyType:"individual"|"organization";displayName:string;salutation:string|null;firstName:string|null;lastName:string|null;
   birthDate:string|null;registrationNumber:string|null;address:string|null;email:string|null;phone:string|null;dataBox:string|null;deliveryAddress?:string|null};
@@ -47,6 +49,33 @@ export class RsGenerationRepository{
     return this.database.withContext(input,async client=>(await client.query<{changed:boolean}>(
       'SELECT app.set_contract_version_signing_plan($1,$2,$3,$4::date,$5::date,$6) changed',
       [input.tenantId,input.contractId,input.versionId,seller,buyer,input.membershipId])).rows[0]);
+  }
+
+  async pendingGeneration(input:DocumentContext&{contractId:string;idempotencyKey?:string}){
+    return this.database.withContext(input,async client=>{
+      const row=(await client.query<{idempotency_key:string;request_context:string|null;request_hash:string;state:'reserved'|'completed';contract_type:'rs'|'sbk';project_id:string;unit_id:string;sales_case_id:string;template_version_id:string}>(`
+        SELECT g.idempotency_key,g.request_context,g.request_hash,g.state,c.contract_type,g.project_id,g.unit_id,g.sales_case_id,g.template_version_id
+        FROM document_generation_operations g JOIN contracts c ON c.tenant_id=g.tenant_id AND c.id=g.contract_id
+        JOIN projects p ON p.tenant_id=c.tenant_id AND p.id=c.project_id
+        JOIN sales_cases s ON s.tenant_id=c.tenant_id AND s.id=c.sales_case_id AND s.project_id=c.project_id
+        WHERE g.tenant_id=$1 AND g.contract_id=$3 AND ($4::text IS NULL OR g.idempotency_key=$4)
+          AND g.project_id=c.project_id AND g.unit_id=c.unit_id AND g.sales_case_id=c.sales_case_id
+          AND c.contract_type IN ('rs','sbk') AND (g.state='reserved' OR (g.state='completed' AND NOT EXISTS(
+            SELECT 1 FROM contract_versions cv WHERE cv.tenant_id=g.tenant_id AND cv.generation_operation_id=g.id)))
+          AND c.current_status NOT IN ('signed','cancelled','terminated') AND s.status='active' AND s.closed_at IS NULL AND p.archived_at IS NULL
+          AND g.created_by_membership_id=$2
+          AND app.has_project_permission(c.tenant_id,$2,c.project_id,'contract.manage')
+          AND app.has_project_permission(c.tenant_id,$2,c.project_id,'documents.upload')
+        ORDER BY g.created_at DESC LIMIT 1`,[input.tenantId,input.membershipId,input.contractId,input.idempotencyKey??null])).rows[0];
+      if(!row)return null;
+      if(!row.request_context)return{idempotencyKey:row.idempotency_key,contractType:row.contract_type,completed:row.state==='completed',request:null};
+      if(createHash('sha256').update(row.request_context).digest('hex')!==row.request_hash)throw new Error('generation recovery integrity mismatch');
+      const stored=JSON.parse(row.request_context) as StoredGenerationRequest;
+      if(stored.contractId!==input.contractId||stored.projectId!==row.project_id||stored.unitId!==row.unit_id
+        ||stored.salesCaseId!==row.sales_case_id||stored.templateVersionId!==row.template_version_id||!stored.snapshot)
+        throw new Error('generation recovery context mismatch');
+      return{idempotencyKey:row.idempotency_key,contractType:row.contract_type,completed:row.state==='completed',request:restoreGenerationRequest(stored)};
+    });
   }
 
   async completedGeneration(input:DocumentContext&{contractId:string;idempotencyKey:string}){

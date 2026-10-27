@@ -21,6 +21,24 @@ test('přílohy otevírají přímo dokumentovou záložku správného projektu 
   const route=parseCrmRoute(href!);assert.equal(route.projectId,projectId);assert.equal(route.projectTab,'documents');
 });
 function ready():RsReadiness{return{ready:true,contractId,issues:[],summary:{project:{id:'p',label:'Testovací projekt'},unit:{id:'u',label:'TEST-101'},buyers:[{id:'b',label:'Jan Testovací'}],seller:'Testovací společnost',unitPrice:7_000_000,totalPrice:7_500_000,reservationFee:150_000,reservationFeeDueDays:5,reservationPeriodDays:30,accessories:['P1','S1'],template:{name:'Projektová RS',version:'v2',effectiveFrom:'2026-10-01'}}};}
+test('nově otevřený panel obnoví serverový požadavek i při změněných/neúplných CRM datech',async()=>{
+  let completed=false;const keys:string[]=[];
+  mock.method(commercialRepository,'getRsReadiness',async()=>completed?ready():({...ready(),ready:false,
+    pendingGeneration:{idempotencyKey:'persisted-operation-key',recoverable:true},issues:[{code:'buyer_address',field:'buyer.address',message:'Aktuální adresa není úplná.'}]}));
+  mock.method(commercialRepository,'generateContract',async(_id:string,key:string)=>{keys.push(key);completed=true;return{operationId:'o',documentId:'d',documentVersionId:'dv',contractVersionId:'cv',contractVersion:1,replayed:true};});
+  render(<RsGenerationPanel contractId={contractId} canGenerate onChanged={()=>{}}/>);
+  fireEvent.click(await screen.findByRole('button',{name:'Ověřit předchozí generování'}));
+  await waitFor(()=>assert.deepEqual(keys,['persisted-operation-key']));
+  await screen.findByRole('button',{name:'Vygenerovat RS'});
+});
+test('starší požadavek bez obnovitelných vstupů nenabízí nové generování',async()=>{
+  mock.method(commercialRepository,'getRsReadiness',async()=>({...ready(),ready:false,pendingGeneration:{idempotencyKey:'legacy-operation',recoverable:false},
+    issues:[{code:'generation_recovery_unavailable',field:'contract',message:'Předchozí generování vyžaduje kontrolu správce.'}]}));
+  render(<RsGenerationPanel contractId={contractId} canGenerate onChanged={()=>{}}/>);
+  await screen.findByText('Předchozí generování vyžaduje kontrolu správce.');
+  assert.equal(Boolean(screen.queryByRole('button',{name:'Vygenerovat RS'})),false);
+  assert.equal(Boolean(screen.queryByRole('button',{name:'Ověřit předchozí generování'})),false);
+});
 test('přehled a konkrétní odkazy, chybějící údaj blokuje generování',async()=>{
   mock.method(commercialRepository,'getRsReadiness',async()=>({...ready(),ready:false,issues:[{code:'buyer_address',field:'buyer.address',message:'Kupující nemá adresu.',action:{href:'/clients/b',label:'Doplnit kupujícího'}}]}));
   render(<RsGenerationPanel contractId={contractId} canGenerate onChanged={()=>{}}/>);

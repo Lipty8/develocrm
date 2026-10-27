@@ -383,10 +383,34 @@ for(const usePostgres of [false,true])test(`price creation and signed document i
       const readiness=await f.rs.readiness({...f.context,contractId:c.contract_id});assert.equal(readiness.ready,true,JSON.stringify(readiness.issues));
       const repository=new RsGenerationRepository(f.database);
       await repository.setSigningPlan({...f.context,contractId:c.contract_id,versionId:c.version_id,sellerPlannedOn:'2026-10-20',buyerPlannedOn:'2026-10-21'});
-      const key=randomUUID();const first=await f.rs.generate({...f.context,contractId:c.contract_id,idempotencyKey:key});const retry=await f.rs.generate({...f.context,contractId:c.contract_id,idempotencyKey:key});assert.equal(first.documentVersionId,retry.documentVersionId);assert.equal(retry.replayed,true);
+      const key=randomUUID();
+      const download=f.graph.downloadFile;f.graph.downloadFile=async()=>{throw new Error('Technical Graph interruption after request reservation');};
+      try{await assert.rejects(f.rs.generate({...f.context,contractId:c.contract_id,idempotencyKey:key}),/Technical Graph interruption/);}
+      finally{f.graph.downloadFile=download;}
+      const reserved=await repository.pendingGeneration({...f.context,contractId:c.contract_id});assert(reserved?.request);
+      assert.equal(reserved.idempotencyKey,key);
+      const originalSnapshot=reserved.request.snapshot;
+      await assert.rejects(f.db.query("UPDATE document_generation_operations SET request_context='{}' WHERE tenant_id=$1 AND idempotency_key=$2",[f.context.tenantId,key]),/immutable/);
+      assert.equal(await repository.pendingGeneration({...f.context,tenantId:randomUUID(),contractId:c.contract_id}),null);
+      assert.equal(await repository.pendingGeneration({...f.context,membershipId:randomUUID(),contractId:c.contract_id}),null);
+      assert.equal(await repository.pendingGeneration({...f.context,contractId:randomUUID()}),null);
+      await f.db.query("UPDATE party_individual_details SET first_name='Changed while browser closed' WHERE tenant_id=$1 AND party_id=$2",[f.context.tenantId,c.partyId]);
+      const reopened=new RsGenerationService(repository,f.templates);
+      const afterReload=await reopened.readiness({...f.context,contractId:c.contract_id});assert.equal(afterReload.pendingGeneration?.idempotencyKey,key);
+      const bind=repository.bind.bind(repository);repository.bind=async()=>{throw new Error('Technical bind interruption after persisted upload');};
+      try{await assert.rejects(reopened.generate({...f.context,contractId:c.contract_id,idempotencyKey:key}),/Technical bind interruption/);}
+      finally{repository.bind=bind;}
+      const unbound=await reopened.readiness({...f.context,contractId:c.contract_id});assert.equal(unbound.pendingGeneration?.recoverable,true);
+      assert.equal(unbound.pendingGeneration?.idempotencyKey,key);
+      const physicalCount=f.files.size;
+      const first=await reopened.generate({...f.context,contractId:c.contract_id,idempotencyKey:key});
+      assert.equal(f.files.size,physicalCount);
+      const retry=await reopened.generate({...f.context,contractId:c.contract_id,idempotencyKey:key});assert.equal(first.documentVersionId,retry.documentVersionId);assert.equal(retry.replayed,true);
+      assert.equal(await repository.pendingGeneration({...f.context,contractId:c.contract_id}),null);
       const completed=await repository.completedGeneration({...f.context,contractId:c.contract_id,idempotencyKey:key});assert(completed);
       await assert.rejects(repository.bind({...f.context,contractId:c.contract_id,...completed,snapshot:{...completed.snapshot,'buyer.name':'Tampered'}}),/CONTRACT_GENERATION_BINDING_MISMATCH/);
       const firstSnapshot=(await f.db.query<{generation_payload:Record<string,string>}>("SELECT generation_payload FROM contract_versions WHERE id=$1",[first.contractVersionId])).rows[0].generation_payload;
+      assert.deepEqual(firstSnapshot,originalSnapshot);assert.notEqual(firstSnapshot['buyer.name'],'Changed while browser closed');
       await f.db.query("UPDATE party_individual_details SET first_name='Corrected' WHERE tenant_id=$1 AND party_id=$2",[f.context.tenantId,c.partyId]);
       const second=await f.rs.generate({...f.context,contractId:c.contract_id,idempotencyKey:randomUUID()});assert.notEqual(second.documentVersionId,first.documentVersionId);assert.equal(second.contractVersion,2);
       const plans=(await f.db.query<{seller:string;buyer:string;generation_payload:Record<string,string>}>("SELECT seller_planned_signing_on::text seller,buyer_planned_signing_on::text buyer,generation_payload FROM contract_versions WHERE contract_id=$1 ORDER BY version_number",[c.contract_id])).rows;

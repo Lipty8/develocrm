@@ -37,7 +37,10 @@ export function RsGenerationPanel({contractId,contractType='rs',canGenerate,onCh
   const request=useRef<AbortController|null>(null);const generationKey=useRef<string|null>(null);
   const reload=useCallback(async()=>{
     request.current?.abort();const controller=new AbortController();request.current=controller;setChecking(true);setError('');
-    try{const value=await commercialRepository.getRsReadiness(contractId,controller.signal);if(!controller.signal.aborted)setReadiness(value);}
+    try{const value=await commercialRepository.getRsReadiness(contractId,controller.signal);if(!controller.signal.aborted){
+      if(value.pendingGeneration?.recoverable){generationKey.current=value.pendingGeneration.idempotencyKey;setPendingGeneration(true);}
+      setReadiness(value);
+    }}
     catch(value){if(!controller.signal.aborted){setReadiness(null);setError(value instanceof Error?value.message:'Připravenost smlouvy nelze ověřit.');}}
     finally{if(!controller.signal.aborted)setChecking(false);}
   },[contractId]);

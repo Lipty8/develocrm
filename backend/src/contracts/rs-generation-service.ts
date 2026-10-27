@@ -35,10 +35,13 @@ export class RsGenerationService{
   async readiness(input:DocumentContext&{contractId:string}):Promise<RsReadiness>{
     const source=await this.repository.load({...input,permission:"contract.read"});
     if(!source)return{ready:false,contractId:input.contractId,issues:[issue("contract","contract","Smlouva nebyla nalezena nebo k ní nemáte přístup.")]};
-    const issues=validate(source).map(item=>({...item,action:issueAction(item,source)}));
+    const issues:RsReadinessIssue[]=validate(source).map(item=>({...item,action:issueAction(item,source)}));
+    const pending=await this.repository.pendingGeneration?.(input);
+    if(pending&&!pending.request&&!pending.completed)issues.push(issue('generation_recovery_unavailable','contract','Předchozí generování vyžaduje kontrolu správce. Nový dokument zatím nelze vytvořit.'));
     const original=isOriginalContractVariant(source.templateVariant);
     const paymentPlan=validPaymentTerms(source);
     return{ready:issues.length===0,issues,contractType:source.contractType??'rs',contractId:source.contractId,projectId:source.projectId,templateVersionId:source.templateVersionId,
+      ...(pending?{pendingGeneration:{idempotencyKey:pending.idempotencyKey,recoverable:!!pending.request||pending.completed}}:{}),
       summary:{project:{id:source.projectId,label:source.projectName},unit:{id:source.unitId,label:source.unitCode},buyers:source.buyers.map(b=>({id:b.id,label:b.displayName})),
         seller:source.settings?.name??null,unitPrice:source.unitPrice,totalPrice:source.totalPrice,reservationFee:source.reservationFee,precedingRsComparison:precedingRsComparison(source),
         appendices:original?{contractVersionId:source.signingPlan?.versionId??null,editable:source.appendixEditable===true,
@@ -63,6 +66,21 @@ export class RsGenerationService{
       if(input.expectedContractType&&(completed.contractType??'rs')!==input.expectedContractType)throw new RsGenerationError('contract_type_mismatch');
       const version=await this.repository.bind({...input,...completed});
       return {operationId:completed.operationId,documentId:completed.documentId,documentVersionId:completed.documentVersionId,contractVersionId:version.versionId,contractVersion:version.versionNumber,replayed:true};
+    }
+    const pending=await this.repository.pendingGeneration?.(input);
+    if(pending){
+      if(input.expectedContractType&&pending.contractType!==input.expectedContractType)throw new RsGenerationError('contract_type_mismatch');
+      const original=pending.request;
+      if(!original?.snapshot)throw new RsGenerationError('generation_recovery_unavailable');
+      const generated=await this.generator.generate({tenantId:input.tenantId,userId:input.userId,membershipId:input.membershipId,
+        idempotencyKey:pending.idempotencyKey,contractId:input.contractId,projectId:original.projectId,templateVersionId:original.templateVersionId,
+        unitId:original.unitId,partyId:original.partyId,salesCaseId:original.salesCaseId,documentId:original.documentId,
+        documentName:original.documentName,snapshot:original.snapshot,contractAppendices:original.contractAppendices});
+      if(!generated.documentId||!generated.documentVersionId)throw new RsGenerationError('generation_incomplete');
+      const version=await this.repository.bind({tenantId:input.tenantId,userId:input.userId,membershipId:input.membershipId,contractId:input.contractId,
+        operationId:generated.operationId,documentId:generated.documentId,documentVersionId:generated.documentVersionId,
+        templateVersionId:original.templateVersionId,snapshot:original.snapshot});
+      return{...generated,contractVersionId:version.versionId,contractVersion:version.versionNumber};
     }
     const source=await this.repository.load({...input,permission:"contract.manage"});if(!source)throw new RsGenerationError("contract_not_found");
     if(input.expectedContractType&&(source.contractType??'rs')!==input.expectedContractType)throw new RsGenerationError('contract_type_mismatch');

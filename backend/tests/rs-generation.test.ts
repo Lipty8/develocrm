@@ -112,6 +112,24 @@ test("generování předá pouze serverový snapshot a retry je idempotentně sv
   const service=new RsGenerationService(repository as never,generator as never);const result=await service.generate({...context,contractId:current.contractId,idempotencyKey:"rs-test-12345678"});assert.equal(result.contractVersion,1);assert.equal(binds,1);assert.deepEqual(Object.keys(captured?.snapshot as object).sort(),[...RS_PLACEHOLDERS].sort());assert.equal((captured?.snapshot as Record<string,string>)["buyer.name"],"Jan Novák");
 });
 
+for(const contractType of ['rs','sbk'] as const)test(`${contractType}: recovery forwards only frozen business inputs and authenticated identity`,async()=>{
+  const current=source({contractType});const snapshot={'buyer.name':'Original buyer','unit.price':'Original price'};
+  const original={projectId:current.projectId,templateVersionId:'original-template',unitId:current.unitId,partyId:'original-party',
+    salesCaseId:current.salesCaseId,contractId:current.contractId,documentId:'original-document',documentName:'Original name',snapshot};
+  let captured:unknown;
+  const repository={load:async()=>assert.fail('recovery must not recompute current CRM values'),
+    pendingGeneration:async()=>({contractType,idempotencyKey:'frozen-key',request:original}),
+    bind:async(input:{snapshot:unknown})=>{assert.deepEqual(input.snapshot,snapshot);return{versionId:'exact-contract-version',versionNumber:1};}};
+  const generator={generate:async(input:unknown)=>{captured=input;return{operationId:'op',documentId:'doc',documentVersionId:'dv',replayed:true};}};
+  const result=await new RsGenerationService(repository as never,generator as never).generate({...context,contractId:current.contractId,idempotencyKey:'frozen-key'});
+  assert.equal(result.replayed,true);assert.deepEqual(captured,{...original,...context,idempotencyKey:'frozen-key',contractAppendices:undefined});
+});
+test('legacy pending generation without a stored request remains blocked',async()=>{
+  const repository={pendingGeneration:async()=>({contractType:'rs',idempotencyKey:'legacy-key',request:null})};
+  await assert.rejects(new RsGenerationService(repository as never,{generate:async()=>assert.fail('cannot guess legacy inputs')} as never)
+    .generate({...context,contractId:source().contractId,idempotencyKey:'legacy-key'}),error=>error instanceof RsGenerationError&&error.code==='generation_recovery_unavailable');
+});
+
 test("parametrizovaná právní šablona má přesné schema a render nezanechá placeholdery",async()=>{
   const bytes=await readFile(new URL("../templates/rs/rezidence-dejvice-rs-v1.docx",import.meta.url));const inspection=inspectDocxTemplate(bytes);assert.deepEqual(inspection.tokens,[...RS_PLACEHOLDERS].sort());
   const snapshot=Object.fromEntries(RS_PLACEHOLDERS.map(token=>[token,`TEST ${token}`]));const rendered=renderDocxTemplate(bytes,snapshot,{allowedTokens:[...RS_PLACEHOLDERS],requiredTokens:[...RS_PLACEHOLDERS]});assert.equal(inspectDocxTemplate(rendered.bytes).tokens.length,0);assert.ok(rendered.bytes.byteLength>10_000);
