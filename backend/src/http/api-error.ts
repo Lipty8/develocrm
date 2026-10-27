@@ -50,7 +50,12 @@ export function mapApiError(input: unknown, statusCode: number, correlationId: s
   }
   const paymentTermsCode=source.match(/\bPAYMENT_TERMS_[A-Z_]+\b/)?.[0];
   const appendixCode=source.match(/\bCONTRACT_APPENDIX_[A-Z_]+\b/)?.[0];
-  if(appendixCode){
+  if (/HOLD_IDEMPOTENCY_(?:CONFLICT|INVALID_KEY)/.test(source)) {
+    code = source.includes('HOLD_IDEMPOTENCY_CONFLICT') ? 'HOLD_IDEMPOTENCY_CONFLICT' : 'HOLD_IDEMPOTENCY_INVALID_KEY';
+    message = code === 'HOLD_IDEMPOTENCY_CONFLICT'
+      ? 'Tento požadavek již byl použit s jinými údaji. Načtěte jednotku znovu a zkontrolujte její aktuální stav.'
+      : 'Požadavek není úplný. Otevřete formulář znovu a zkuste to prosím znovu.';
+  } else if(appendixCode){
     code=appendixCode;
     const messages:Record<string,string>={
       CONTRACT_APPENDIX_CHANGED:'Příloha byla mezitím změněna. Načtěte aktuální smlouvu a zkontrolujte výběr.',

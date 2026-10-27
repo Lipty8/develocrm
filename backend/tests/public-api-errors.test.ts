@@ -5,6 +5,8 @@ import {buildApp} from '../src/app.js';
 import {IamRepository} from '../src/iam/repository.js';
 import {RsGenerationError,RsGenerationService} from '../src/contracts/rs-generation-service.js';
 import {ContractAppendixValidationError} from '../src/shared/contract-appendices.js';
+import {HoldService} from '../src/sales/hold-service.js';
+import {InventoryRepository} from '../src/inventory/repository.js';
 
 test('neplatná šablona neukazuje interní code ani detail v české hlášce',()=>{
   const result=mapApiError({error:'Šablona není platná. Zkontrolujte soubor a datová pole.',code:'invalid_template_fields',details:['unknown_placeholders']},422,'req-test');
@@ -24,6 +26,29 @@ test('doménový kód stále vyvolá bezpečnou srozumitelnou chybu',()=>{
   const result=mapApiError({code:'CONTRACT_CASE_CLOSED'},409,'req-test');
   assert.equal(result.code,'CONTRACT_CASE_CLOSED');
   assert.equal(result.message,'Obchod již byl ukončen. Historickou smlouvu nelze posunout ani podepsat.');
+});
+test('hold replay conflicts retain safe Czech messages and correlation ID',()=>{
+  for(const code of ['HOLD_IDEMPOTENCY_CONFLICT','HOLD_IDEMPOTENCY_INVALID_KEY']){
+    const result=mapApiError(new Error(code),409,'hold-replay-test');
+    assert.equal(result.code,code);assert.equal(result.correlationId,'hold-replay-test');
+    assert.doesNotMatch(result.message,/HOLD_|permission|oprávnění|SELECT/);
+    assert.deepEqual(mapApiError(result,409,'hold-replay-test'),result);
+  }
+});
+test('actual hold endpoint returns safe 409 for changed replay without exposing internal errors',async t=>{
+  const identity={issuer:'https://identity.test',subject:'subject',entraTenantId:'entra',email:'test@example.test',displayName:'Technical Test'};
+  const user={id:'user',email:identity.email,displayName:identity.displayName};
+  t.mock.method(IamRepository.prototype,'resolveUser',async()=>user);
+  t.mock.method(IamRepository.prototype,'getSession',async()=>({user,workspace:{tenantId:'tenant',membershipId:'member',roles:[],permissions:[]}}));
+  t.mock.method(InventoryRepository.prototype,'hasUnitPermission',async()=>true);
+  let code='HOLD_IDEMPOTENCY_CONFLICT';t.mock.method(HoldService.prototype,'createWithParty',async()=>{throw new Error(code);});
+  const app=buildApp({database:{} as never,verifier:{verify:async()=>identity} as never});t.after(()=>app.close());
+  for(code of ['HOLD_IDEMPOTENCY_CONFLICT','HOLD_IDEMPOTENCY_INVALID_KEY']){
+    const result=await app.inject({method:'POST',url:'/v1/units/test-unit/holds',headers:{authorization:'Bearer test','x-tenant-id':'tenant'},payload:{type:'pre_reservation',expiresAt:'2026-12-01T12:00:00Z',idempotencyKey:'test-key',reason:'Technical',newParty:{kind:'individual',firstName:'Technical',lastName:'Replay'}}});
+    assert.equal(result.statusCode,409);assert.equal(result.json().code,code);
+    assert.equal(result.json().correlationId,result.headers['x-correlation-id']);
+    assert.doesNotMatch(result.json().message,/HOLD_|SQL|permission|oprávnění/);
+  }
 });
 test('missing contractual payment data is not misreported as a permission failure',()=>{
   for(const code of ['PAYMENT_TERMS_FEE_REQUIRED','PAYMENT_TERMS_CURRENT_VERSION_REQUIRED','PAYMENT_TERMS_DELIVERY_EVIDENCE_REQUIRED','PAYMENT_TERMS_UNIT_CODE_REQUIRED']){
