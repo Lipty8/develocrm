@@ -65,9 +65,34 @@ mutations, bypass authorization or introduce a new cache/event system.
 The complete follow-up frontend gates passed again: 192 interaction tests,
 143 static regressions, typecheck, lint and production build.
 
+Independent read-only regression of the core approved-original TECH74 chain
+also passed on the currently healthy backend `gen-recover-3e78f1e`:
+`job-develocrm-hold-expiry-fppyoja` Succeeded. Exact SharePoint file hashes,
+signed RS v2/SBK v1, immutable version links, signature audit/outbox,
+signature-anchored first payment (1,100,000 CZK, due 3 November) and next KS
+action were verified by the existing operator. No upload/signature/financial
+mutation or scheduled-job update was performed by that verification.
+
 Another independently observed P1: the new client-change form initially chose
 historical buyer A even while unit context correctly showed buyer B. The test
 did not submit with A. Its candidate source includes historical unit relations;
 the current backend permits a project-linked party with a nullable sales-case
 link. This needs a separate current-buyer/context safety package, not a silent
 historical data repair. Do not call the entire workflow ready before addressing it.
+
+## Follow-up publication repair
+
+Code commit `59ef3831a8008fb129f424dfaf3962e02be7b141` passed all local gates
+and official local packaging. Saved Sites version 179, deployment
+`appgdep_6ae0fdacfe90819184a8d60f6d21b8fd`, nevertheless failed in a remote
+fallback build: Lucide icon modules were unresolved. Site version metadata
+confirmed `archive_storage: null`. The publication invocation incorrectly used
+`archive_path`; the native tool's actual schema expects `archive`, so the local
+artifact was not supplied. The working source/dependency graph itself was not
+changed in this follow-up (only repository link invalidation, its test and docs).
+
+Retain the failed source-only saved version as evidence, and do not claim it
+deployed. The corrective source checkpoint records this diagnosis and supplies
+the official matching output archive using the supported native parameter.
+No icon rewrite, dependency downgrade, hosting-access change or bypass is needed.
+Sites 178 remained serving while this repair was prepared.
