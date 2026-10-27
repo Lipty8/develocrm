@@ -47,3 +47,27 @@ rejection, failed readiness recovery, existing permission gating and transport
 181 interaction tests and 143 static regression tests passed. Live preview
 evidence will be added only when completed. No live network outage or pilot business mutation is used
 to simulate a lost response.
+
+## Deployment and read-only live verification
+
+- Runtime source: `e6d586249a2ebfeb46cff14531a13fb6c4094dea` (GitHub pushed).
+- Sites source: `eca020c136964538f118a50a5c017ad13165605b`; matching Git tree
+  `2fbdce6167a2633396f1e22a95ef771c88b1e052` verified before publication.
+- Private Sites version 176, deployment
+  `appgdep_6ae0dfafb9408191adda2019406081c9`: succeeded.
+- No backend change or migration. Existing backend revision
+  `ca-develocrm-api-pilot--pre-close-9843ba9` remained Running/latestReady;
+  `/health` and `/ready` both returned 200. A bounded 102-record console sample
+  contained zero matching RLS/5xx/unhandled/startup-error signals; this is not
+  a claim about all historical logs.
+- Authenticated browser after publication/reload: technical RS 7403 displayed
+  the correct project, buyer, prices, unit-based variable symbol and missing
+  readiness requirements. No generation button was offered for incomplete
+  data. `Znovu zkontrolovat` showed its loading state and returned to the same
+  valid blocked state without a workspace reload.
+- Existing signed TECH74 SBK remained signed, with its exact v1 filename,
+  evidence timestamp and version history/download action. No new version,
+  signature, payment or business mutation was submitted.
+- Lost-response replay/new-version transitions were verified by the component
+  and transport tests above, not by forcing a live outage. Persisted operation
+  recovery after browser closure remains the separately identified follow-up.
