@@ -34,4 +34,8 @@ calculation or dependency is needed.
 - Scope/call-site audit found all three writes owned by the existing preparation
   panel/appendix panel; no unrefreshed alternate frontend caller was found.
 
-Pilot publication and browser evidence will be appended after deployment.
+## Publication
+
+Source `cdaf025` was included unchanged in combined release `21462ae`, private Sites 184 (matching Sites source `cd84197aa50344953645507f2648ade0da511987`). Archive-backed deployment `appgdep_6ae1ac0e9c1c8191a32f791a71652d18` succeeded on 2026-10-28. This frontend fix itself needs no migration; the combined release separately contains the client-change handover policy (0079).
+
+Authenticated browser loaded technical unit 7403 after publication. No planned-date or appendix write was performed in this browser check; preservation of unsaved sibling values is proven by the actual-transport interaction regressions, not claimed as a live write E2E result.
