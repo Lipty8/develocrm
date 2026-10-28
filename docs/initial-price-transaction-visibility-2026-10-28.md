@@ -18,6 +18,8 @@ Only an initial price now starts at `transaction_timestamp()`, matching the crea
 - Includes same-transaction positive-price contract snapshot, initial zero/nonzero price, creation retry and subsequent history.
 - Broad backend suite: 494 passed, 10 environment-dependent skips, zero failures. The separately pending cross-unit appendix rejection test was explicitly excluded, not declared fixed.
 - Backend build, frontend typecheck, lint and production frontend build passed. Existing bundle-size and Babel notices remain.
-- Production rollout and completion of the live external-upload test are separate verification gates; passing local tests does not establish live upload success.
+- Frontend interaction suite: 199 passed, zero skipped.
+- Deployed commit `ba6de44397843fd450aec3f07954b96729906bd6`; ACR `cg5n` succeeded. Backend `ca-develocrm-api-pilot--initial-price-ba6de44`, immutable digest `sha256:a9ecf6c50377e65c1d251b717e1e2272a63855ce0bcc416e99063e0dedcab5de`, Healthy/Running and 100% latest traffic; health/ready both 200 after cutover. No migration; frontend remains Sites 184.
+- The previously failing atomic technical fixture then succeeded (`job-develocrm-hold-expiry-qjmgfyv`). Browser preparation displayed the expected 2,500,000 CZK unit/total snapshot and 1 CZK synthetic fee. Its external PDF upload, reload and two live retries passed; see the external-upload report. No real historical prices or signed snapshots were changed.
 
 The independent cross-unit appendix guard remains pending approval and is not part of this change.
