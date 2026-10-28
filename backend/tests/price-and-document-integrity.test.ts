@@ -68,7 +68,7 @@ async function fixture(postgresUrl?:string){
     downloadFile:async(_c,id,version)=>{const versions=nativeVersions.get(id)??[];const index=version?Number(version.split('.')[0])-1:versions.length-1;return index<versions.length-1?versions[index]:files.get(id)!.bytes;},moveOrRenameFile:async()=>{throw new Error('unused');}};
   const mi=randomUUID();await db.query("INSERT INTO sharepoint_connections(tenant_id,name,entra_tenant_id,site_id,drive_id,credential_reference,connection_status,created_by_membership_id) VALUES($1,'Test',$2,'site','drive',$3,'connected',$4)",[ids.tenantId,randomUUID(),`managed-identity://${mi}`,ids.membershipId]);
   const uploads=new SharePointDocumentUploadService(new DocumentRepository(database),graph,mi);const evidence=new ContractDocumentEvidenceService(database,graph,uploads,mi);
-  async function external(c:{contract_id:string}){return evidence.uploadExternal({...context,contractId:c.contract_id,idempotencyKey:randomUUID(),fileName:'final.pdf',mimeType:'application/pdf',bytes:fileBytes});}
+  async function external(c:{contract_id:string},idempotencyKey=randomUUID()){return evidence.uploadExternal({...context,contractId:c.contract_id,idempotencyKey,fileName:'final.pdf',mimeType:'application/pdf',bytes:fileBytes});}
   const templates=new DocumentTemplateGenerationService(new DocumentTemplateGenerationRepository(database),new DocumentRepository(database),uploads,graph);
   const management=new DocumentTemplateManagementService(new DocumentTemplateManagementRepository(database),new DocumentTemplateGenerationRepository(database),new DocumentRepository(database),uploads,graph);
   const rs=new RsGenerationService(new RsGenerationRepository(database),templates);
@@ -501,7 +501,27 @@ for(const usePostgres of [false,true])test(`price creation and signed document i
       assert.equal((await f.rs.readiness({...f.context,contractId:created.id})).ready,false,'draft legal template remains unavailable for generation');
     });
     await t.test('external upload, exact hash, signature retry, and immutable document',async()=>{
-      const c=await f.start();const uploaded=await f.external(c);const exact=await f.evidence.signableFile({...f.context,contractId:c.contract_id,versionId:uploaded.versionId});assert.deepEqual(exact.bytes,f.fileBytes);assert.equal(exact.evidence.mimeType,'application/pdf');
+      const c=await f.start();
+      const uploadInput={...f.context,contractId:c.contract_id,idempotencyKey:randomUUID(),fileName:'final.pdf',mimeType:'application/pdf',bytes:f.fileBytes};
+      let uploaded=await f.evidence.uploadExternal(uploadInput);
+      const fileCount=f.files.size;
+      const replay=await f.evidence.uploadExternal(uploadInput);
+      assert.equal(replay.documentId,uploaded.documentId);assert.equal(replay.documentVersionId,uploaded.documentVersionId);assert.equal(replay.versionId,uploaded.versionId);assert.equal(replay.replayed,true);
+      assert.equal(f.files.size,fileCount,'a lost successful response must not upload another file');
+      await assert.rejects(f.evidence.uploadExternal({...uploadInput,bytes:new TextEncoder().encode('%PDF-changed retry')}),/idempotency key payload mismatch/);
+      const firstUploaded=uploaded;
+      const replacementInput={...uploadInput,idempotencyKey:randomUUID()};
+      uploaded=await f.evidence.uploadExternal(replacementInput);
+      assert.equal(uploaded.documentId,firstUploaded.documentId);assert.notEqual(uploaded.documentVersionId,firstUploaded.documentVersionId);
+      const replacementReplay=await f.evidence.uploadExternal(replacementInput);
+      assert.equal(replacementReplay.documentVersionId,uploaded.documentVersionId);assert.equal(replacementReplay.versionId,uploaded.versionId);assert.equal(replacementReplay.replayed,true);
+      const oldReplay=await f.evidence.uploadExternal(uploadInput);
+      assert.equal(oldReplay.versionId,firstUploaded.versionId,'an old retry returns its receipt without making it current again');
+      assert.equal((await f.db.query<{id:string}>('SELECT id FROM contract_versions WHERE tenant_id=$1 AND contract_id=$2 ORDER BY version_number DESC LIMIT 1',[f.context.tenantId,c.contract_id])).rows[0].id,uploaded.versionId);
+      assert.equal(f.files.size,fileCount);
+      assert.equal((await f.graph.getVersions({siteId:'site',driveId:'drive'},uploaded.itemId)).length,2,'one native version per deliberate upload, none per retry');
+      assert.equal((await f.db.query<{n:number}>("SELECT count(*)::int n FROM audit_log WHERE action='contract.external_document_bound' AND after_data->>'contractId'=$1",[c.contract_id])).rows[0].n,2);
+      const exact=await f.evidence.signableFile({...f.context,contractId:c.contract_id,versionId:uploaded.versionId});assert.deepEqual(exact.bytes,f.fileBytes);assert.equal(exact.evidence.mimeType,'application/pdf');
       const readerUser=randomUUID(),readerMember=randomUUID();
       await f.db.query("INSERT INTO users(id,entra_issuer,entra_subject,email,display_name) VALUES($1,'technical-evidence',$2,'reader@example.test','Technical reader')",[readerUser,randomUUID()]);
       await f.db.query("INSERT INTO tenant_memberships(id,tenant_id,user_id,status,accepted_at) VALUES($1,$2,$3,'active',now())",[readerMember,f.context.tenantId,readerUser]);
@@ -537,7 +557,28 @@ for(const usePostgres of [false,true])test(`price creation and signed document i
       assert.equal((await f.db.query<{commercial_status:string}>("SELECT commercial_status FROM units WHERE id=$1",[c.unitId])).rows[0].commercial_status,'reserved');
       const stored=f.files.get(uploaded.itemId)!;stored.bytes=new TextEncoder().encode('tampered');await assert.rejects(f.evidence.exactFile({...f.context,contractId:c.contract_id,versionId:c.version_id}),e=>(e as {code:string}).code==='DOCUMENT_HASH_MISMATCH');
     });
-    await t.test('different contract and tenant documents rejected',async()=>{const a=await f.start();const b=await f.start();const uploaded=await f.external(a);
+    await t.test('external upload resumes after binding DB failure without another Graph upload',async()=>{
+      await f.inventory.createUnit({...f.context,projectId:f.projectId,idempotencyKey:randomUUID(),row:{rowNumber:1,code:'99079',areaM2:30,price:2500000}});
+      const unit=(await f.db.query<{id:string}>('SELECT id FROM units WHERE tenant_id=$1 AND project_id=$2 AND code=$3',[f.context.tenantId,f.projectId,'99079'])).rows[0];
+      const c=await f.start(unit.id);let failBinding=true;
+      const interrupted={withContext:<T>(context:Parameters<Database['withContext']>[0],work:(client:SqlClient)=>Promise<T>)=>f.database.withContext(context,client=>work({
+        query:async(sql:string,values?:unknown[])=>{if(failBinding&&sql.includes('app.bind_external_contract_document')){failBinding=false;throw new Error('TECH_BIND_DB_FAILURE');}return client.query(sql,values);},
+      } as SqlClient))} as unknown as Database;
+      const service=new ContractDocumentEvidenceService(interrupted,f.graph,f.uploads,'unused-for-upload');
+      const input={...f.context,contractId:c.contract_id,idempotencyKey:randomUUID(),fileName:'technical-bind-retry.pdf',mimeType:'application/pdf',bytes:f.fileBytes};
+      await assert.rejects(service.uploadExternal(input),/TECH_BIND_DB_FAILURE/);
+      const count=f.files.size;
+      const operation=(await f.db.query<{document_id:string;document_version_id:string;state:string;graph_item_id:string}>('SELECT document_id,document_version_id,state,graph_item_id FROM document_upload_operations WHERE tenant_id=$1 AND idempotency_key=$2',[f.context.tenantId,input.idempotencyKey])).rows[0];
+      assert.equal(operation.state,'completed');
+      const recovered=await service.uploadExternal(input);
+      assert.equal(recovered.replayed,true);assert.equal(recovered.documentId,operation.document_id);assert.equal(recovered.documentVersionId,operation.document_version_id);
+      assert.equal(f.files.size,count);assert.equal((await f.graph.getVersions({siteId:'site',driveId:'drive'},operation.graph_item_id)).length,1);
+      assert.equal((await f.db.query<{n:number}>("SELECT count(*)::int n FROM audit_log WHERE action='contract.external_document_bound' AND after_data->>'contractId'=$1",[c.contract_id])).rows[0].n,1);
+    });
+    await t.test('different contract and tenant documents rejected',async()=>{const a=await f.start();const b=await f.start();const key=randomUUID();const uploaded=await f.external(a,key);
+      const count=f.files.size;
+      await assert.rejects(f.evidence.uploadExternal({...f.context,contractId:b.contract_id,idempotencyKey:key,fileName:'final.pdf',mimeType:'application/pdf',bytes:f.fileBytes}),/idempotency key payload mismatch/);
+      assert.equal(f.files.size,count);
       await assert.rejects(f.database.withContext(f.context,client=>client.query("SELECT app.bind_external_contract_document($1,$2,$3,$4,$5)",[f.context.tenantId,b.contract_id,uploaded.documentId,uploaded.documentVersionId,f.context.membershipId])),/SIGNED_DOCUMENT_REQUIRED/);
       await assert.rejects(f.evidence.evidence({...f.context,tenantId:randomUUID(),contractId:a.contract_id,versionId:uploaded.versionId}));
       const otherUnit=(await f.db.query<{id:string}>("SELECT id FROM units WHERE tenant_id=$1 AND code='SAME57' AND project_id<>$2",[f.context.tenantId,f.projectId])).rows[0].id;

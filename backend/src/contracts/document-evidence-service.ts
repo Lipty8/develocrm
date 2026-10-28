@@ -90,17 +90,22 @@ export class ContractDocumentEvidenceService {
 
   async uploadExternal(input:DocumentContext&{contractId:string;idempotencyKey:string;fileName:string;mimeType:string;bytes:Uint8Array}){
     validateFinalContractFile(input);
-    const c=await this.database.withContext(input,async client=>(await client.query<{project_id:string;unit_id:string;sales_case_id:string;reference:string;document_type_code:string;document_id:string|null;mime_type:string|null}>(`
-      SELECT c.project_id,c.unit_id,c.sales_case_id,c.reference,app.contract_document_type(c.contract_type) document_type_code,latest.document_id,d.mime_type FROM contracts c
+    const c=await this.database.withContext(input,async client=>(await client.query<{project_id:string;unit_id:string;sales_case_id:string;reference:string;document_type_code:string;document_id:string|null;mime_type:string|null;recovered_upload_id:string|null;original_document_id:string|null}>(`
+      SELECT c.project_id,c.unit_id,c.sales_case_id,c.reference,app.contract_document_type(c.contract_type) document_type_code,latest.document_id,d.mime_type,
+        recovery.id recovered_upload_id,recovery.metadata->>'existingDocumentId' original_document_id FROM contracts c
         LEFT JOIN LATERAL(SELECT document_id FROM contract_versions WHERE tenant_id=c.tenant_id AND contract_id=c.id ORDER BY version_number DESC LIMIT 1) latest ON true
         LEFT JOIN documents d ON d.tenant_id=c.tenant_id AND d.id=latest.document_id
+        LEFT JOIN document_upload_operations recovery ON recovery.tenant_id=c.tenant_id AND recovery.project_id=c.project_id
+          AND recovery.idempotency_key=$4 AND recovery.metadata->>'contractId'=c.id::text
       WHERE c.tenant_id=$1 AND c.id=$3 AND c.current_status NOT IN ('signed','cancelled','terminated')
         AND NOT EXISTS(SELECT 1 FROM contract_parties cp WHERE cp.tenant_id=c.tenant_id AND cp.contract_id=c.id AND cp.signature_status='signed')
         AND app.has_project_permission(c.tenant_id,$2,c.project_id,'contract.manage')`,
-      [input.tenantId,input.membershipId,input.contractId])).rows[0]);
+      [input.tenantId,input.membershipId,input.contractId,input.idempotencyKey])).rows[0]);
     if(!c)throw new ContractDocumentError("contract_not_accessible");
     const uploaded=await this.uploads.upload({...input,projectId:c.project_id,unitId:c.unit_id,salesCaseId:c.sales_case_id,
-      documentId:c.mime_type===input.mimeType?c.document_id??undefined:undefined,
+      // A completed first upload changes latest.document_id. Retry must reuse
+      // the reservation's original create/version target, not infer it anew.
+      documentId:c.recovered_upload_id?c.original_document_id??undefined:c.mime_type===input.mimeType?c.document_id??undefined:undefined,
       typeCode:c.document_type_code,documentName:`${c.reference} · finální dokument`,versionLabel:"externí finální dokument",status:"ready"});
     const result=await this.database.withContext(input,async client=>(await client.query<{versionId:string}>(`
       SELECT app.bind_external_contract_document($1,$2,$3,$4,$5) "versionId"`,[input.tenantId,input.contractId,uploaded.documentId,uploaded.documentVersionId,input.membershipId])).rows[0]);
