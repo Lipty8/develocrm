@@ -502,6 +502,34 @@ for(const usePostgres of [false,true])test(`price creation and signed document i
     });
     await t.test('external upload, exact hash, signature retry, and immutable document',async()=>{
       const c=await f.start();const uploaded=await f.external(c);const exact=await f.evidence.signableFile({...f.context,contractId:c.contract_id,versionId:uploaded.versionId});assert.deepEqual(exact.bytes,f.fileBytes);assert.equal(exact.evidence.mimeType,'application/pdf');
+      const readerUser=randomUUID(),readerMember=randomUUID();
+      await f.db.query("INSERT INTO users(id,entra_issuer,entra_subject,email,display_name) VALUES($1,'technical-evidence',$2,'reader@example.test','Technical reader')",[readerUser,randomUUID()]);
+      await f.db.query("INSERT INTO tenant_memberships(id,tenant_id,user_id,status,accepted_at) VALUES($1,$2,$3,'active',now())",[readerMember,f.context.tenantId,readerUser]);
+      for(const area of ['contracts','documents','units'])await f.db.query("INSERT INTO project_custom_access(tenant_id,project_id,membership_id,area,access_level,assigned_by_user_id) VALUES($1,$2,$3,$4,'read',$5)",[f.context.tenantId,f.projectId,readerMember,area,f.context.userId]);
+      const reader={...f.context,userId:readerUser,membershipId:readerMember};
+      assert.equal((await f.db.query<{allowed:boolean}>("SELECT app.has_project_permission($1,$2,$3,'documents.view_sensitive') allowed",[reader.tenantId,reader.membershipId,f.projectId])).rows[0].allowed,false);
+      const runtimeDatabase={withContext:async<T>(context:{tenantId:string;userId:string},work:(client:SqlClient)=>Promise<T>)=>{
+        await f.db.exec('BEGIN');try{
+          await f.db.query("SELECT set_config('app.tenant_id',$1,true),set_config('app.user_id',$2,true)",[context.tenantId,context.userId]);await f.db.exec('SET LOCAL ROLE develocrm_app');
+          const client={query:async(sql:string,values?:unknown[])=>{const r=await f.db.query(sql,values);return{rows:r.rows,rowCount:r.affectedRows??null};}} as SqlClient;
+          const result=await work(client);await f.db.exec('COMMIT');return result;
+        }catch(error){await f.db.exec('ROLLBACK');throw error;}
+      }} as unknown as Database;
+      const scopedEvidence=new ContractDocumentEvidenceService(runtimeDatabase,f.graph,f.uploads,'unused-for-evidence');
+      // First prove ordinary document access under the actual restricted role.
+      assert.ok(await scopedEvidence.evidence({...reader,contractId:c.contract_id,versionId:uploaded.versionId}));
+      await f.db.query("UPDATE documents SET sensitivity='sensitive' WHERE id=$1",[uploaded.documentId]);
+      try{
+        assert.equal(await new DocumentRepository(runtimeDatabase).getById({...reader,documentId:uploaded.documentId}),null);
+        await assert.rejects(scopedEvidence.evidence({...reader,contractId:c.contract_id,versionId:uploaded.versionId}),error=>error instanceof ContractDocumentError&&error.code==='SIGNED_DOCUMENT_REQUIRED');
+        await assert.rejects(scopedEvidence.exactFile({...reader,contractId:c.contract_id,versionId:uploaded.versionId}),error=>error instanceof ContractDocumentError&&error.code==='SIGNED_DOCUMENT_REQUIRED');
+        await assert.rejects(scopedEvidence.signableFile({...reader,contractId:c.contract_id,versionId:uploaded.versionId}),error=>error instanceof ContractDocumentError&&error.code==='SIGNED_DOCUMENT_REQUIRED');
+        // Explicitly grant the existing sensitive permission in the current
+        // project-area matrix, only in this disposable database.
+        await f.db.query("UPDATE project_custom_access SET permission_overrides=ARRAY['documents.view_sensitive'] WHERE tenant_id=$1 AND project_id=$2 AND membership_id=$3 AND area='documents'",[reader.tenantId,f.projectId,reader.membershipId]);
+        for(const permission of ['contract.read','documents.read','documents.view_sensitive'])assert.equal((await f.db.query<{allowed:boolean}>('SELECT app.has_project_permission($1,$2,$3,$4) allowed',[reader.tenantId,reader.membershipId,f.projectId,permission])).rows[0].allowed,true,permission);
+        assert.ok(await scopedEvidence.evidence({...reader,contractId:c.contract_id,versionId:uploaded.versionId}));
+      }finally{await f.db.query("UPDATE documents SET sensitivity='normal' WHERE id=$1",[uploaded.documentId]);}
       c.version_id=uploaded.versionId;await f.approve(c);await f.sign(c);await f.sign(c);
       assert.equal((await f.db.query<{count:number}>("SELECT count(*)::int count FROM audit_log WHERE entity_id=$1 AND action='contract.signed'",[c.contract_id])).rows[0].count,1);
       await assert.rejects(f.db.query("UPDATE contract_versions SET document_version_id=gen_random_uuid() WHERE id=$1",[c.version_id]),/immutable/);

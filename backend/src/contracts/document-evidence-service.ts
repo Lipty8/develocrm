@@ -25,9 +25,11 @@ export class ContractDocumentEvidenceService {
         op.original_file_name name,op.mime_type "mimeType",v.content_hash hash,op.graph_drive_id "driveId",op.graph_item_id "itemId",v.external_version_id "externalVersionId",op.graph_web_url "webUrl",cv.signed_at "signedAt"
         FROM contracts c JOIN contract_versions cv ON cv.tenant_id=c.tenant_id AND cv.contract_id=c.id
         JOIN document_versions v ON v.tenant_id=cv.tenant_id AND v.id=cv.document_version_id
+        JOIN documents d ON d.tenant_id=v.tenant_id AND d.project_id=c.project_id AND d.id=v.document_id
         JOIN document_upload_operations op ON op.tenant_id=v.tenant_id AND op.document_version_id=v.id AND op.state='completed'
         WHERE c.tenant_id=$1 AND c.id=$3 AND cv.id=$4 AND app.has_project_permission(c.tenant_id,$2,c.project_id,'contract.read')
-          AND app.has_project_permission(c.tenant_id,$2,c.project_id,'documents.read')`,
+          AND app.has_project_permission(c.tenant_id,$2,c.project_id,'documents.read')
+          AND (d.sensitivity='normal' OR app.has_project_permission(c.tenant_id,$2,c.project_id,'documents.view_sensitive'))`,
         [input.tenantId,input.membershipId,input.contractId,input.versionId])).rows[0];
       if(!e)throw new ContractDocumentError("SIGNED_DOCUMENT_REQUIRED");
       await client.query("SELECT app.assert_contract_document($1,$2,$3,$4)",[input.tenantId,input.contractId,e.documentId,e.documentVersionId]);
