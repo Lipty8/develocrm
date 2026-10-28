@@ -89,7 +89,7 @@ export function RsGenerationPanel({contractId,contractType='rs',canGenerate,onCh
         <div><dt>Kupující</dt><dd>{summary.buyers.length?summary.buyers.map(b=><Link key={b.id} href={`/clients/${b.id}?${returnTo}`}>{b.label}</Link>):'Není přiřazen'}</dd></div>
         <div><dt>Cena jednotky</dt><dd>{money(summary.unitPrice)}</dd></div>
         <div><dt>Sjednaná kupní cena celkem</dt><dd>{money(summary.totalPrice)}</dd></div>
-        <div><dt>Příslušenství</dt><dd>{summary.accessories.join(', ')||'Bez příslušenství'}</dd></div>
+        <div><dt>Příslušenství ve smlouvě</dt><dd>{summary.unitPrice==null||summary.totalPrice==null?'Ve smlouvě zatím není potvrzené':summary.accessories.join(', ')||'Bez příslušenství'}</dd></div>
         <div><dt>Rezervační poplatek</dt><dd>{money(summary.reservationFee)}</dd></div>
         {(summary.paymentTimingLabel||contractType==='rs')&&<div><dt>Splatnost podle smlouvy</dt><dd>{summary.paymentTimingLabel??`${summary.reservationFeeDueDays} pracovních dnů od podpisu`}</dd></div>}
         {contractType==='rs'&&<div><dt>Rezervační doba</dt><dd>{summary.reservationPeriodDays} dní</dd></div>}

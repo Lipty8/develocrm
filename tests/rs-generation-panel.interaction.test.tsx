@@ -22,6 +22,24 @@ test('přílohy otevírají přímo dokumentovou záložku správného projektu 
   const route=parseCrmRoute(href!);assert.equal(route.projectId,projectId);assert.equal(route.projectTab,'documents');
 });
 function ready():RsReadiness{return{ready:true,contractId,issues:[],summary:{project:{id:'p',label:'Testovací projekt'},unit:{id:'u',label:'TEST-101'},buyers:[{id:'b',label:'Jan Testovací'}],seller:'Testovací společnost',unitPrice:7_000_000,totalPrice:7_500_000,reservationFee:150_000,reservationFeeDueDays:5,reservationPeriodDays:30,accessories:['P1','S1'],template:{name:'Projektová RS',version:'v2',effectiveFrom:'2026-10-01'}}};}
+for(const contractType of ['rs','sbk'] as const){
+ test(`${contractType}: absent historical price basis does not claim the unit has no accessories`,async()=>{
+  const value=ready();value.ready=false;value.summary!.unitPrice=null;value.summary!.totalPrice=null;value.summary!.accessories=[];
+  value.issues=[{code:'price',field:'unit.price',message:'Smlouva nemá uložený cenový snapshot jednotky a příslušenství.'}];
+  mock.method(commercialRepository,'getRsReadiness',async()=>value);
+  render(<RsGenerationPanel contractId={contractId} contractType={contractType} canGenerate onChanged={()=>assert.fail('No mutation')}/>);
+  await screen.findByText('Ve smlouvě zatím není potvrzené');
+  assert.equal(screen.queryByText('Bez příslušenství'),null);
+  assert.equal(screen.queryByRole('button',{name:`Vygenerovat ${contractType.toUpperCase()}`}),null);
+ });
+ test(`${contractType}: explicit empty accessory snapshot remains distinct from missing data, including zero prices`,async()=>{
+  const value=ready();value.summary!.unitPrice=0;value.summary!.totalPrice=0;value.summary!.accessories=[];
+  mock.method(commercialRepository,'getRsReadiness',async()=>value);
+  render(<RsGenerationPanel contractId={contractId} contractType={contractType} canGenerate={false} onChanged={()=>{}}/>);
+  await screen.findByText('Bez příslušenství');
+  assert.equal(screen.queryByText('Ve smlouvě zatím není potvrzené'),null);
+ });
+}
 test('nově otevřený panel obnoví serverový požadavek i při změněných/neúplných CRM datech',async()=>{
   let completed=false;const keys:string[]=[];
   mock.method(commercialRepository,'getRsReadiness',async()=>completed?ready():({...ready(),ready:false,
