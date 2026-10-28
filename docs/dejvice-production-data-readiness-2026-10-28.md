@@ -56,9 +56,34 @@ evidence. Do not optimize permissions or query scope based only on this sample.
 
 ## Next practical work
 
+### Revalidated in authenticated Sites 185 after migration 0080
+
+The existing `DEJ-312-RS` was opened read-only after the appendix protection
+rollout. It remains sent and not ready. The browser again showed the approved
+RS v1 effective 25 October and the correct seller company, but the same six
+unselected appendices, complete-variant accessory/garden mismatch, absent
+planned dates, unresolved payment reference/plan, five missing buyer fields,
+missing historical contract price snapshot and reservation fee. No input,
+selection, version, price, status or generation action was submitted on this
+real case. The displayed `—` contract snapshot is not a fresh claim that the
+unit's current market price is missing.
+
+The separate future-selection defect is no longer an open implementation gap:
+migration 0080 and Sites 185 now enforce unit applicability. Live TECH81 tests
+confirmed foreign-unit rejection, correct/shared document selection through
+the authenticated browser, persistence after reload, exact physical hashes,
+and association freezing. See `appendix-unit-protection-2026-10-28.md`.
+
+This removes a technical safety blocker but does not supply buyer facts,
+parking legal classifications, deferred files or an approved alternative
+wording variant. Do not repeat old approval questions that Adam already
+answered, infer those missing facts, or silently repair this sent legacy case.
+The next real preparation must explicitly identify the intended deal and use
+verified CRM data and applicable reviewed wording.
+
 Keep the approved originals/immutable evidence intact. Complete the authorized
 first real buyer's CRM fields and intended working contract version, then select
 the correct exact appendices and reviewed wording variant. Deferred legal facts
-remain blockers rather than invented values. Separately verify catalogue-to-unit
-binding before declaring all attachment choices safe; the existing picker is
-project-scoped and unit-specific applicability still needs a targeted regression.
+remain blockers rather than invented values. The unit-applicability regression
+and live follow-up are now complete as documented above; that is not a waiver
+of the outstanding actual-case data and content requirements.
