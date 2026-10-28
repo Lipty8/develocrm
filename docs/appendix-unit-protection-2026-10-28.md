@@ -46,4 +46,16 @@ Read-only technical RS/SBK verification `job-develocrm-hold-expiry-sfb4k12`: Suc
 
 Browser: refreshed ordinary Entra sign-in using the already signed-in business account; no new consent/access. Existing technical RS 7403 loaded as a closed sales case and correctly hid progression/signature/preparation actions. It is no longer an editable appendix-picker fixture, so it cannot prove the new picker or live rejection flow. That specific new live scenario is still pending and must use fresh clearly marked technical records, not reopen the old case or mutate real pilot data.
 
+### Completed live follow-up: TECH81
+
+The pending live scenario above is now verified with a fresh case, not the old closed fixture. The explicit operator `backend/scripts/smoke-appendix-unit-scope.mjs` is restricted to unit 7481 in owned TECH74, validates actor/project audit ownership and the non-bypass application role. It has no signature, payment or legal-generation mode. Two small UTF-8 text artifacts are clearly labelled nonlegal; neither is represented as an actual catalogue or approved legal appendix. They remain as diagnostic evidence.
+
+- Prepare `job-develocrm-hold-expiry-t0uzh35`: Succeeded; created the synthetic unit/buyer/pre-hold/draft RS via existing domain services in one transaction. Only the two new technical text files were uploaded through the existing SharePoint service. Zero signatures and obligations.
+- Backend negative check `job-develocrm-hold-expiry-du2smgw`: Succeeded. The exact previously owned TECH80 document (scoped to unit 7480) was rejected for this case with `CONTRACT_APPENDIX_UNIT_MISMATCH`; before/after selection and audit counts were unchanged.
+- Authenticated Sites 185 browser: the selector offered `TECH81 JEN BYT 7481` and `TECH81 SPOLEČNÝ TECHNICKÝ DOKUMENT` alongside unrestricted technical template sources. Foreign-unit files were absent. The user-facing UI saved exact `TECH81-v1` versions to positions 1 and 2. Both selections were displayed again after full reload. No signing or generation action was attempted.
+- Verify `job-develocrm-hold-expiry-rsnlrv6`: Succeeded on backend `appendix-unit-8d34cbd`. It read back those exact browser selections, repeated the rejected foreign-unit assignment, rejected changing the used document's unit association with `CONTRACT_APPENDIX_UNIT_LINK_IN_USE`, and compared both physical SharePoint hashes against the known technical text. Final counts: two classified appendices, two selection audits, zero signatures, zero payment obligations.
+- Technical contract: `f42091a1-5cbd-4f39-bbcd-8ef8618e3d6b`; version `031119df-3807-4b60-958f-805840b3cbba`; unit `d9f11670-f67d-4c2f-b78f-b51dfac50f34`.
+
+The diagnostic operator passed Node syntax and changed-file lint. This follow-up adds only an operator and evidence; it changes no runtime application source, migration or deployed image. Sensitive storage paths/keys and tokens are not part of this report. The initial prepare output returned technical upload metadata; subsequent operator receipts deliberately return only CRM IDs, not storage URLs/keys.
+
 No automatic historical repair, reclassification, signature or real business-data change was performed by this package. This is deployed protection with strong local/native PostgreSQL evidence, not a claim that every live negative path or first real RS is production-ready.
