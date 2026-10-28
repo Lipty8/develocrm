@@ -131,4 +131,36 @@ interaction, not only a cosmetic preference. Shared modal labels need to be
 shrinkable, and the shared metadata list needs container-based compact columns
 inside a dialog regardless of the desktop viewport. A narrow layout must retain
 the document open link and status, not merely hide overflow. The follow-up changes
-only these shared presentation rules; browser width verification is pending.
+only these shared presentation rules.
+
+## Modal layout deployment and live verification (28 October)
+
+- GitHub source `54a5e54`, matching Sites source
+  `ccc79e27e57ad77926f0b74cfafadf6ae9ccf4f4`; equal source tree
+  `c045c6abab703c3700c801edbf530a7ed4b82d87`.
+- Private Sites 181, deployment `appgdep_6ae19561669c819182931437a8b4133a`,
+  succeeded. Saved-version metadata confirms an archive-backed version with the
+  expected source commit. Sharing/access was not changed.
+- Authenticated reload of technical unit 7406 and reopening TECH WF78 preserved
+  both document links. No parent status form was submitted.
+- Desktop: modal width 520px, body client/scroll width both 518px. The link button
+  now ends at x=775.5, within the modal right edge x=794.5. Both document open
+  links end at x=756.5. Previously scroll width was 659px and the button ended
+  outside the dialog at x=934.58.
+- At a 390px viewport: modal spans x=10..380; body client/scroll width both 368px.
+  All visible selectors/buttons/document links stay inside the modal. The
+  responsive viewport override was reset and the dialog closed without saving.
+- New static layout regression tests plus existing gates passed: 192 frontend
+  interaction tests, 145 static regressions, typecheck, lint and production build.
+  No backend code or migration changed in this presentation-only package.
+- Backend `/health` and `/ready` both returned 200. Bounded console inspection
+  returned 152 log records with zero matching 5xx/RLS/unhandled/startup-error
+  signals; the browser reported no warning/error messages in the inspected log
+  window. This is a bounded check, not a claim about all historical logs.
+- Screenshots were inspected inline on desktop and the narrow viewport. The
+  previously documented filesystem restriction still prevents claiming a saved
+  screenshot artifact.
+- The unpriced TECH WF78 fixture remains clearly marked as technical evidence;
+  no real sales record, signature, price, payment or SharePoint file was changed.
+  The separately identified historical-buyer default/backend validation gap
+  remains open for the next focused safety package.
