@@ -25,4 +25,25 @@ Disposable-fixture corruption tests verify previously invalid associations rejec
 - Frontend interaction suite: 199 passed. Backend build, frontend typecheck and lint passed.
 - New domain errors retain safe Czech explanations and correlation ID; no raw SQL to users.
 
-Matching image builds, migration preflight/application, backend/frontend publication and live checks are pending. No pilot deployment success is claimed by this preparation record.
+## Matching rollout
+
+- GitHub source `8d34cbdd2d0271cdb9c9934bd7df2e0e5a7411fe`, pushed main.
+- API ACR `cg5p` and migration ACR `cg5q`: Succeeded.
+- API digest `sha256:c98cc7d82450e4fd482d3255f6ea4082f7899445af8d0d9224ba3d0746cc77ff`.
+- Migration digest `sha256:733750dd78c7a559d583a8ba1a94c3c09810bb376689b25c5d6260f3e2cd7e1e`.
+- Read-only preflight `caj-develocrm-migrations-pilot-8ykw78e`: Succeeded, 79 matching checksums, only 0080 pending.
+- Migration `caj-develocrm-migrations-pilot-xggo70t`: Succeeded, applied only 0080.
+- Read-only postflight `caj-develocrm-migrations-pilot-3lsjsmz`: Succeeded, 80 matching checksums, no pending migration, all three new triggers enabled and central snapshot recheck present.
+- Backend `ca-develocrm-api-pilot--appendix-unit-8d34cbd`: Healthy/Running, latestReady equals latest, 100% latest traffic, health/ready both 200 after cutover.
+- Private Sites 185, source `d5b93a8de9bca6023ae142869390b3394e4a5c9e`, exact Git tree match `6dcfb0c32dd3b8aebde3d7d0495a97a6b304e08b` against GitHub source. Official build/package succeeded.
+- Native deployment `appgdep_6ae2668f976881918807e91724a865c7`: succeeded, archive-backed. Owner-only audience retained (one owner, no groups or external visitors).
+- Bounded post-deploy console sample: 68 records, zero matched startup/5xx/RLS error signals; not a claim about all logs.
+- Additional targeted price/document and API error regression: 62 passed, zero skips. Production frontend build passed.
+
+## Live verification and limits
+
+Read-only technical RS/SBK verification `job-develocrm-hold-expiry-sfb4k12`: Succeeded on the new matching image. Both exact signed SharePoint document hashes match; original RS v2 and SBK v1 remain pinned; one SBK installment of 1,100,000 CZK due 3 November, next action KS and signature audit remain consistent. No signatures, payments or files were created by this verifier.
+
+Browser: refreshed ordinary Entra sign-in using the already signed-in business account; no new consent/access. Existing technical RS 7403 loaded as a closed sales case and correctly hid progression/signature/preparation actions. It is no longer an editable appendix-picker fixture, so it cannot prove the new picker or live rejection flow. That specific new live scenario is still pending and must use fresh clearly marked technical records, not reopen the old case or mutate real pilot data.
+
+No automatic historical repair, reclassification, signature or real business-data change was performed by this package. This is deployed protection with strong local/native PostgreSQL evidence, not a claim that every live negative path or first real RS is production-ready.
