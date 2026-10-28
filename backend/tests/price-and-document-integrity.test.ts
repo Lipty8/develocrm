@@ -351,6 +351,21 @@ for(const usePostgres of [false,true])test(`price creation and signed document i
         assert.deepEqual(result,{audit:1,outbox:1,denominator:25});
       }finally{await runtime.close();}
     });
+    await t.test('initial price is visible to contract snapshots within the creation transaction',async()=>{
+      await f.database.withContext(f.context,async client=>{
+        const transaction={withContext:async(_context:unknown,work:(c:SqlClient)=>Promise<unknown>)=>work(client)} as unknown as Database;
+        const code='748099';
+        await new InventoryImportService(transaction).createUnit({...f.context,projectId:f.projectId,row:{rowNumber:1,code,areaM2:30,price:2500000},idempotencyKey:randomUUID()});
+        const price=(await client.query<{id:string;amount:string;count:number}>(`SELECT u.id,app.current_unit_price(u.tenant_id,u.id,now())::text amount,
+          (SELECT count(*)::int FROM unit_price_history p WHERE p.tenant_id=u.tenant_id AND p.unit_id=u.id) count
+          FROM units u WHERE u.tenant_id=$1 AND u.project_id=$2 AND u.code=$3`,[f.context.tenantId,f.projectId,code])).rows[0];
+        assert.equal(Number(price.amount),2500000);
+        assert.equal(price.count,1);
+        const contract=await f.start(price.id,true);
+        const snapshot=(await client.query<{amount:string}>("SELECT total_price_snapshot::text amount FROM contracts WHERE tenant_id=$1 AND id=$2",[f.context.tenantId,contract.contract_id])).rows[0];
+        assert.equal(Number(snapshot.amount),2500000);
+      });
+    });
     await t.test('initial zero and nonzero prices, retry, and price changes',async()=>{
       for(const price of [0,1234567]){const code=`PRICE-${price}`;const key=randomUUID();const input={...f.context,projectId:f.projectId,row:{rowNumber:1,code,areaM2:30,price},idempotencyKey:key};
         await f.inventory.createUnit(input);await f.inventory.createUnit(input);

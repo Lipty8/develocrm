@@ -127,7 +127,10 @@ export class InventoryImportService{
         THEN app.current_unit_price($1,$2,clock_timestamp())::float8 END amount`,[input.tenantId,unitId]);
       if(current.rows[0]?.amount==null||Number(current.rows[0].amount)!==Number(row.price)){
         const reason=action==='unit.created'?'Počáteční cena jednotky':'Projektový import ceny';
-        const proposal=(await client.query<{id:string}>("SELECT app.propose_unit_price($1,$2,'sale_price',$3,'CZK',clock_timestamp(),$4,$5) id",[input.tenantId,unitId,row.price,reason,input.membershipId])).rows[0].id;
+        // The initial price exists from creation, including reads at transaction
+        // time in a downstream contract command in this same transaction.
+        // Later price changes retain their actual wall-clock effective time.
+        const proposal=(await client.query<{id:string}>("SELECT app.propose_unit_price($1,$2,'sale_price',$3,'CZK',CASE WHEN $6::boolean THEN transaction_timestamp() ELSE clock_timestamp() END,$4,$5) id",[input.tenantId,unitId,row.price,reason,input.membershipId,action==='unit.created'])).rows[0].id;
         await client.query("SELECT app.decide_unit_price_proposal($1,$2,'approved',$3,$4)",[input.tenantId,proposal,reason,input.membershipId]);
       }
     }
