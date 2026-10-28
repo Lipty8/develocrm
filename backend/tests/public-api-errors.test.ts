@@ -64,7 +64,7 @@ test('missing contractual payment data is not misreported as a permission failur
   }
 });
 test('appendix conflicts retain safe Czech messages through repeated serialization',()=>{
-  for(const code of ['CONTRACT_APPENDIX_NEW_VERSION_REQUIRED','CONTRACT_APPENDIX_DOCUMENT_NOT_READY','CONTRACT_APPENDIX_CHANGED']){
+  for(const code of ['CONTRACT_APPENDIX_NEW_VERSION_REQUIRED','CONTRACT_APPENDIX_DOCUMENT_NOT_READY','CONTRACT_APPENDIX_CHANGED','CONTRACT_APPENDIX_UNIT_MISMATCH','CONTRACT_APPENDIX_UNIT_LINK_IN_USE']){
     const mapped=mapApiError({code},409,'appendix-test');assert.equal(mapped.code,code);
     assert.doesNotMatch(mapped.message,/oprávnění|CONTRACT_APPENDIX|SELECT|undefined/);
     assert.deepEqual(mapApiError(mapped,409,'appendix-test'),mapped);
@@ -83,6 +83,11 @@ test('actual appendix route separates stale-version conflict, permission denial 
   const request=()=>app.inject({method:'POST',url:'/v1/contracts/test-contract/appendices',headers:{authorization:'Bearer test','x-tenant-id':'tenant'},payload:{}});
   const conflict=await request();assert.equal(conflict.statusCode,409);assert.equal(conflict.json().code,failure);
   assert.doesNotMatch(conflict.json().message,/oprávnění/);assert.equal(conflict.json().correlationId,conflict.headers['x-correlation-id']);
+  for(failure of ['CONTRACT_APPENDIX_UNIT_MISMATCH','CONTRACT_APPENDIX_UNIT_LINK_IN_USE']){
+    const blocked=await request();assert.equal(blocked.statusCode,409);assert.equal(blocked.json().code,failure);
+    assert.doesNotMatch(blocked.json().message,/CONTRACT_APPENDIX|permission|SELECT/);
+    assert.equal(blocked.json().correlationId,blocked.headers['x-correlation-id']);
+  }
   failure='contract.manage and documents.manage permissions required';
   const denied=await request();assert.equal(denied.statusCode,403);assert.doesNotMatch(denied.body,/documents.manage|contract.manage/);
   failure='duplicate key violates constraint "secret_appendix"';

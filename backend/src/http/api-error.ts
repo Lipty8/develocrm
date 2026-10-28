@@ -82,6 +82,8 @@ export function mapApiError(input: unknown, statusCode: number, correlationId: s
       CONTRACT_APPENDIX_NEW_VERSION_REQUIRED:'Tato verze již má dokument nebo není aktuální. Pro změnu příloh připravte novou pracovní verzi smlouvy.',
       CONTRACT_APPENDIX_VERSION_IMMUTABLE:'Přílohy této verze již nelze měnit. Připravte novou verzi smlouvy.',
       CONTRACT_APPENDIX_DOCUMENT_NOT_READY:'Vybraný dokument není dostupný jako připravená příloha tohoto projektu.',
+      CONTRACT_APPENDIX_UNIT_MISMATCH:'Příloha je určená pro jiný byt. Vyberte dokument této jednotky nebo společný dokument projektu.',
+      CONTRACT_APPENDIX_UNIT_LINK_IN_USE:'Dokument je použitý jako příloha smlouvy. Nejdříve jej odeberte z upravitelné smlouvy; u uzamčené verze zachovejte původní vazbu.',
       CONTRACT_APPENDIX_DOCUMENT_ALREADY_LINKED:'Tento dokument je již v této verzi smlouvy použit. Zkontrolujte seznam příloh.',
       CONTRACT_APPENDIX_CONTRACT_NOT_EDITABLE:'Ukončenou nebo podepsanou smlouvu nelze touto akcí upravit.',
       CONTRACT_APPENDIX_INVALID_REQUEST:'Vyberte platnou přílohu a její konkrétní verzi.',

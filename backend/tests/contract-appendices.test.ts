@@ -47,10 +47,21 @@ async function fixture(postgresUrl?:string){
     });
   }
   type Doc=Awaited<ReturnType<typeof document>>;
+  // Disposable database only: emulate a legacy bad association, then always
+  // roll back both the injected row and trigger state when the action fails.
+  const withLegacyForeignScope=(documentId:string,work:(c:SqlClient)=>Promise<unknown>)=>context(async c=>{
+    await c.query('RESET ROLE');
+    await c.query('ALTER TABLE unit_documents DISABLE TRIGGER appendix_unit_association_guard');
+    await c.query(`INSERT INTO unit_documents(tenant_id,project_id,unit_id,document_id,linked_by_membership_id)
+      SELECT $1,$2,id,$3,$4 FROM units WHERE tenant_id=$1 AND project_id=$2 AND id<>$5 LIMIT 1`,[ids.tenantId,unit.project_id,documentId,ids.membershipId,unit.id]);
+    await c.query('ALTER TABLE unit_documents ENABLE TRIGGER appendix_unit_association_guard');
+    await c.query('SET LOCAL ROLE develocrm_app');
+    return work(c);
+  });
   const set=(number:number,d:Doc|null,versionId=contract.version_id,member=ids.membershipId,tenant=ids.tenantId,user=ids.userId,expected:string|null=null)=>context(async c=>(await c.query<{id:string|null}>('SELECT app.set_contract_appendix($1,$2,$3,$4,$5,$6,$7,$8) id',[tenant,contract.contract_id,versionId,number,d?.document_id??null,d?.document_version_id??null,member,expected])).rows[0].id,user,tenant);
   const counts=async()=>(await client.query<{links:number;audit:number;outbox:number}>("SELECT (SELECT count(*)::int FROM contract_documents WHERE contract_version_id=$1 AND appendix_number IS NOT NULL) links,(SELECT count(*)::int FROM audit_log WHERE entity_id=$1 AND action='contract.appendix_updated') audit,(SELECT count(*)::int FROM outbox_events WHERE payload->>'contractVersionId'=$1::text AND event_type='contract.appendix_updated.v1') outbox",[contract.version_id])).rows[0];
   const close=async()=>{if(memory)await memory.close();if(pool)await pool.end();if(admin){await admin.query(`DROP DATABASE "${name}"`);await admin.end();}};
-  return{ids,client,pool,context,unit,contract,document,set,counts,close};
+  return{ids,client,pool,context,unit,contract,document,set,counts,close,withLegacyForeignScope};
 }
 
 for(const native of [false,true])test(`exact appendix version binding (${native?'PostgreSQL':'PGlite'})`,{skip:native&&!process.env.WORKFLOW_TEST_DATABASE_URL},async t=>{
@@ -112,8 +123,71 @@ for(const native of [false,true])test(`exact appendix version binding (${native?
         documentVersionId:b.document_version_id,name:'Technical appendix',version:'v1',available:true}]);
       await f.set(2,null,undefined,undefined,undefined,undefined,b.document_version_id);
     });
+    await t.test('a document explicitly bound only to another unit cannot become this contract appendix',async()=>{
+      const other=(await f.client.query<{id:string}>('SELECT id FROM units WHERE tenant_id=$1 AND project_id=$2 AND id<>$3 LIMIT 1',[f.ids.tenantId,f.unit.project_id,f.unit.id])).rows[0];
+      const foreign=await f.document();
+      await f.context(c=>c.query('SELECT app.link_document_to_unit($1,$2,$3,$4)',[f.ids.tenantId,foreign.document_id,other.id,f.ids.membershipId]));
+      try{
+        await assert.rejects(f.set(1,foreign),/CONTRACT_APPENDIX_UNIT_MISMATCH/);
+      }finally{
+        // Keep the pre-fix reproduction isolated from subsequent evidence tests.
+        const link=(await f.client.query<{document_version_id:string}>('SELECT document_version_id FROM contract_documents WHERE contract_version_id=$1 AND appendix_number=1',[f.contract.version_id])).rows[0];
+        if(link?.document_version_id===foreign.document_version_id)await f.set(1,null,undefined,undefined,undefined,undefined,foreign.document_version_id);
+      }
+    });
+    await t.test('unit applicability freezes while selected and becomes editable only after draft removal',async()=>{
+      const doc=await f.document();
+      const other=(await f.client.query<{id:string}>('SELECT id FROM units WHERE tenant_id=$1 AND project_id=$2 AND id<>$3 LIMIT 1',[f.ids.tenantId,f.unit.project_id,f.unit.id])).rows[0];
+      await f.context(c=>c.query('SELECT app.link_document_to_unit($1,$2,$3,$4)',[f.ids.tenantId,doc.document_id,f.unit.id,f.ids.membershipId]));
+      await f.set(6,doc);
+      await assert.rejects(f.context(c=>c.query('SELECT app.link_document_to_unit($1,$2,$3,$4)',[f.ids.tenantId,doc.document_id,other.id,f.ids.membershipId])),/UNIT_LINK_IN_USE/);
+      // Exercise the DB invariant with the disposable fixture owner as well;
+      // runtime callers have no direct UPDATE/DELETE privilege on these links.
+      for(const sql of ['UPDATE unit_documents SET unit_id=$3 WHERE tenant_id=$1 AND document_id=$2','DELETE FROM unit_documents WHERE tenant_id=$1 AND document_id=$2 AND unit_id=$3']){
+        await assert.rejects(f.context(async c=>{await c.query('RESET ROLE');return c.query(sql,[f.ids.tenantId,doc.document_id,sql.startsWith('DELETE')?f.unit.id:other.id]);}),/UNIT_LINK_IN_USE/);
+      }
+      await f.set(6,null,undefined,undefined,undefined,undefined,doc.document_version_id);
+      await f.context(c=>c.query('SELECT app.link_document_to_unit($1,$2,$3,$4)',[f.ids.tenantId,doc.document_id,other.id,f.ids.membershipId]));
+    });
+    if(native)await t.test('selection and unit restriction serialize in both PostgreSQL operation orders',async()=>{
+      const other=(await f.client.query<{id:string}>('SELECT id FROM units WHERE tenant_id=$1 AND project_id=$2 AND id<>$3 LIMIT 1',[f.ids.tenantId,f.unit.project_id,f.unit.id])).rows[0];
+      for(const first of ['selection','restriction']){
+        const doc=await f.document(),before=await f.counts();
+        const a=await f.pool!.connect(),b=await f.pool!.connect();
+        let pending:Promise<{error?:unknown}>|undefined;
+        try{
+          for(const connection of [a,b]){
+            await connection.query('BEGIN');
+            await connection.query("SELECT set_config('app.tenant_id',$1,true),set_config('app.user_id',$2,true)",[f.ids.tenantId,f.ids.userId]);
+            await connection.query("SET LOCAL ROLE develocrm_app; SET LOCAL lock_timeout='3s'; SET LOCAL statement_timeout='5s'");
+          }
+          const select=(connection:typeof a)=>connection.query('SELECT app.set_contract_appendix($1,$2,$3,6,$4,$5,$6,NULL)',[f.ids.tenantId,f.contract.contract_id,f.contract.version_id,doc.document_id,doc.document_version_id,f.ids.membershipId]);
+          const restrict=(connection:typeof a)=>connection.query('SELECT app.link_document_to_unit($1,$2,$3,$4)',[f.ids.tenantId,doc.document_id,other.id,f.ids.membershipId]);
+          const pid=(await b.query<{pid:number}>('SELECT pg_backend_pid() pid')).rows[0].pid;
+          await (first==='selection'?select(a):restrict(a));
+          pending=(first==='selection'?restrict(b):select(b)).then(()=>({}),error=>({error}));
+          let waiting=false;
+          for(let i=0;i<100&&!waiting;i++){
+            waiting=(await f.pool!.query<{waiting:boolean}>("SELECT wait_event_type='Lock' waiting FROM pg_stat_activity WHERE pid=$1",[pid])).rows[0]?.waiting===true;
+            if(!waiting)await new Promise(resolve=>setTimeout(resolve,10));
+          }
+          assert.equal(waiting,true,'the competing operation must actually wait on the document lock');
+          await a.query('COMMIT');
+          const result=await pending;assert.ok(result.error);
+          assert.match(String(result.error),first==='selection'?/UNIT_LINK_IN_USE/:/UNIT_MISMATCH/);
+          const after=await f.counts();
+          assert.equal(after.links,before.links+(first==='selection'?1:0));
+          assert.equal(after.audit,before.audit+(first==='selection'?1:0));
+          assert.equal(after.outbox,before.outbox+(first==='selection'?1:0));
+        }finally{
+          await a.query('ROLLBACK');await b.query('ROLLBACK');if(pending)await pending;a.release();b.release();
+        }
+        if(first==='selection')await f.set(6,null,undefined,undefined,undefined,undefined,doc.document_version_id);
+      }
+    });
     await t.test('final document freezes appendix selection; signature also protects appendix bytes and links',async()=>{
       await f.set(1,a);
+      await assert.rejects(f.withLegacyForeignScope(a.document_id,c=>signatureDocument(c,f.ids.tenantId,f.ids.membershipId,f.contract.contract_id)),/UNIT_MISMATCH/);
       let version:string;
       if(native){
         const race=await Promise.allSettled([
@@ -134,7 +208,10 @@ for(const native of [false,true])test(`exact appendix version binding (${native?
       const outsideProject=await f.context(c=>c.query(physicalEvidenceSql,[f.ids.tenantId,[randomUUID()],'managed-identity://fixture',f.ids.membershipId]));
       assert.equal(outsideProject.rows.length,0);
       await assert.rejects(f.set(1,b),/NEW_VERSION_REQUIRED/);
-      await f.context(async c=>{await c.query("SELECT app.transition_contract_status($1,$2,'sent','Technical test',$3)",[f.ids.tenantId,f.contract.contract_id,f.ids.membershipId]);await c.query("SELECT app.transition_contract_status($1,$2,'approved','Technical test',$3)",[f.ids.tenantId,f.contract.contract_id,f.ids.membershipId]);await c.query('SELECT * FROM app.sign_contract_externally($1,$2,$3,now(),$4,NULL)',[f.ids.tenantId,f.contract.contract_id,version,f.ids.membershipId]);});
+      await f.context(async c=>{await c.query("SELECT app.transition_contract_status($1,$2,'sent','Technical test',$3)",[f.ids.tenantId,f.contract.contract_id,f.ids.membershipId]);await c.query("SELECT app.transition_contract_status($1,$2,'approved','Technical test',$3)",[f.ids.tenantId,f.contract.contract_id,f.ids.membershipId]);});
+      await assert.rejects(f.withLegacyForeignScope(a.document_id,c=>c.query('SELECT * FROM app.sign_contract_externally($1,$2,$3,now(),$4,NULL)',[f.ids.tenantId,f.contract.contract_id,version,f.ids.membershipId])),/UNIT_MISMATCH/);
+      assert.equal((await f.client.query<{n:number}>("SELECT count(*)::int n FROM contract_parties WHERE contract_id=$1 AND signature_status='signed'",[f.contract.contract_id])).rows[0].n,0);
+      await f.context(c=>c.query('SELECT * FROM app.sign_contract_externally($1,$2,$3,now(),$4,NULL)',[f.ids.tenantId,f.contract.contract_id,version,f.ids.membershipId]));
       assert.equal((await f.client.query<{yes:boolean}>('SELECT app.document_has_signature_evidence($1,$2) yes',[f.ids.tenantId,a.document_id])).rows[0].yes,true);
       await assert.rejects(f.client.query('DELETE FROM contract_documents WHERE contract_version_id=$1 AND appendix_number=1',[version]),/COMMAND_REQUIRED|IMMUTABLE/);
       await assert.rejects(f.client.query('UPDATE documents SET archived_at=now() WHERE id=$1',[a.document_id]),/SIGNED_DOCUMENT_IMMUTABLE/);
@@ -193,6 +270,11 @@ for(const native of [false,true])test(`generation pins the exact appendix bundle
     const selection={versionId:f.contract.version_id,items:documents.map((document,index)=>({number:index+1,documentId:document.document_id,documentVersionId:document.document_version_id}))};
     const input={...f.ids,projectId:f.unit.project_id,template,idempotencyKey:randomUUID(),requestHash:'c'.repeat(64),unitId:f.unit.id,partyId:party.party_id,salesCaseId:c.sales_case_id,
       contractId:f.contract.contract_id,snapshot:{'project.name':'Technical only'},contractAppendices:selection};
+    await assert.rejects(f.withLegacyForeignScope(documents[0].document_id,client=>{
+      const sameTransaction={withContext:(_context:unknown,work:(c:SqlClient)=>Promise<unknown>)=>work(client)};
+      return new DocumentTemplateGenerationRepository(sameTransaction as never).reserve(input);
+    }),/UNIT_MISMATCH/);
+    assert.equal((await f.client.query<{n:number}>('SELECT count(*)::int n FROM document_generation_operations WHERE contract_id=$1',[f.contract.contract_id])).rows[0].n,0);
     await assert.rejects(generation.reserve({...input,contractAppendices:{...selection,items:[...selection.items.slice(1)]}}),/CONTRACT_APPENDIX_CHANGED/);
     const reserved=native?await Promise.all(Array.from({length:4},()=>generation.reserve(input))):[await generation.reserve(input)];
     assert.equal(new Set(reserved.map(operation=>operation.id)).size,1);

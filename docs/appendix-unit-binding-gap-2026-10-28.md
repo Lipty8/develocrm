@@ -24,6 +24,11 @@ Local prepared changes passed 199 frontend interaction tests, 28 related generat
 
 ## Pending safety approval
 
+Update: Adam explicitly approved implementation and tested deployment of the
+extended database protection in reply to `call_cd833c6d413b4b789661a1bf23033363`.
+The approval blocker below is historical. Implementation now proceeds as
+migration 0080; see `appendix-unit-protection-2026-10-28.md` for current evidence.
+
 Safety review rejected creation of the proposed 0080 migration before writing the file because it would add persistent guards to multiple lifecycle tables. No 0080 file was created and no such migration was applied. User approval was requested through the app. Do not retry or route the rejected migration through another executor without resolving that approval.
 
 Proposed scope for approval: validate applicability at appendix selection; freeze unit association edits while the document is selected as an appendix (an editable selection can first be removed); recheck existing selections before generation, final-document binding and signature. Project-level shared appendices remain supported. Existing tenant/project/RBAC/snapshot/immutability checks remain in force. No silent historical repair. Unit-first selection and document-only metadata locks must be verified in real PostgreSQL tests in both operation orderings before deployment.
