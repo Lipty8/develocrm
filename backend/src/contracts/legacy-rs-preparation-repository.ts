@@ -8,8 +8,8 @@ type Row={id:string;project_id:string;unit_id:string;sales_case_id:string;refere
   accessory_price_snapshot:unknown[];reservation_fee_amount:string|null;payment_amount:string|null;actor:string};
 const reject=(code:string):never=>{throw new LegacyRsPreparationError(code);};
 
-/** Deliberately not exposed as an HTTP command until native transaction/race
- * tests and the explicit confirmation UI are complete. No background repair. */
+/** Explicit preparation only; never a background repair or an automatic
+ * substitution of current list prices for historically agreed terms. */
 export class LegacyRsPreparationRepository{
   constructor(private readonly database:Database){}
   async preview(input:Context){
@@ -65,6 +65,7 @@ export class LegacyRsPreparationRepository{
       JOIN projects p ON p.tenant_id=c.tenant_id AND p.id=c.project_id
       JOIN units u ON u.tenant_id=c.tenant_id AND u.id=c.unit_id AND u.project_id=c.project_id
       JOIN tenant_memberships m ON m.tenant_id=c.tenant_id AND m.id=$3 AND m.user_id=$4 AND m.status='active'
+      JOIN users actor_user ON actor_user.id=m.user_id AND actor_user.status='active'
       WHERE c.tenant_id=$1 AND c.id=$2 AND app.has_project_permission(c.tenant_id,m.id,c.project_id,'contract.manage')
         AND app.has_project_permission(c.tenant_id,m.id,c.project_id,'price.read')
       ${lock?'FOR UPDATE OF c':''}`,[input.tenantId,input.contractId,input.membershipId,input.userId])).rows[0];
@@ -86,17 +87,25 @@ export class LegacyRsPreparationRepository{
     if(blocked)return reject('existing_evidence_requires_review');
   }
   private async basis(client:SqlClient,input:Context,row:Row):Promise<LegacyRsPriceBasis>{
-    const version=(await client.query<{id:string}>(`SELECT id FROM contract_versions WHERE tenant_id=$1 AND contract_id=$2 ORDER BY version_number DESC LIMIT 1`,[input.tenantId,input.contractId])).rows[0];
-    if(!version)return reject('version_required');
-    const price=(await client.query<{amount:string|null}>(`SELECT CASE WHEN EXISTS(SELECT 1 FROM unit_price_history
-      WHERE tenant_id=$1 AND unit_id=$2 AND valid_from<=statement_timestamp()) THEN app.current_unit_price($1,$2,statement_timestamp())::text END amount`,[input.tenantId,row.unit_id])).rows[0].amount;
-    const accessories=(await client.query<LegacyRsPriceBasis['accessories'][number]>(`SELECT a.id "assignmentId",item.id "accessoryId",item.code,t.category type,
-      app.current_accessory_price(item.tenant_id,item.id,statement_timestamp())::text amount
-      FROM unit_accessory_assignments a JOIN accessories item ON item.tenant_id=a.tenant_id AND item.id=a.accessory_id
-      JOIN accessory_types t ON t.tenant_id=item.tenant_id AND t.id=item.accessory_type_id
-      WHERE a.tenant_id=$1 AND a.unit_id=$2 AND a.valid_from<=statement_timestamp()
-        AND (a.valid_to IS NULL OR a.valid_to>statement_timestamp()) AND item.archived_at IS NULL
-      ORDER BY a.id`,[input.tenantId,row.unit_id])).rows;
-    return{contractId:row.id,projectId:row.project_id,unitId:row.unit_id,salesCaseId:row.sales_case_id,versionId:version.id,currentUnitPrice:price,accessories};
+    // One statement is the price-basis linearization point. Independent
+    // canonical price/assignment writers may commit before or after it, never
+    // produce a mixture of facts from different READ COMMITTED snapshots.
+    // Do not lock proposal/accessory rows after the unit: existing price
+    // decisions and assignment triggers can acquire those locks before an FK
+    // unit check. Adding inverse locks here would introduce deadlocks.
+    const basis=(await client.query<{version_id:string;amount:string|null;accessories:LegacyRsPriceBasis['accessories']}>(`
+      SELECT v.id version_id,CASE WHEN EXISTS(SELECT 1 FROM unit_price_history
+        WHERE tenant_id=$1 AND unit_id=$3 AND valid_from<=statement_timestamp())
+        THEN app.current_unit_price($1,$3,statement_timestamp())::text END amount,
+        COALESCE((SELECT jsonb_agg(jsonb_build_object('assignmentId',a.id,'accessoryId',item.id,'code',item.code,'type',t.category,
+          'amount',app.current_accessory_price(item.tenant_id,item.id,statement_timestamp())::text) ORDER BY a.id)
+          FROM unit_accessory_assignments a JOIN accessories item ON item.tenant_id=a.tenant_id AND item.id=a.accessory_id
+          JOIN accessory_types t ON t.tenant_id=item.tenant_id AND t.id=item.accessory_type_id
+          WHERE a.tenant_id=$1 AND a.unit_id=$3 AND a.valid_from<=statement_timestamp()
+            AND (a.valid_to IS NULL OR a.valid_to>statement_timestamp()) AND item.archived_at IS NULL),'[]'::jsonb) accessories
+      FROM contract_versions v WHERE v.tenant_id=$1 AND v.contract_id=$2 ORDER BY v.version_number DESC LIMIT 1`,
+      [input.tenantId,input.contractId,row.unit_id])).rows[0];
+    if(!basis)return reject('version_required');
+    return{contractId:row.id,projectId:row.project_id,unitId:row.unit_id,salesCaseId:row.sales_case_id,versionId:basis.version_id,currentUnitPrice:basis.amount,accessories:basis.accessories};
   }
 }

@@ -23,6 +23,8 @@ import { DocxTemplateError } from "./documents/docx-template.js";
 import {DocumentTemplateManagementRepository} from "./documents/template-management-repository.js";
 import {DocumentTemplateManagementService,TemplateManagementError} from "./documents/template-management-service.js";
 import {RsGenerationRepository} from "./contracts/rs-generation-repository.js";
+import {LegacyRsPreparationRepository} from './contracts/legacy-rs-preparation-repository.js';
+import {LegacyRsPreparationError} from './contracts/legacy-rs-preparation.js';
 import {ContractSigningPlanValidationError} from './shared/contract-signing-plan.js';
 import {ContractAppendixValidationError} from './shared/contract-appendices.js';
 import {RsGenerationError,RsGenerationService} from "./contracts/rs-generation-service.js";
@@ -58,6 +60,7 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
   const holds = new HoldService(dependencies.database);
   const commercial = new CommercialRepository(dependencies.database);
   const commercialCommands = new CommercialService(dependencies.database);
+  const legacyRsPreparation=new LegacyRsPreparationRepository(dependencies.database);
   const activities = new ActivityRepository(dependencies.database);
   const taskRepository = new TaskRepository(dependencies.database);
   const documentRepository = new DocumentRepository(dependencies.database);
@@ -701,6 +704,35 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
         {error:status===403?'Nemáte oprávnění upravit přílohy smlouvy.':status===404?'Smlouva nebyla nalezena.':'Přílohu nelze změnit. Ověřte aktuální verzi smlouvy a dokumentu.'},status,request.id));
     }
   });
+  for(const method of ['GET','POST'] as const)app.route<{Params:{contractId:string};Body:unknown}>({method,url:'/v1/contracts/:contractId/legacy-preparation',handler:async(request,reply)=>{
+    try{
+      const context=await sessionContext(request,dependencies.verifier,repository);
+      if(!context)return reply.code(403).send({error:'Workspace není uživateli přístupný'});
+      if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(request.params.contractId))
+        return reply.code(404).send({error:'Smlouva nebyla nalezena.'});
+      const input={...context,contractId:request.params.contractId};
+      if(method==='GET')return{preview:await legacyRsPreparation.preview(input)};
+      const preparation=await legacyRsPreparation.prepare(input,request.body);
+      return reply.code(preparation.replayed?200:201).send({preparation});
+    }catch(error){
+      const code=error instanceof LegacyRsPreparationError?error.code:'unexpected';
+      const databaseCode=error&&typeof error==='object'&&'code' in error&&typeof error.code==='string'&&/^[A-Z0-9]{5}$/.test(error.code)?error.code:undefined;
+      request.log.warn({event:'contract.legacy_preparation_failed',correlationId:request.id,contractId:request.params.contractId,
+        errorName:error instanceof Error?error.name:'Error',errorCode:code,databaseCode},'contract preparation failed');
+      const status=code==='not_found_or_forbidden'?404:['invalid_input','invalid_money','fee_required','invalid_fee','reason_required'].includes(code)?422:code==='unexpected'?500:409;
+      const messages:Record<string,string>={
+        not_found_or_forbidden:'Smlouva nebyla nalezena nebo k její přípravě nemáte oprávnění.',
+        invalid_input:'Zkontrolujte zadané údaje a otevřete přípravu znovu.',invalid_money:'Zadejte platné částky v korunách a haléřích.',
+        fee_required:'Doplňte kladný rezervační poplatek.',invalid_fee:'Rezervační poplatek musí být kladný a nesmí převýšit sjednanou cenu.',
+        reason_required:'Doplňte stručný důvod přípravy smlouvy.',stale_preview:'Cena, příslušenství nebo verze smlouvy se změnily. Načtěte nový náhled a údaje znovu potvrďte.',
+        idempotency_mismatch:'Tento požadavek již byl použit pro jiné údaje. Ověřte výsledek předchozí přípravy.',
+        existing_terms_require_review:'Smlouva již má sjednané částky. Jejich změnu je potřeba samostatně zkontrolovat.',
+        existing_evidence_requires_review:'Smlouva již má dokument, podpis nebo platební údaje. Před další přípravou je potřeba kontrola správce.',
+        not_preparable:'Smlouvu nyní nelze připravit. Ověřte, že obchod pokračuje a smlouva není podepsaná ani ukončená.',
+      };
+      return reply.code(status).send({error:messages[code]??'Přípravu smlouvy se nepodařilo dokončit. Zkuste to prosím znovu.',correlationId:request.id});
+    }
+  }});
   app.post<{Params:{contractId:string};Body:{versionId:string}}>("/v1/contracts/:contractId/payment-terms",async(request,reply)=>{
     try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:'Workspace není uživateli přístupný'});
       if(!rsGeneration)return reply.code(503).send({error:'Příprava smluv není v tomto prostředí dostupná.'});

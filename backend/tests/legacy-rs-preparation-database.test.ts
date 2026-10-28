@@ -9,6 +9,7 @@ import {bootstrapIds,bootstrapPilotWorkspace,normalizeBootstrapInput} from '../s
 import {importDejvice} from '../src/imports/dejvice.js';
 import {LegacyRsPreparationRepository} from '../src/contracts/legacy-rs-preparation-repository.js';
 import {LegacyRsPreparationError} from '../src/contracts/legacy-rs-preparation.js';
+import {signatureDocument} from './helpers/signature-document.js';
 
 async function fixture(postgresUrl?:string){
  const memory=postgresUrl?null:new PGlite(),admin=postgresUrl?new Pool({connectionString:postgresUrl}):null;
@@ -39,7 +40,7 @@ async function fixture(postgresUrl?:string){
    ORDER BY c.reference,v.version_number DESC LIMIT 1`,[ids.tenantId])).rows[0];
  assert.ok(contract,'disposable import must contain an actual legacy RS');
  const context={tenantId:ids.tenantId,userId:ids.userId,membershipId:ids.membershipId,contractId:contract.id};
- return{client,contract,context,repository:new LegacyRsPreparationRepository(database),close:async()=>{
+ return{client,pool,database,contract,context,repository:new LegacyRsPreparationRepository(database),close:async()=>{
   if(memory)await memory.close();if(pool)await pool.end();if(admin){await admin.query(`DROP DATABASE "${name}"`);await admin.end();}
  }};
 }
@@ -49,6 +50,23 @@ for(const native of [false,true])test(`legacy RS preparation persists atomically
  try{
   const preview=await f.repository.preview(f.context);
   const body={expectedVersionId:preview.versionId,previewToken:preview.previewToken,agreedUnitPrice:'12345.67',reservationFee:'100.01',idempotencyKey:randomUUID(),reason:'Confirmed technical terms only'};
+  await t.test('valid members need both contract edit and price read in the correct project',async()=>{
+   const user=randomUUID(),member=randomUUID();
+   await f.client.query(`INSERT INTO users(id,entra_issuer,entra_subject,email,display_name) VALUES($1::uuid,'technical-test',($1::uuid)::text,$2,'Technical limited preparation')`,[user,`${user}@example.test`]);
+   await f.client.query(`INSERT INTO tenant_memberships(id,tenant_id,user_id,status,accepted_at) VALUES($1,$2,$3,'active',now())`,[member,f.context.tenantId,user]);
+   const other=(await f.client.query<{id:string}>(`INSERT INTO projects(tenant_id,code,name,slug) VALUES($1,'OTHERLEGACY','Other legacy test','other-legacy-test') RETURNING id`,[f.context.tenantId])).rows[0].id;
+   const grant=async(project:string,area:string,level:string)=>f.client.query(`INSERT INTO project_custom_access(tenant_id,project_id,membership_id,area,access_level,assigned_by_user_id) VALUES($1,$2,$3,$4,$5,$6)`,[f.context.tenantId,project,member,area,level,f.context.userId]);
+   const limited={...f.context,userId:user,membershipId:member};
+   await grant(other,'contracts','edit');await grant(other,'units','read');
+   await assert.rejects(f.repository.preview(limited),error('not_found_or_forbidden'));
+   await assert.rejects(f.repository.prepare(limited,body));
+   await grant(f.contract.project_id,'contracts','edit');
+   await assert.rejects(f.repository.preview(limited),error('not_found_or_forbidden'));
+   await grant(f.contract.project_id,'units','read');
+   assert.equal((await f.repository.preview(limited)).previewToken,preview.previewToken);
+   await f.client.query(`UPDATE tenant_memberships SET status='suspended' WHERE id=$1`,[member]);
+   await assert.rejects(f.repository.preview(limited),error('not_found_or_forbidden'));
+  });
   await t.test('preview and refusal paths make no contract change',async()=>{
    assert.equal(preview.contractId,f.contract.id);
    await assert.rejects(f.repository.prepare(f.context,{...body,expectedVersionId:randomUUID()}),error('stale_preview'));
@@ -105,5 +123,69 @@ test('two distinct confirmations cannot both replace the missing RS terms (Postg
   const counts=(await f.client.query<{versions:number;audit:number}>(`SELECT (SELECT count(*)::int FROM contract_versions WHERE contract_id=$1) versions,
    (SELECT count(*)::int FROM audit_log WHERE entity_id=$1 AND action='contract.legacy_terms_prepared') audit`,[f.contract.id])).rows[0];
   assert.deepEqual(counts,{versions:2,audit:1});
+ }finally{await f.close();}
+});
+
+for(const scenario of ['price-before','price-race','accessory-price-before','release-before','release-race'] as const)
+ test(`canonical writer vs RS preparation: ${scenario} (PostgreSQL)`,{skip:!process.env.WORKFLOW_TEST_DATABASE_URL},async()=>{
+ const f=await fixture(process.env.WORKFLOW_TEST_DATABASE_URL);
+ try{
+  let unit=(await f.repository.preview(f.context)).unitId;
+  const command=async(sql:string,values:unknown[])=>f.database.withContext(f.context,async c=>(await c.query<{id:string}>(sql,values)).rows[0]?.id);
+  let write:()=>Promise<unknown>;
+  if(scenario.startsWith('price-')){
+   const proposal=await command(`SELECT app.propose_unit_price($1,$2,'contract_price',98765.43,'CZK',clock_timestamp(),'Technical preparation race',$3) id`,[f.context.tenantId,unit,f.context.membershipId]);
+   write=()=>command(`SELECT app.decide_unit_price_proposal($1,$2,'approved','Technical approval race',$3) id`,[f.context.tenantId,proposal,f.context.membershipId]);
+  }else{
+   const accessory=await command(`SELECT app.create_project_accessory($1,$2,'cellar','LEGACY-RACE',2,100,NULL,NULL,$3) id`,[f.context.tenantId,f.contract.project_id,f.context.membershipId]);
+   const assignment=await command(`SELECT app.assign_accessory_to_unit($1,$2,$3,clock_timestamp(),$4) id`,[f.context.tenantId,unit,accessory,f.context.membershipId]);
+   write=scenario==='accessory-price-before'
+    ?()=>command(`SELECT app.update_project_accessory($1,$2,'LEGACY-RACE',2,101,NULL,'Technical new price',$3) id`,[f.context.tenantId,accessory,f.context.membershipId])
+    :()=>command(`SELECT app.remove_accessory_from_unit($1,$2,clock_timestamp(),$3) id`,[f.context.tenantId,assignment,f.context.membershipId]);
+  }
+  const preview=await f.repository.preview(f.context);unit=preview.unitId;
+  const body={expectedVersionId:preview.versionId,previewToken:preview.previewToken,agreedUnitPrice:'12345.67',reservationFee:'100.01',idempotencyKey:randomUUID(),reason:'Explicit technical writer race'};
+  if(scenario.endsWith('before')){
+   await write();await assert.rejects(f.repository.prepare(f.context,body),error('stale_preview'));
+   assert.notEqual((await f.repository.preview(f.context)).previewToken,preview.previewToken);
+  }else{
+   // Either the confirmed old basis linearizes first, or the new basis is
+   // visible and requires a refreshed confirmation. Neither ordering may
+   // deadlock, mix snapshots or silently replace agreed terms.
+   const [writer,preparation]=await Promise.allSettled([write(),f.repository.prepare(f.context,body)]);
+   assert.equal(writer.status,'fulfilled');
+   if(preparation.status==='rejected')assert.ok(error('stale_preview')(preparation.reason));
+   else{
+    const version=(await f.client.query<{generation_payload:{legacyPreparation:{preview:unknown}}}>(`SELECT generation_payload FROM contract_versions WHERE id=$1`,[preparation.value.versionId])).rows[0];
+    assert.deepEqual(version.generation_payload.legacyPreparation.preview,preview);
+   }
+  }
+ }finally{await f.close();}
+});
+
+test('a final document added after preview blocks legacy terms preparation (PostgreSQL)',{skip:!process.env.WORKFLOW_TEST_DATABASE_URL},async()=>{
+ const f=await fixture(process.env.WORKFLOW_TEST_DATABASE_URL);
+ try{
+  const preview=await f.repository.preview(f.context);
+  await f.database.withContext(f.context,c=>signatureDocument(c,f.context.tenantId,f.context.membershipId,f.context.contractId));
+  await assert.rejects(f.repository.prepare(f.context,{expectedVersionId:preview.versionId,previewToken:preview.previewToken,
+   agreedUnitPrice:'12345.67',reservationFee:'100.01',idempotencyKey:randomUUID(),reason:'Technical evidence protection'}),error('existing_evidence_requires_review'));
+  const row=(await f.client.query<{amount:string|null}>(`SELECT unit_price_snapshot::text amount FROM contracts WHERE id=$1`,[f.contract.id])).rows[0];
+  assert.equal(row.amount,null);
+ }finally{await f.close();}
+});
+test('a racing signature attempt without exact evidence cannot sign a newly prepared RS (PostgreSQL)',{skip:!process.env.WORKFLOW_TEST_DATABASE_URL},async()=>{
+ const f=await fixture(process.env.WORKFLOW_TEST_DATABASE_URL);
+ try{
+  const preview=await f.repository.preview(f.context);
+  const results=await Promise.allSettled([
+   f.repository.prepare(f.context,{expectedVersionId:preview.versionId,previewToken:preview.previewToken,agreedUnitPrice:'12345.67',reservationFee:'100.01',idempotencyKey:randomUUID(),reason:'Technical unsigned preparation'}),
+   f.database.withContext(f.context,c=>c.query('SELECT * FROM app.sign_contract_externally($1,$2,$3,now(),$4,$5)',[f.context.tenantId,f.context.contractId,preview.versionId,f.context.membershipId,'Technical rejected signature'])),
+  ]);
+  assert.equal(results[0].status,'fulfilled');assert.equal(results[1].status,'rejected');
+  if(results[1].status==='rejected')assert.doesNotMatch(String(results[1].reason),/deadlock|40P01/);
+  const row=(await f.client.query<{current_status:string;signed_versions:number}>(`SELECT c.current_status,
+   (SELECT count(*)::int FROM contract_versions v WHERE v.contract_id=c.id AND v.version_status='signed') signed_versions FROM contracts c WHERE c.id=$1`,[f.contract.id])).rows[0];
+  assert.deepEqual(row,{current_status:'draft',signed_versions:0});
  }finally{await f.close();}
 });
