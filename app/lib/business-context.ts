@@ -1,4 +1,4 @@
-import type {ContractRecord,UnitCommercialContext,UnitRecord} from '../crm-data';
+import type {ClientRecord,ContractRecord,UnitCommercialContext,UnitRecord} from '../crm-data';
 
 export const unitContextKey=(unit:Pick<UnitRecord,'id'|'backendId'>)=>unit.backendId??unit.id;
 
@@ -11,6 +11,18 @@ export function getUnitContext(unit:Pick<UnitRecord,'id'|'backendId'>,contexts:R
 export function preferredSalesPartyId(context:UnitCommercialContext|undefined){
   return (context?.salesCaseId ? context.buyers[0]?.partyId : undefined)
     ?? context?.interests.find(item=>item.status==='active')?.partyId ?? '';
+}
+
+/** An active sale is authoritative; historic unit links are not buyer choices. */
+export function clientChangeCandidates(unit:Pick<UnitRecord,'id'|'backendId'>|undefined,context:UnitCommercialContext|undefined,rows:ClientRecord[]){
+  if(!unit)return [];
+  if(context?.salesCaseId){
+    return context.buyers.filter(buyer=>['buyer','co_buyer'].includes(buyer.role))
+      .map(buyer=>rows.find(client=>client.id===buyer.partyId))
+      .filter((client):client is ClientRecord=>Boolean(client));
+  }
+  // Keep the existing after-sale path; this is not a new ownership policy.
+  return rows.filter(client=>Boolean(unit.backendId&&client.unitRelations?.some(relation=>relation.unitId===unit.backendId)));
 }
 
 export function contractBelongsToUnit(contract:ContractRecord,unit:Pick<UnitRecord,'id'|'backendId'|'projectBackendId'|'project'>){

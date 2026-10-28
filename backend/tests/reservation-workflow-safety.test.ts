@@ -64,6 +64,48 @@ async function fixture(postgresUrl?:string){
   return {client,pool,connectionUrl:url?.toString(),ids,start,past,expire,cancel,sign,state,events,close};
 }
 
+for(const usePostgres of [false,true])test(`client-change active buyer safety (${usePostgres?'PostgreSQL':'PGlite'})`,{skip:usePostgres&&!process.env.WORKFLOW_TEST_DATABASE_URL},async t=>{
+  const f=await fixture(usePostgres?process.env.WORKFLOW_TEST_DATABASE_URL:undefined);
+  try{
+    const c=await f.start(),other=await f.start();
+    const party=async(id:string)=>(await f.client.query<{party_id:string}>('SELECT party_id FROM sales_case_parties WHERE sales_case_id=$1 AND left_at IS NULL AND is_primary',[id])).rows[0].party_id;
+    const buyer=await party(c.caseId),outsider=await party(other.caseId);
+    const project=(await f.client.query<{project_id:string}>('SELECT project_id FROM units WHERE id=$1',[c.unitId])).rows[0].project_id;
+    async function create(partyId:string,tenant=f.ids.tenantId,projectId=project){
+      const db=f.pool?await f.pool.connect():f.client;
+      try{await db.query('BEGIN');await db.query('SET LOCAL ROLE develocrm_app');await db.query("SELECT set_config('app.tenant_id',$1,true),set_config('app.user_id',$2,true)",[f.ids.tenantId,f.ids.userId]);
+        const result=await db.query<{id:string}>("SELECT app.create_client_change_v2($1,$2,$3,$4,'Buyer safety','','individual',NULL,'Test',NULL,'CZK',current_date,NULL,NULL,$5) id",[tenant,projectId,c.unitId,partyId,f.ids.membershipId]);await db.query('COMMIT');return result.rows[0].id;
+      }catch(error){await db.query('ROLLBACK');throw error;}finally{if(f.pool)(db as PoolClient).release();}
+    }
+    await t.test('current buyer binds exact active case and emits one audit/outbox',async()=>{
+      const id=await create(buyer);
+      const row=(await f.client.query<{sales_case_id:string;party_id:string;surcharge_amount:null}>('SELECT sales_case_id,party_id,surcharge_amount FROM client_changes WHERE id=$1',[id])).rows[0];
+      assert.deepEqual(row,{sales_case_id:c.caseId,party_id:buyer,surcharge_amount:null});
+      assert.equal((await f.client.query<{n:number}>("SELECT count(*)::int n FROM audit_log WHERE entity_id=$1 AND action='client_change.created'",[id])).rows[0].n,1);
+      assert.equal((await f.client.query<{n:number}>("SELECT count(*)::int n FROM outbox_events WHERE aggregate_id=$1 AND event_type='client_change.created.v1'",[id])).rows[0].n,1);
+    });
+    await t.test('project membership/another unit buyer does not authorize a client change',async()=>{
+      await assert.rejects(create(outsider),/CLIENT_CHANGE_CURRENT_BUYER_REQUIRED/);
+    });
+    await t.test('departed buyer and non-buyer participant cannot fall back to a null case',async()=>{
+      await f.client.query("UPDATE sales_case_parties SET left_at=clock_timestamp(),is_primary=false WHERE sales_case_id=$1 AND party_id=$2",[c.caseId,buyer]);
+      await assert.rejects(create(buyer),/CLIENT_CHANGE_CURRENT_BUYER_REQUIRED/);
+      await f.client.query("UPDATE sales_case_parties SET left_at=NULL,participant_role='representative' WHERE sales_case_id=$1 AND party_id=$2",[c.caseId,buyer]);
+      await assert.rejects(create(buyer),/CLIENT_CHANGE_CURRENT_BUYER_REQUIRED/);
+      await f.client.query("UPDATE sales_case_parties SET participant_role='co_buyer' WHERE sales_case_id=$1 AND party_id=$2",[c.caseId,buyer]);
+      assert.ok(await create(buyer));
+    });
+    await t.test('tenant and project forgery rejected without records',async()=>{
+      await assert.rejects(create(buyer,randomUUID()));await assert.rejects(create(buyer,f.ids.tenantId,randomUUID()));
+      assert.equal((await f.client.query<{n:number}>('SELECT count(*)::int n FROM client_changes WHERE unit_id=$1',[c.unitId])).rows[0].n,2);
+    });
+    await t.test('safe public message never leaks trigger implementation',()=>{
+      const error=mapApiError(new Error('CLIENT_CHANGE_CURRENT_BUYER_REQUIRED'),409,'buyer-check');
+      assert.equal(error.code,'CLIENT_CHANGE_CURRENT_BUYER_REQUIRED');assert.match(error.error,/kupujícího/);
+    });
+  }finally{await f.close();}
+});
+
 for(const usePostgres of [false,true])test(`contract preparation source (${usePostgres?'PostgreSQL':'PGlite'})`,{skip:usePostgres&&!process.env.WORKFLOW_TEST_DATABASE_URL},async()=>{
   const f=await fixture(usePostgres?process.env.WORKFLOW_TEST_DATABASE_URL:undefined);
   try{
@@ -469,6 +511,23 @@ test("real PostgreSQL concurrency: signature, cancellation, expiry and unit seri
       const result=signatureFirst?await race(db=>f.sign(c,db),reserve):await race(reserve,db=>f.sign(c,db));
       assert.match(result.error?.message??'',signatureFirst?/SIGNED_DOCUMENT_IMMUTABLE/:/DOCUMENT_UPLOAD_IN_PROGRESS/);
       assert.equal((await f.state(c.unitId)).commercial_status,signatureFirst?'reserved':'pre_reserved');
+    });
+    for(const buyerChangeFirst of [true,false])await t.test(`client change vs current buyer replacement, replacement first=${buyerChangeFirst}`,async()=>{
+      const c=await f.start(),other=await f.start();
+      const buyers=(await f.client.query<{sales_case_id:string;party_id:string}>('SELECT sales_case_id,party_id FROM sales_case_parties WHERE sales_case_id=ANY($1::uuid[]) AND is_primary AND left_at IS NULL',[[c.caseId,other.caseId]])).rows;
+      const old=buyers.find(p=>p.sales_case_id===c.caseId)!.party_id,next=buyers.find(p=>p.sales_case_id===other.caseId)!.party_id;
+      const project=(await f.client.query<{project_id:string}>('SELECT project_id FROM units WHERE id=$1',[c.unitId])).rows[0].project_id;
+      const create=(db:PoolClient)=>db.query("SELECT app.create_client_change($1,$2,$3,$4,'Concurrency change','','individual',NULL,'Test',NULL,'CZK',current_date,NULL,$5)",[f.ids.tenantId,project,c.unitId,old,f.ids.membershipId]);
+      const replace=async(db:PoolClient)=>{
+        await db.query('SELECT app.lock_workflow_unit($1,$2)',[f.ids.tenantId,c.unitId]);
+        await db.query('UPDATE sales_case_parties SET left_at=clock_timestamp(),is_primary=false WHERE sales_case_id=$1 AND left_at IS NULL',[c.caseId]);
+        await db.query("INSERT INTO sales_case_parties(tenant_id,project_id,sales_case_id,party_id,participant_role,is_primary) VALUES($1,$2,$3,$4,'buyer',true)",[f.ids.tenantId,project,c.caseId,next]);
+      };
+      const result=buyerChangeFirst?await race(replace,create):await race(create,replace);
+      if(buyerChangeFirst)assert.match(result.error?.message??'',/CLIENT_CHANGE_CURRENT_BUYER_REQUIRED/);else assert.equal(result.error,null);
+      const count=(await f.client.query<{n:number}>('SELECT count(*)::int n FROM client_changes WHERE unit_id=$1',[c.unitId])).rows[0].n;
+      assert.equal(count,buyerChangeFirst?0:1);
+      assert.equal((await f.client.query<{party_id:string}>('SELECT party_id FROM sales_case_parties WHERE sales_case_id=$1 AND is_primary AND left_at IS NULL',[c.caseId])).rows[0].party_id,next);
     });
     await t.test('parallel initial-price requests create one unit and one history row',async()=>{
       const project=(await f.client.query<{id:string}>("SELECT id FROM projects WHERE tenant_id=$1 LIMIT 1",[f.ids.tenantId])).rows[0].id;

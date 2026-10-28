@@ -51,7 +51,10 @@ export function mapApiError(input: unknown, statusCode: number, correlationId: s
   const paymentTermsCode=source.match(/\bPAYMENT_TERMS_[A-Z_]+\b/)?.[0];
   const appendixCode=source.match(/\bCONTRACT_APPENDIX_[A-Z_]+\b/)?.[0];
   const holdReleaseCode=source.match(/\bHOLD_RELEASE_[A-Z_]+\b/)?.[0];
-  if (holdReleaseCode) {
+  if (/CLIENT_CHANGE_CURRENT_BUYER_REQUIRED|CLIENT_CHANGE_CONTEXT_CHANGED/.test(source)) {
+    code=source.includes('CLIENT_CHANGE_CURRENT_BUYER_REQUIRED')?'CLIENT_CHANGE_CURRENT_BUYER_REQUIRED':'CLIENT_CHANGE_CONTEXT_CHANGED';
+    message='Kupující nebo obchod jednotky se změnil. Otevřete formulář znovu a vyberte aktuálního kupujícího.';
+  } else if (holdReleaseCode) {
     code=holdReleaseCode;
     const messages:Record<string,string>={
       HOLD_RELEASE_OWNERSHIP_UNVERIFIED:'Jednotku nelze uvolnit bez ověření vlastnictví po kupní smlouvě. Kontaktujte administrátora.',
