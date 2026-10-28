@@ -96,3 +96,39 @@ deployed. The corrective source checkpoint records this diagnosis and supplies
 the official matching output archive using the supported native parameter.
 No icon rewrite, dependency downgrade, hosting-access change or bypass is needed.
 Sites 178 remained serving while this repair was prepared.
+
+## Correct archive-backed publication and browser results
+
+- Corrective GitHub source checkpoint `2ef84a4`, matching Sites source
+  `21255c04c032b73188d5d9bd923e25648c485ab8`, equal tree
+  `165023a16660ab7ff32c7c0cbd1331bb371ee45a`.
+- Sites 180, `appgdep_6ae0ffaa1e2881918a2ea602a7ef2b1b`: succeeded.
+  Saved-version metadata confirms archive storage with SHA-256
+  `41d01fca266652f98c148d586fdafa67cd0f7322b99e68e975c4bc73ce6807b2`.
+  No remote rebuild/icon workaround or dependency change was needed.
+- Live browser on the reloaded Sites 180 linked the second clearly nonlegal
+  technical appendix (`17123c73-b8e5-4fd9-a31d-5ba82c1fb48d`). The dialog stayed
+  open, its unsaved note remained intact, the selection reset, and both links
+  appeared after the targeted reload. No parent status form was submitted.
+- First persisted link returned 201 with correlation ID
+  `70b64485-fac0-42ec-a8e8-0e52b980e70d`; the change UUID is
+  `233b8e7c-b9e3-49a6-bd91-27ef83cd3ae4`.
+- Read-only non-bypass application-role proof execution
+  `job-develocrm-hold-expiry-es91pbg`: Succeeded. Retained Log Analytics summary
+  confirms active current-buyer/case linkage, null surcharge, one creation audit,
+  one creation outbox and zero unit payment obligations. It observed the first
+  link before the second browser action, so its linkedDocuments=1 is not a claim
+  that it separately counted the later two-link state.
+- Screenshot inspected inline. Artifact-file saving was denied by the browser
+  execution filesystem even after requesting the exact output-path permission;
+  no saved screenshot link is claimed.
+
+## Measured layout follow-up
+
+Visual/DOM QA found modal content width 518px but scroll width 659px; the link
+button ended at x=934.58 while the modal ended at x=794.5. This is real clipped
+interaction, not only a cosmetic preference. Shared modal labels need to be
+shrinkable, and the shared metadata list needs container-based compact columns
+inside a dialog regardless of the desktop viewport. A narrow layout must retain
+the document open link and status, not merely hide overflow. The follow-up changes
+only these shared presentation rules; browser width verification is pending.
