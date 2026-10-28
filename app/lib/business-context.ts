@@ -15,13 +15,13 @@ export function preferredSalesPartyId(context:UnitCommercialContext|undefined){
 
 /** An active sale is authoritative; historic unit links are not buyer choices. */
 export function clientChangeCandidates(unit:Pick<UnitRecord,'id'|'backendId'>|undefined,context:UnitCommercialContext|undefined,rows:ClientRecord[]){
-  if(!unit||context?.clientChangesRequireNewSale)return [];
+  if(!unit||context?.clientChangesRequireNewSale||context?.clientChangesHandoverCompleted)return [];
   if(context?.salesCaseId){
     return context.buyers.filter(buyer=>['buyer','co_buyer'].includes(buyer.role))
       .map(buyer=>rows.find(client=>client.id===buyer.partyId))
       .filter((client):client is ClientRecord=>Boolean(client));
   }
-  // Keep the existing after-sale path; this is not a new ownership policy.
+  // Completed handovers are excluded above; other legacy links remain supported.
   return rows.filter(client=>Boolean(unit.backendId&&client.unitRelations?.some(relation=>relation.unitId===unit.backendId)));
 }
 

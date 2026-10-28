@@ -17,6 +17,7 @@ test('active client-change candidates follow current buyer order, never historic
  assert.deepEqual(clientChangeCandidates(unit,{...context,buyers:[]},[a,b]),[]);
  assert.deepEqual(clientChangeCandidates(unit,{...context,salesCaseId:null,clientChangesRequireNewSale:true},[a,b]),[]);
  assert.deepEqual(clientChangeCandidates(undefined,context,[a,b]),[]);
+ assert.deepEqual(clientChangeCandidates(unit,{...context,clientChangesHandoverCompleted:true},[a,b]),[]);
  assert.deepEqual(clientChangeCandidates({...unit,backendId:'other'},undefined,[a]),[]);
  // Existing no-active-case path remains unchanged pending its separate audit.
  assert.deepEqual(clientChangeCandidates(unit,undefined,[a]).map(row=>row.id),['old']);
@@ -38,5 +39,9 @@ test('new client-change modal selects current buyer B even if historical A is fi
   assert.equal((screen.getByRole('combobox',{name:'Klient'}) as HTMLSelectElement).value,'');
   assert.equal(screen.queryByRole('option',{name:b.name}),null);
   assert.ok(screen.getByText(/Původní obchod je ukončen/));
+  unitCommercialContexts[unit.backendId??unit.id]={salesCaseId:'current-case',buyers:[{partyId:b.id,name:b.name,email:'',role:'buyer',share:null}],interests:[],stage:'handover',hold:null,clientChangesHandoverCompleted:true};
+  view.rerender(<NewClientChangeModal project={project} fixedUnit={unit} memberships={[]} close={()=>undefined} save={async()=>undefined}/>);
+  assert.ok(screen.getByText(/Nové požadavky řešte jako reklamaci/));
+  assert.equal((screen.getByRole('button',{name:'Vytvořit změnu'}) as HTMLButtonElement).disabled,true);
  }finally{clients.splice(0,clients.length,...originalClients);if(originalContext)unitCommercialContexts[unit.backendId??unit.id]=originalContext;else delete unitCommercialContexts[unit.backendId??unit.id];}
 });

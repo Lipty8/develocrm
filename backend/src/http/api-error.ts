@@ -51,7 +51,10 @@ export function mapApiError(input: unknown, statusCode: number, correlationId: s
   const paymentTermsCode=source.match(/\bPAYMENT_TERMS_[A-Z_]+\b/)?.[0];
   const appendixCode=source.match(/\bCONTRACT_APPENDIX_[A-Z_]+\b/)?.[0];
   const holdReleaseCode=source.match(/\bHOLD_RELEASE_[A-Z_]+\b/)?.[0];
-  if (source.includes('CLIENT_CHANGE_SALE_CLOSED')) {
+  if (source.includes('CLIENT_CHANGE_HANDOVER_COMPLETED')) {
+    code='CLIENT_CHANGE_HANDOVER_COMPLETED';
+    message='Jednotka již byla předána. Nové požadavky řešte jako reklamaci. Stávající klientské změny zůstávají dostupné.';
+  } else if (source.includes('CLIENT_CHANGE_SALE_CLOSED')) {
     code='CLIENT_CHANGE_SALE_CLOSED';
     message='Původní obchod je ukončen. Pro nový požadavek nejprve založte nový obchodní případ jednotky.';
   } else if (/CLIENT_CHANGE_CURRENT_BUYER_REQUIRED|CLIENT_CHANGE_CONTEXT_CHANGED/.test(source)) {

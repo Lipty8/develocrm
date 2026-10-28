@@ -21,6 +21,7 @@ export type PartyDuplicateMatch={id:string;name:string;kind:"FO"|"PO";strength:"
 
 export type UnitCommercialContext = {
   clientChangesRequireNewSale?:boolean;
+  clientChangesHandoverCompleted?:boolean;
   unitId?:string;
   projectId?:string;
   salesCaseId: string | null;
@@ -128,6 +129,7 @@ export class SalesRepository {
       const archiveRead=await archiveReadSql(client,Boolean(input.projectId));
       const hasPartyScope=Boolean((await client.query("SELECT 1 FROM pg_proc procedure JOIN pg_namespace namespace ON namespace.oid=procedure.pronamespace WHERE namespace.nspname='app' AND procedure.proname='can_access_party'")).rowCount);
       const hasClientChangeAssessment=Boolean((await client.query<{present:boolean}>("SELECT to_regprocedure('app.client_changes_require_new_sale(uuid,uuid)') IS NOT NULL present")).rows[0]?.present);
+      const hasHandoverAssessment=Boolean((await client.query<{present:boolean}>("SELECT to_regprocedure('app.client_changes_handover_completed(uuid,uuid)') IS NOT NULL present")).rows[0]?.present);
       const archivedAccess="($3::boolean AND party.lifecycle_status='archived' AND EXISTS(SELECT 1 FROM party_project_links archive_link WHERE archive_link.tenant_id=party.tenant_id AND archive_link.party_id=party.id AND app.has_project_permission(party.tenant_id,$2,archive_link.project_id,'clients.archive')))";
       const partyAccess=hasPartyScope?`(app.can_access_party(party.tenant_id,$2,party.id,false) OR ${archivedAccess})`:"true";
       const partyContactAccess=hasPartyScope?`(app.can_access_party(party.tenant_id,$2,party.id,true) OR ${archivedAccess})`:"true";
@@ -259,11 +261,12 @@ export class SalesRepository {
          ) buyer_history ON true`:"";
       const contextRows = await client.query<{
         unit_id:string;project_id:string;unit_code: string;sales_case_id:string|null; buyers: UnitCommercialContext["buyers"]; buyer_history:UnitCommercialContext["buyerHistory"]; interests: UnitCommercialContext["interests"];
-        stage: string | null; hold: UnitCommercialContext["hold"]; client_changes_require_new_sale:boolean;
+        stage: string | null; hold: UnitCommercialContext["hold"]; client_changes_require_new_sale:boolean; client_changes_handover_completed:boolean;
       }>(
         `SELECT unit.id unit_id,unit.project_id,unit.code unit_code,active_case.id sales_case_id,active_case.current_stage stage,
           COALESCE(buyers.items,'[]'::jsonb) buyers,${buyerHistorySelect},COALESCE(interests.items,'[]'::jsonb) interests,hold.item hold,
-          ${hasClientChangeAssessment?'app.client_changes_require_new_sale(unit.tenant_id,unit.id)':'false'} client_changes_require_new_sale
+          ${hasClientChangeAssessment?'app.client_changes_require_new_sale(unit.tenant_id,unit.id)':'false'} client_changes_require_new_sale,
+          ${hasHandoverAssessment?'app.client_changes_handover_completed(unit.tenant_id,unit.id)':'false'} client_changes_handover_completed
          FROM units unit
          LEFT JOIN LATERAL (SELECT id,current_stage FROM sales_cases WHERE tenant_id=unit.tenant_id AND unit_id=unit.id AND status='active' ORDER BY opened_at DESC,id DESC LIMIT 1) active_case ON true
          LEFT JOIN LATERAL (
@@ -309,7 +312,7 @@ export class SalesRepository {
             units: unitRelations.map(item=>item.code),unitRelations,projects: projectNames.join(", "),projectIds,projectNames,state,projectRelationships,
             contractStatus: bestContract?.contractType ? `${bestContract.contractType}${bestContract.contractStatus?` · ${contractStatusLabel(bestContract.contractStatus)}`:""}` : "Bez smlouvy",initials: initials(row.display_name),interestHistory: row.interest_history,activityHistory:activitiesByParty.get(row.id)??[],canReadContractIdentity:row.can_read_contract_identity,salutation:row.salutation,birthDate:row.birth_date,firstName:row.first_name??undefined,lastName:row.last_name??undefined,legalName:row.legal_name??undefined,registrationNumber:row.registration_number??undefined,vatNumber:row.vat_number??undefined,contactPerson:row.contact_person??undefined,address:row.address,deliveryAddress:row.delivery_address,updatedAt:row.updated_at,lifecycleStatus:row.lifecycle_status };
         }),
-        unitContexts: Object.fromEntries(contextRows.rows.map((row) => [row.unit_id,{ unitId:row.unit_id,projectId:row.project_id,salesCaseId:row.sales_case_id,buyers: row.buyers,buyerHistory:row.buyer_history,interests: row.interests,stage: row.stage,hold: row.hold,clientChangesRequireNewSale:row.client_changes_require_new_sale }])),
+        unitContexts: Object.fromEntries(contextRows.rows.map((row) => [row.unit_id,{ unitId:row.unit_id,projectId:row.project_id,salesCaseId:row.sales_case_id,buyers: row.buyers,buyerHistory:row.buyer_history,interests: row.interests,stage: row.stage,hold: row.hold,clientChangesRequireNewSale:row.client_changes_require_new_sale,clientChangesHandoverCompleted:row.client_changes_handover_completed }])),
       };
     });
   }

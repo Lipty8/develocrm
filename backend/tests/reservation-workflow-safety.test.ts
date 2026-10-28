@@ -117,7 +117,7 @@ for(const usePostgres of [false,true])test(`client-change active buyer safety ($
       assert.equal((await f.client.query<{blocked:boolean}>('SELECT app.client_changes_require_new_sale($1,$2) blocked',[f.ids.tenantId,c.unitId])).rows[0].blocked,false);
       assert.equal((await f.client.query<{n:number}>('SELECT count(*)::int n FROM client_changes WHERE sales_case_id=$1',[c.caseId])).rows[0].n,2);
     });
-    await t.test('successful handed-over sale retains the existing after-sale path without an active case',async()=>{
+    await t.test('completed handover blocks new changes but preserves existing changes',async()=>{
       await f.sign(other);
       const ks=(await f.client.query<{contract_id:string;version_id:string}>("SELECT * FROM app.create_contract_with_payment($1,$2,'ks',$3,'After-sale KS',$4,NULL,$5,NULL,NULL,NULL)",[f.ids.tenantId,other.caseId,`KS-AFTER-${randomUUID()}`,f.ids.membershipId,randomUUID()])).rows[0];
       const db=f.pool?await f.pool.connect():f.client;
@@ -126,13 +126,19 @@ for(const usePostgres of [false,true])test(`client-change active buyer safety ($
       await f.sign(ks);
       assert.equal((await f.state(other.unitId)).commercial_status,'sold');
       const handover=(await f.client.query<{id:string}>("SELECT app.schedule_unit_handover_v2($1,$2,now()+interval '1 day',$3,'Unit',NULL,$4,$3) id",[f.ids.tenantId,other.unitId,f.ids.membershipId,randomUUID()])).rows[0].id;
+      const existing=(await f.client.query<{id:string}>("SELECT app.create_client_change($1,$2,$3,$4,'Before handover','','individual',NULL,'Test',NULL,'CZK',current_date,NULL,$5) id",[f.ids.tenantId,project,other.unitId,outsider,f.ids.membershipId])).rows[0].id;
+      assert.equal((await f.client.query<{blocked:boolean}>('SELECT app.client_changes_handover_completed($1,$2) blocked',[f.ids.tenantId,other.unitId])).rows[0].blocked,false);
       await f.client.query("SELECT app.update_unit_handover_v2($1,$2,now()+interval '1 day',$3,'handed_over',100,NULL,'Unit',NULL,now(),$3)",[f.ids.tenantId,handover,f.ids.membershipId]);
       // The model has a won state; automatic successful-case closure is not added here.
       await f.client.query("UPDATE sales_cases SET status='won',closed_at=clock_timestamp(),close_reason='Successful fixture' WHERE id=$1",[other.caseId]);
       assert.equal((await f.state(other.unitId)).commercial_status,'handed_over');
       assert.equal((await f.client.query<{blocked:boolean}>('SELECT app.client_changes_require_new_sale($1,$2) blocked',[f.ids.tenantId,other.unitId])).rows[0].blocked,false);
-      const id=(await f.client.query<{id:string}>("SELECT app.create_client_change($1,$2,$3,$4,'After-sale fixture','','individual',NULL,'Test',NULL,'CZK',current_date,NULL,$5) id",[f.ids.tenantId,project,other.unitId,outsider,f.ids.membershipId])).rows[0].id;
-      assert.ok(id);
+      assert.equal((await f.client.query<{blocked:boolean}>('SELECT app.client_changes_handover_completed($1,$2) blocked',[f.ids.tenantId,other.unitId])).rows[0].blocked,true);
+      await assert.rejects(f.client.query("SELECT app.create_client_change($1,$2,$3,$4,'After-sale fixture','','individual',NULL,'Test',NULL,'CZK',current_date,NULL,$5)",[f.ids.tenantId,project,other.unitId,outsider,f.ids.membershipId]),/CLIENT_CHANGE_HANDOVER_COMPLETED/);
+      await f.client.query("SELECT app.transition_client_change_v2($1,$2,'pricing','Settlement remains available',NULL,$3,$4)",[f.ids.tenantId,existing,randomUUID(),f.ids.membershipId]);
+      assert.equal((await f.client.query<{status:string}>('SELECT status FROM client_changes WHERE id=$1',[existing])).rows[0].status,'pricing');
+      const handoverError=mapApiError(new Error('CLIENT_CHANGE_HANDOVER_COMPLETED'),409,'handover-check');
+      assert.equal(handoverError.code,'CLIENT_CHANGE_HANDOVER_COMPLETED');assert.match(handoverError.error,/reklamaci/);
       const error=mapApiError(new Error('CLIENT_CHANGE_SALE_CLOSED'),409,'closed-check');
       assert.equal(error.code,'CLIENT_CHANGE_SALE_CLOSED');assert.match(error.error,/nový obchodní případ/);
     });
@@ -574,6 +580,23 @@ test("real PostgreSQL concurrency: signature, cancellation, expiry and unit seri
       const records=(await f.client.query<{id:string;sales_case_id:string}>('SELECT id,sales_case_id FROM client_changes WHERE unit_id=$1 AND title=$2',[c.unitId,title])).rows;
       assert.equal(records.length,closeFirst?0:1);
       if(records[0])assert.equal(records[0].sales_case_id,c.caseId);
+    });
+    for(const completeFirst of [true,false])await t.test(`client change vs completed handover, handover first=${completeFirst}`,async()=>{
+      const c=await f.start();await f.sign(c);
+      const ks=(await f.client.query<{contract_id:string;version_id:string}>("SELECT * FROM app.create_contract_with_payment($1,$2,'ks',$3,'Concurrency KS',$4,NULL,$5,NULL,NULL,NULL)",[f.ids.tenantId,c.caseId,`KS-RACE-${randomUUID()}`,f.ids.membershipId,randomUUID()])).rows[0];
+      const db=await f.pool!.connect();
+      try{await db.query('BEGIN');await db.query("SELECT set_config('app.tenant_id',$1,true),set_config('app.user_id',$2,true)",[f.ids.tenantId,f.ids.userId]);ks.version_id=await signatureDocument(db,f.ids.tenantId,f.ids.membershipId,ks.contract_id);await db.query('COMMIT');}finally{db.release();}
+      for(const status of ['sent','approved'])await f.client.query("SELECT app.transition_contract_status($1,$2,$3,'Concurrency',$4)",[f.ids.tenantId,ks.contract_id,status,f.ids.membershipId]);
+      await f.sign(ks);
+      const handover=(await f.client.query<{id:string}>("SELECT app.schedule_unit_handover_v2($1,$2,now()+interval '1 day',$3,'Unit',NULL,$4,$3) id",[f.ids.tenantId,c.unitId,f.ids.membershipId,randomUUID()])).rows[0].id;
+      const buyer=(await f.client.query<{party_id:string;project_id:string}>('SELECT party_id,project_id FROM sales_case_parties WHERE sales_case_id=$1 AND is_primary AND left_at IS NULL',[c.caseId])).rows[0];
+      const create=(conn:PoolClient)=>conn.query("SELECT app.create_client_change_v2($1,$2,$3,$4,'Handover race','','individual',NULL,'Test',NULL,'CZK',current_date,NULL,NULL,$5)",[f.ids.tenantId,buyer.project_id,c.unitId,buyer.party_id,f.ids.membershipId]);
+      const complete=(conn:PoolClient)=>conn.query("SELECT app.update_unit_handover_v2($1,$2,now()+interval '1 day',$3,'handed_over',100,NULL,'Unit',NULL,now(),$3)",[f.ids.tenantId,handover,f.ids.membershipId]);
+      const result=completeFirst?await race(complete,create):await race(create,complete);
+      if(completeFirst)assert.match(result.error?.message??'',/CLIENT_CHANGE_HANDOVER_COMPLETED/);else assert.equal(result.error,null);
+      assert.equal((await f.state(c.unitId)).commercial_status,'handed_over');
+      assert.equal((await f.client.query<{n:number}>("SELECT count(*)::int n FROM client_changes WHERE unit_id=$1 AND title='Handover race'",[c.unitId])).rows[0].n,completeFirst?0:1);
+      assert.equal((await f.client.query<{n:number}>("SELECT count(*)::int n FROM audit_log WHERE entity_id=$1 AND action='handover.handed_over'",[handover])).rows[0].n,1);
     });
     await t.test('parallel initial-price requests create one unit and one history row',async()=>{
       const project=(await f.client.query<{id:string}>("SELECT id FROM projects WHERE tenant_id=$1 LIMIT 1",[f.ids.tenantId])).rows[0].id;

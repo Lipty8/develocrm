@@ -78,6 +78,7 @@ export type ClientRecord = {
 };
 export type UnitCommercialContext = {
   clientChangesRequireNewSale?:boolean;
+  clientChangesHandoverCompleted?:boolean;
   unitId?:string;
   projectId?:string;
   salesCaseId?: string | null;
