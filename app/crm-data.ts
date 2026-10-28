@@ -77,6 +77,7 @@ export type ClientRecord = {
   unitRelations?:Array<{unitId:string;code:string;projectId:string;project:string;contractType?:"RS"|"SBK"|"KS";contractStatus?:string}>;
 };
 export type UnitCommercialContext = {
+  clientChangesRequireNewSale?:boolean;
   unitId?:string;
   projectId?:string;
   salesCaseId?: string | null;

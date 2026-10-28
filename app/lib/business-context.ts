@@ -15,7 +15,7 @@ export function preferredSalesPartyId(context:UnitCommercialContext|undefined){
 
 /** An active sale is authoritative; historic unit links are not buyer choices. */
 export function clientChangeCandidates(unit:Pick<UnitRecord,'id'|'backendId'>|undefined,context:UnitCommercialContext|undefined,rows:ClientRecord[]){
-  if(!unit)return [];
+  if(!unit||context?.clientChangesRequireNewSale)return [];
   if(context?.salesCaseId){
     return context.buyers.filter(buyer=>['buyer','co_buyer'].includes(buyer.role))
       .map(buyer=>rows.find(client=>client.id===buyer.partyId))

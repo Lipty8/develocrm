@@ -15,6 +15,7 @@ test('active client-change candidates follow current buyer order, never historic
  const context={salesCaseId:'current-case',buyers:[{partyId:'buyer',name:'Buyer',email:'',role:'buyer',share:null},{partyId:'co-buyer',name:'Co-buyer',email:'',role:'co_buyer',share:null},{partyId:'agent',name:'Agent',email:'',role:'representative',share:null}],interests:[],stage:'rs',hold:null};
  assert.deepEqual(clientChangeCandidates(unit,context,[a,c,representative,b]).map(row=>row.id),['buyer','co-buyer']);
  assert.deepEqual(clientChangeCandidates(unit,{...context,buyers:[]},[a,b]),[]);
+ assert.deepEqual(clientChangeCandidates(unit,{...context,salesCaseId:null,clientChangesRequireNewSale:true},[a,b]),[]);
  assert.deepEqual(clientChangeCandidates(undefined,context,[a,b]),[]);
  assert.deepEqual(clientChangeCandidates({...unit,backendId:'other'},undefined,[a]),[]);
  // Existing no-active-case path remains unchanged pending its separate audit.
@@ -28,9 +29,14 @@ test('new client-change modal selects current buyer B even if historical A is fi
  try{
   clients.splice(0,clients.length,a,b);
   unitCommercialContexts[unit.backendId??unit.id]={salesCaseId:'current-case',buyers:[{partyId:b.id,name:b.name,email:'',role:'buyer',share:null}],interests:[],stage:'pre_reservation',hold:null};
-  render(<NewClientChangeModal project={project} fixedUnit={unit} memberships={[]} close={()=>undefined} save={async()=>undefined}/>);
+  const view=render(<NewClientChangeModal project={project} fixedUnit={unit} memberships={[]} close={()=>undefined} save={async()=>undefined}/>);
   const select=screen.getByRole('combobox',{name:'Klient'}) as HTMLSelectElement;
   assert.equal(select.value,b.id);
   assert.equal(screen.queryByRole('option',{name:a.name}),null);
+  unitCommercialContexts[unit.backendId??unit.id]={salesCaseId:null,buyers:[],interests:[],stage:null,hold:null,clientChangesRequireNewSale:true};
+  view.rerender(<NewClientChangeModal project={project} fixedUnit={unit} memberships={[]} close={()=>undefined} save={async()=>undefined}/>);
+  assert.equal((screen.getByRole('combobox',{name:'Klient'}) as HTMLSelectElement).value,'');
+  assert.equal(screen.queryByRole('option',{name:b.name}),null);
+  assert.ok(screen.getByText(/Původní obchod je ukončen/));
  }finally{clients.splice(0,clients.length,...originalClients);if(originalContext)unitCommercialContexts[unit.backendId??unit.id]=originalContext;else delete unitCommercialContexts[unit.backendId??unit.id];}
 });

@@ -88,3 +88,40 @@ a null sales-case binding for a historical party despite another active sale.
 This closes the reproduced active-sale buyer mismatch, not every possible
 after-sale eligibility question. Existing no-active-case behavior remains an
 explicit separate audit item rather than an unreviewed business-policy change.
+
+## Follow-up: released unit after a failed sale
+
+The next focused audit reproduced a concrete remaining bypass: cancel a
+pre-reservation, let the existing domain operation close the case and release
+the unit, then submit a client change for its old project-linked buyer. The
+0077 guard allowed a null case. A regression first failed with `Missing expected
+rejection`, proving this was executable behavior rather than a hypothetical.
+
+0078 adds one server assessment, shared by the write guard and existing unit
+commercial projection. It blocks new requests when the unit is available,
+there is a lost/cancelled/expired case and no active replacement sale. It does
+not redefine eligibility for sold/handed-over units or legacy units with no
+sale history. Existing changes, financial obligations, documents and history
+are untouched. A legitimate new sale re-enables creation for its current buyer.
+
+The assessment is deliberately VOLATILE: a fresh snapshot is required after a
+contended unit lock, otherwise a request waiting behind cancellation/expiry
+could still read its pre-lock context. No second workflow engine or data model
+is introduced. The frontend consumes the server flag rather than recreating
+the condition from a localized status label. Its empty buyer field explains
+that a new business case is required, with accessible label/help association.
+
+Verification before rollout: full backend suite 586 passed, zero skipped, then
+final strengthened PostgreSQL/PGlite workflow suite 71 passed, zero skipped.
+The latter adds the actual RS → KS → handover path and a won-case fixture to
+verify preservation of after-sale requests without bypassing unit-state guards.
+Both orderings of create vs cancel and create vs expiry are tested with real
+PostgreSQL lock waits; prior valid requests retain their original case and
+later stale requests are rejected. A fresh replacement case accepts its buyer.
+194 frontend interactions, 145 static regressions, typecheck, backend build,
+lint and production build passed. One frontend test caught the help text
+changing the accessible field name; the label/help association was corrected.
+The directory's existing old-schema compatibility is retained through an
+explicit capability check; pilot rollout still requires the 0078 schema check.
+
+Follow-up rollout/evidence will be appended after verification.
