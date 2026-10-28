@@ -6,7 +6,7 @@ import {commercialRepository} from '../repositories/commercial-repository';
 import {documentRepository,type DocumentRecord,type DocumentVersionRecord} from '../repositories/document-repository';
 import {projectRoute} from '../crm-routing.mjs';
 
-export function ContractAppendicesPanel({contractId,projectId,summary,disabled,onSaved}:{contractId:string;projectId:string;summary:ContractAppendixSummary;disabled:boolean;onSaved:()=>Promise<void>}){
+export function ContractAppendicesPanel({contractId,projectId,unitId,summary,disabled,onSaved}:{contractId:string;projectId:string;unitId?:string;summary:ContractAppendixSummary;disabled:boolean;onSaved:()=>Promise<void>}){
   const [editing,setEditing]=useState<{number:number;expected:string|null}|null>(null);
   const [documents,setDocuments]=useState<DocumentRecord[]>([]);
   const [versions,setVersions]=useState<DocumentVersionRecord[]>([]);
@@ -15,12 +15,17 @@ export function ContractAppendicesPanel({contractId,projectId,summary,disabled,o
   const request=useRef<AbortController|null>(null);
   useEffect(()=>()=>request.current?.abort(),[]);
   const editable=summary.editable&&!disabled&&!!summary.contractVersionId;
+  const matchesUnit=(doc:Pick<DocumentRecord,'units'|'businessLinks'>)=>{
+    const links=doc.businessLinks?.filter(link=>link.kind==='unit')??[];
+    // `units` contains display codes, not IDs. Never compare it with a UUID.
+    return links.length?Boolean(unitId&&links.some(link=>link.id===unitId)):!doc.units.length;
+  };
   async function edit(item:ContractAppendixSummary['items'][number]){
     request.current?.abort();const controller=new AbortController();request.current=controller;
     setEditing({number:item.number,expected:item.documentVersionId});setDocuments([]);setVersions([]);setDocumentId('');setVersionId('');setError('');setLoading(true);
     try{
       const result=await documentRepository.listProject(projectId,{},controller.signal);
-      if(!controller.signal.aborted)setDocuments(result.documents.filter(doc=>doc.projectId===projectId&&doc.storageProvider==='sharepoint'&&doc.status!=='archived'));
+      if(!controller.signal.aborted)setDocuments(result.documents.filter(doc=>doc.projectId===projectId&&doc.storageProvider==='sharepoint'&&doc.status!=='archived'&&matchesUnit(doc)));
     }catch(value){if(!controller.signal.aborted)setError(value instanceof Error?value.message:'Dokumenty se nepodařilo načíst.');}
     finally{if(!controller.signal.aborted)setLoading(false);}
   }
@@ -31,6 +36,7 @@ export function ContractAppendicesPanel({contractId,projectId,summary,disabled,o
       const doc=await documentRepository.get(id,controller.signal);
       if(!controller.signal.aborted){
         if(!doc||doc.projectId!==projectId||doc.storageProvider!=='sharepoint')throw new Error('Dokument není pro tento projekt dostupný.');
+        if(!matchesUnit(doc))throw new Error('Dokument patří jiné jednotce. Vyberte přílohu tohoto bytu nebo společný dokument projektu.');
         setVersions((doc.versions??[]).filter(version=>['ready','sent','negotiation','signed'].includes(version.status)));
       }
     }catch(value){if(!controller.signal.aborted)setError(value instanceof Error?value.message:'Verze dokumentu se nepodařilo načíst.');}

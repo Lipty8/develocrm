@@ -96,7 +96,7 @@ export function RsGenerationPanel({contractId,contractType='rs',canGenerate,onCh
         <div><dt>{summary.template?.approvalStatus&&summary.template.approvalStatus!=='approved'?'Šablona ke kontrole':'Schválená šablona'}</dt><dd>{summary.template?`${summary.template.name} · ${summary.template.version}`:'Není dostupná'}</dd></div>
         {summary.template?.effectiveFrom&&<div><dt>Šablona účinná od</dt><dd>{formatPragueDate(summary.template.effectiveFrom)}</dd></div>}
       </dl>}
-      {summary?.appendices&&<ContractAppendicesPanel key={`${contractId}:${summary.appendices.contractVersionId}`} contractId={contractId} projectId={summary.project.id}
+      {summary?.appendices&&<ContractAppendicesPanel key={`${contractId}:${summary.appendices.contractVersionId}`} contractId={contractId} projectId={summary.project.id} unitId={summary.unit.id}
         summary={summary.appendices} disabled={!canGenerate||working||checking||pendingGeneration} onSaved={async()=>{await reload();onChanged();}}/>}
       {summary?.precedingRsComparison&&<div className="contract-payment-terms" aria-label="Porovnání s podepsanou RS">
         <h3>Porovnání s podepsanou RS</h3><p>{summary.precedingRsComparison.message}</p>

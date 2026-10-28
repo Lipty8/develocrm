@@ -140,6 +140,8 @@ export class RsGenerationRepository{
             'name',CASE WHEN visibility.allowed THEN appendix.name END,
             'version',CASE WHEN visibility.allowed THEN appendix_version.version_label END,
             'available',visibility.allowed AND appendix.archived_at IS NULL AND appendix.storage_provider='sharepoint'
+              AND (NOT EXISTS(SELECT 1 FROM unit_documents unit_link WHERE unit_link.tenant_id=contract.tenant_id AND unit_link.document_id=appendix.id)
+                OR EXISTS(SELECT 1 FROM unit_documents unit_link WHERE unit_link.tenant_id=contract.tenant_id AND unit_link.document_id=appendix.id AND unit_link.unit_id=contract.unit_id))
               AND appendix_version.status_code IN ('ready','sent','negotiation','signed')
               AND appendix_version.content_hash~'^sha256:[a-f0-9]{64}$'
               AND NULLIF(btrim(appendix_version.external_version_id),'') IS NOT NULL

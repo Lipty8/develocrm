@@ -9,3 +9,21 @@ Reproduction in `backend/tests/contract-appendices.test.ts`: create a ready docu
 This is confirmed locally, not asserted as an observed incorrect pilot binding. It is not fixed in Sites 184 / backend 21462ae. The new red regression is intentionally uncommitted pending implementation.
 
 Next implementation must cover selection, later changes to document/unit associations, readiness and generation/signature evidence, not just hide picker options. Shared project appendices without unit restriction must remain usable. Do not infer catalogue applicability from filenames. Preserve signed history and validate lock ordering; adding a document-link trigger without checking the existing unit → document lock ordering could introduce a deadlock. Audit existing associations read-only before any remediation.
+
+## Read-only pilot audit
+
+Execution `job-develocrm-hold-expiry-juddkxh` Succeeded on 2026-10-28. All 22 classified appendix links had unit associations; zero links were scoped exclusively to a different unit than their contract. No business records or SharePoint files changed. This proves the observed current links are consistent; it does not remove the reproduced future-selection defect.
+
+## Prepared local presentation/readiness changes
+
+The picker now uses existing `businessLinks` unit UUIDs, not `units` display codes. It offers current-unit documents and unrestricted project documents, excludes unknown scoped identities, and rechecks the returned detail after selection. Contract readiness independently marks selected foreign-unit documents unavailable using existing `unit_documents` UUID links. Tests cover a shared document, a correct unit, another unit with the same display code, missing identity metadata and a changed detail response.
+
+These changes are not deployed and are not a substitute for server-side enforcement. The backend rejection regression remains red until the database guard is implemented.
+
+Local prepared changes passed 199 frontend interaction tests, 28 related generation/appendix unit tests, frontend typecheck, backend TypeScript build, lint and production frontend build. The deliberately red database regression is excluded from the checkpoint commit, not treated as passing or removed. The active pilot remains backend 21462ae / Sites 184.
+
+## Pending safety approval
+
+Safety review rejected creation of the proposed 0080 migration before writing the file because it would add persistent guards to multiple lifecycle tables. No 0080 file was created and no such migration was applied. User approval was requested through the app. Do not retry or route the rejected migration through another executor without resolving that approval.
+
+Proposed scope for approval: validate applicability at appendix selection; freeze unit association edits while the document is selected as an appendix (an editable selection can first be removed); recheck existing selections before generation, final-document binding and signature. Project-level shared appendices remain supported. Existing tenant/project/RBAC/snapshot/immutability checks remain in force. No silent historical repair. Unit-first selection and document-only metadata locks must be verified in real PostgreSQL tests in both operation orderings before deployment.

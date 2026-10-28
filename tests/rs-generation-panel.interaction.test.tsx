@@ -193,6 +193,31 @@ function appendixDocument():DocumentRecord{return{id:'doc-one',projectId:'projec
   units:[],parties:[],contracts:[],salesCases:[],clientChanges:[],complaints:[],handovers:[],
   versions:[{id:'exact-v1',identifier:'v1',label:'v1',status:'ready',note:null,fileSize:100,createdAt:'',author:null},
     {id:'draft-v2',identifier:'v2',label:'v2',status:'draft',note:null,fileSize:100,createdAt:'',author:null}]};}
+test('appendix picker allows current-unit and shared documents, never a different unit',async()=>{
+  const shared={...appendixDocument(),id:'shared-doc',name:'Společné standardy',units:[]};
+  const own:DocumentRecord={...appendixDocument(),id:'own-doc',name:'Katalog tohoto bytu',units:['417'],businessLinks:[{kind:'unit',id:'unit-one',label:'417'}]};
+  const other:DocumentRecord={...appendixDocument(),id:'other-doc',name:'Katalog jiného bytu',units:['417'],businessLinks:[{kind:'unit',id:'unit-other',label:'417'}]};
+  const unknown={...appendixDocument(),id:'unknown-unit',name:'Neověřená jednotka',units:['unit-one']};
+  mock.method(documentRepository,'listProject',async()=>({documents:[shared,own,other,unknown],connection:{status:'connected',syncStatus:'idle',lastSuccessfulSyncAt:null},source:'backend-api'}));
+  render(<ContractAppendicesPanel contractId={contractId} projectId='project-one' unitId='unit-one' summary={{contractVersionId:'working-version',editable:true,items:[{number:1,label:'Katalogový list Bytu',documentId:null,documentVersionId:null,name:null,version:null,available:false}]}} disabled={false} onSaved={async()=>{}}/>);
+  fireEvent.click(screen.getByRole('button',{name:'Vybrat přílohu 1'}));
+  await screen.findByRole('option',{name:own.name});
+  assert.ok(screen.getByRole('option',{name:shared.name}));
+  assert.equal(screen.queryByRole('option',{name:other.name}),null);
+  assert.equal(screen.queryByRole('option',{name:unknown.name}),null);
+});
+test('appendix detail rechecks unit applicability after the list has loaded',async()=>{
+  const doc:DocumentRecord={...appendixDocument(),units:['417'],businessLinks:[{kind:'unit',id:'unit-one',label:'417'}]};
+  mock.method(documentRepository,'listProject',async()=>({documents:[doc],connection:{status:'connected',syncStatus:'idle',lastSuccessfulSyncAt:null},source:'backend-api'}));
+  mock.method(documentRepository,'get',async()=>({...doc,units:['418'],businessLinks:[{kind:'unit' as const,id:'another-unit',label:'418'}]}));
+  render(<ContractAppendicesPanel contractId={contractId} projectId='project-one' unitId='unit-one' summary={{contractVersionId:'working-version',editable:true,items:[{number:1,label:'Katalogový list Bytu',documentId:null,documentVersionId:null,name:null,version:null,available:false}]}} disabled={false} onSaved={async()=>assert.fail('Must not save')}/>);
+  fireEvent.click(screen.getByRole('button',{name:'Vybrat přílohu 1'}));
+  await screen.findByRole('option',{name:doc.name});
+  fireEvent.change(screen.getByLabelText('Dokument'),{target:{value:doc.id}});
+  await screen.findByText(/Dokument patří jiné jednotce/);
+  assert.equal((screen.getByRole('button',{name:'Uložit přílohu'}) as HTMLButtonElement).disabled,true);
+  assert.equal(screen.queryByRole('option',{name:'v1'}),null);
+});
 test('výběr přílohy předá konkrétní verzi a zachová původní concurrency token',async()=>{
   const doc=appendixDocument();mock.method(documentRepository,'listProject',async()=>({documents:[doc],connection:{status:'connected',syncStatus:'idle',lastSuccessfulSyncAt:null},source:'backend-api'}));
   mock.method(documentRepository,'get',async()=>doc);const sent:unknown[]=[];let saved=0;
