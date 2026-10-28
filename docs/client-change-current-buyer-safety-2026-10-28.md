@@ -124,4 +124,49 @@ changing the accessible field name; the label/help association was corrected.
 The directory's existing old-schema compatibility is retained through an
 explicit capability check; pilot rollout still requires the 0078 schema check.
 
-Follow-up rollout/evidence will be appended after verification.
+### 0078 rollout and authenticated verification
+
+- GitHub code `29a9a5c3b286ceb337fad8ddba7103ec12697b6a`, pushed. Matching
+  Sites source `6477c7a3a1c851645c82786eded9433594026db3`, equal tree
+  `142bed48fecf8409e09edc8f61ba7d4d44f1e147`.
+- ACR `cg5f` API and `cg5g` migrations Succeeded using the same sanitized input
+  policy (no secrets, original Word files, uploads, seeds or business data).
+  API digest `sha256:408e69eb5f78d9b38e231c0f40435aca7c44961b186e0c1533403010de710ece`;
+  migration digest `sha256:fd6792915bada1890a64ce425bdc9aecb7224fa6658aa786106114cc40042c33`.
+- Migration preflight `caj-develocrm-migrations-pilot-q63sqlj` Succeeded: 77
+  matching checksums, only 0078 pending. Dedicated migration execution
+  `caj-develocrm-migrations-pilot-yc8ool4` Succeeded, applied only 0078. Read-only
+  postflight `caj-develocrm-migrations-pilot-fhquqt5` Succeeded: 78 matching
+  checksums, no pending files, enabled binding guard and assessment present.
+- Revision `ca-develocrm-api-pilot--closed-change-29a9a5c` Healthy/Running,
+  latestReady and 100% latest traffic; health/ready 200. Existing identity,
+  secret references, probes and access controls were retained.
+- Owner-private Sites 183, deployment `appgdep_6ae1a164204c8191887a1daa6990e64a`,
+  Succeeded; saved version is archive-backed with the matching source SHA.
+- Actual browser reproduction on Sites 182: available TECH62-DRAFT still
+  offered `Technical TECH62-DRAFT` despite its ended case. No request submitted.
+  After Sites 183 reload, the same dialog has no historical buyer option and
+  explains that a new business case must be created. Closed without saving.
+- Runtime-role proof `job-develocrm-hold-expiry-fbbr96n` Succeeded. It checked
+  exact project `39809e0b-59e3-40aa-aaad-713887975a30` / unit
+  `f65bcae3-517d-469b-9b2a-6b7d345fae4e`, explicit TECH62 markers, available
+  state, failed historical case and no active case. The actual existing
+  SalesRepository returned `clientChangesRequireNewSale:true` in a read-only
+  transaction. The stale create was rejected with `CLIENT_CHANGE_SALE_CLOSED`;
+  record count stayed unchanged and the verification transaction rolled back.
+- Independent approved-original TECH74 RS/SBK verification
+  `job-develocrm-hold-expiry-jhpc3pj` Succeeded on the new matching image. Exact
+  SharePoint hashes and signed document-version bindings remain verified for
+  RS v2 / SBK v1. The first SBK payment remains 1,100,000 CZK due 3 November;
+  next action remains KS and commercial status contracted. Signature audit
+  verified. No new upload, signature, schedule update or financial mutation.
+- Browser warning/error sample empty. Bounded new-revision console sample:
+  102 records, zero matching 5xx/RLS/unhandled/startup-error signals.
+- No pilot business record or existing technical fixture was changed by this
+  follow-up. Only additive schema/application deployment occurred. Screenshot
+  inspected inline; no file artifact is claimed under the previously recorded
+  browser filesystem limitation.
+
+Open business question: whether new client changes remain allowed after final
+handover, or only existing changes and complaints should remain. Asked Adam
+separately; this package deliberately preserves that behavior pending decision.
