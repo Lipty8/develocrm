@@ -9,6 +9,7 @@ import {formatMoney} from '../app/crm-data';
 import {ContractAppendicesPanel} from '../app/components/contract-appendices-panel';
 import {parseCrmRoute} from '../app/crm-routing.mjs';
 import {documentRepository,type DocumentRecord} from '../app/repositories/document-repository';
+import {DATA_MUTATED_EVENT} from '../app/lib/data-invalidation';
 let render:typeof import('@testing-library/react').render,screen:typeof import('@testing-library/react').screen,cleanup:typeof import('@testing-library/react').cleanup,fireEvent:typeof import('@testing-library/react').fireEvent,waitFor:typeof import('@testing-library/react').waitFor;
 before(async()=>{const dom=new JSDOM('<!doctype html><html><body></body></html>',{url:'https://develocrm.test',pretendToBeVisual:true});Object.assign(globalThis,{self:dom.window,window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,Node:dom.window.Node});Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});({render,screen,cleanup,fireEvent,waitFor}=await import('@testing-library/react'));});
 afterEach(()=>{cleanup();mock.restoreAll();});
@@ -208,6 +209,31 @@ test('výběr přílohy předá konkrétní verzi a zachová původní concurren
   await waitFor(()=>assert.equal(saved,1));
   assert.deepEqual(sent,[[contractId,{versionId:'working-version',number:1,documentId:doc.id,documentVersionId:'exact-v1',expectedDocumentVersionId:'old-exact'}]]);
   assert.equal(screen.queryByRole('form',{name:'Výběr přílohy 1'}),null);
+});
+test('actual appendix transport preserves unsaved signing dates while refreshing its selected exact document',async()=>{
+ Object.assign(globalThis,{CustomEvent:window.CustomEvent});
+ let linked=false,changed=0;const doc=appendixDocument();const requests:unknown[]=[];
+ mock.method(entraAuth,'getAccessToken',async()=> 'technical-token');
+ mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{requests.push([String(input),JSON.parse(String(init?.body))]);linked=true;return Response.json({ok:true});});
+ mock.method(documentRepository,'listProject',async()=>({documents:[doc],connection:{status:'connected',syncStatus:'idle',lastSuccessfulSyncAt:null},source:'backend-api'}));
+ mock.method(documentRepository,'get',async()=>doc);
+ mock.method(commercialRepository,'getRsReadiness',async()=>{const value=ready();value.summary!.project.id='project-one';
+  value.summary!.signingPlan={versionId:'working-version',sellerPlannedOn:'2026-11-01',buyerPlannedOn:'2026-11-02',editable:true};
+  value.summary!.appendices={contractVersionId:'working-version',editable:true,items:[{number:1,label:'Katalogový list Bytu',documentId:linked?doc.id:null,documentVersionId:linked?'exact-v1':null,name:linked?doc.name:null,version:linked?'v1':null,available:linked}]};return value;});
+ // Same keyed-main invalidation boundary used by the actual CRM workspace.
+ function Workspace(){const [version,setVersion]=React.useState(0);React.useEffect(()=>{const refresh=()=>setVersion(v=>v+1);window.addEventListener(DATA_MUTATED_EVENT,refresh);return()=>window.removeEventListener(DATA_MUTATED_EVENT,refresh);},[]);
+  return <main key={version}><RsGenerationPanel contractId={contractId} canGenerate onChanged={()=>{changed++;}}/></main>;}
+ render(<Workspace/>);
+ const input=await screen.findByLabelText('Prodávající – plánované datum podpisu');
+ fireEvent.change(input,{target:{value:'2026-11-05'}});
+ fireEvent.click(screen.getByRole('button',{name:'Vybrat přílohu 1'}));await screen.findByRole('option',{name:doc.name});
+ fireEvent.change(screen.getByLabelText('Dokument'),{target:{value:doc.id}});await screen.findByRole('option',{name:'v1'});
+ fireEvent.change(screen.getByLabelText('Verze dokumentu'),{target:{value:'exact-v1'}});
+ fireEvent.click(screen.getByRole('button',{name:'Uložit přílohu'}));await waitFor(()=>assert.equal(changed,1));
+ await waitFor(()=>assert.equal(screen.queryByRole('form',{name:'Výběr přílohy 1'}),null));
+ assert.equal((screen.getByLabelText('Prodávající – plánované datum podpisu') as HTMLInputElement).value,'2026-11-05');
+ assert.ok(screen.getByText(new RegExp(doc.name)));
+ assert.deepEqual(requests,[[`/api/commercial/contracts/${contractId}/appendices`,{versionId:'working-version',number:1,documentId:doc.id,documentVersionId:'exact-v1',expectedDocumentVersionId:null}]]);
 });
 test('uzamčené přílohy nemají editaci; odmítnutý výběr zůstane viditelný pro opravu',async()=>{
   const doc=appendixDocument();const summary={contractVersionId:'working-version',editable:true,items:[{number:1,label:'Katalogový list Bytu',documentId:null,documentVersionId:null,name:null,version:null,available:false}]};

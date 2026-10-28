@@ -1,5 +1,9 @@
 # Rezidence Dejvice — current production data readiness
 
+Historical snapshot. The 28 October read-only follow-up is recorded in
+`dejvice-production-data-readiness-2026-10-28.md`; notably, seller settings and
+approved-profile activation must not be reported as still missing.
+
 ## Scope and evidence
 
 This is a fresh read-only follow-up after the approved-original TECH74 RS/SBK

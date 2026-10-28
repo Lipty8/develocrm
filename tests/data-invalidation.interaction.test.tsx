@@ -7,6 +7,7 @@ import {DATA_MUTATED_EVENT,type DataMutationDetail} from "../app/lib/data-invali
 import {templateRepository} from "../app/repositories/template-repository";
 import {entraAuth} from "../app/lib/entra-auth";
 import {documentRepository} from '../app/repositories/document-repository';
+import {commercialRepository} from '../app/repositories/commercial-repository';
 
 before(()=>{
   const dom=new JSDOM("<!doctype html><html><body></body></html>",{url:"https://develocrm.test"});
@@ -23,6 +24,32 @@ test('workflow document link keeps the modal open by leaving refresh to its scop
   assert.equal(sent.length,3);for(const request of sent)assert.equal(request.url,'/api/documents?documentId=technical-document&action=link&targetId=exact-target');
   assert.deepEqual(sent.map(request=>request.body),[{linkType:'client_change'},{linkType:'complaint'},{linkType:'handover'}]);
  }finally{globalThis.fetch=originalFetch;token.mock.restore();window.removeEventListener(DATA_MUTATED_EVENT,listener);}
+});
+
+test('contract preparation writes leave refresh to their existing scoped owner, not the whole workspace',async()=>{
+ const originalFetch=globalThis.fetch;const token=mock.method(entraAuth,'getAccessToken',async()=> 'technical-token');
+ let invalidations=0;const listener=()=>{invalidations++;};const sent:Array<{url:string;body:unknown}>=[];
+ window.addEventListener(DATA_MUTATED_EVENT,listener);
+ globalThis.fetch=async(input,init)=>{sent.push({url:String(input),body:JSON.parse(String(init?.body))});return Response.json({ok:true});};
+ try{
+  await commercialRepository.setSigningPlan('exact-contract',{versionId:'exact-version',sellerPlannedOn:'2026-11-02',buyerPlannedOn:'2026-11-03'});
+  await commercialRepository.preparePaymentTerms('exact-contract','exact-version');
+  await commercialRepository.setContractAppendix('exact-contract',{versionId:'exact-version',number:1,documentId:'doc',documentVersionId:'dv',expectedDocumentVersionId:'previous-dv'});
+  assert.equal(invalidations,0);
+  assert.deepEqual(sent,[
+   {url:'/api/commercial/contracts/exact-contract/signing-plan',body:{versionId:'exact-version',sellerPlannedOn:'2026-11-02',buyerPlannedOn:'2026-11-03'}},
+   {url:'/api/commercial/contracts/exact-contract/payment-terms',body:{versionId:'exact-version'}},
+   {url:'/api/commercial/contracts/exact-contract/appendices',body:{versionId:'exact-version',number:1,documentId:'doc',documentVersionId:'dv',expectedDocumentVersionId:'previous-dv'}},
+  ]);
+ }finally{globalThis.fetch=originalFetch;token.mock.restore();window.removeEventListener(DATA_MUTATED_EVENT,listener);}
+});
+
+test('actual generation retains the existing broader invalidation for newly created document evidence',async()=>{
+ const originalFetch=globalThis.fetch;const token=mock.method(entraAuth,'getAccessToken',async()=> 'technical-token');
+ let invalidations=0;const listener=()=>{invalidations++;};window.addEventListener(DATA_MUTATED_EVENT,listener);
+ globalThis.fetch=async()=>Response.json({generation:{operationId:'operation',documentId:'document',documentVersionId:'exact-document-version',contractVersionId:'exact-contract-version',contractVersion:1,replayed:false}});
+ try{const result=await commercialRepository.generateContract('exact-contract','original-key');assert.equal(result.documentVersionId,'exact-document-version');assert.equal(invalidations,1);}
+ finally{globalThis.fetch=originalFetch;token.mock.restore();window.removeEventListener(DATA_MUTATED_EVENT,listener);}
 });
 
 test("správa šablon obnovuje svůj seznam bez resetu projektového kontextu",async()=>{
