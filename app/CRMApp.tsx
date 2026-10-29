@@ -26,7 +26,7 @@ import {apiFetch} from "./lib/api-client";
 import {RelatedUnitLink} from './components/entity-links';
 import {getUnitContext,unitContextKey,contractBelongsToUnit,currentCaseReleaseBlocker,preferredSalesPartyId,clientChangeCandidates} from './lib/business-context';
 import {AsyncNotice,useAsyncRead} from './components/async-content';
-import {paymentNeedsAttention,taskNeedsAttention} from './lib/dashboard-attention';
+import {contractNeedsAttention,paymentNeedsAttention,taskNeedsAttention} from './lib/dashboard-attention';
 import {ClientContractLinks} from './components/client-contract-links';
 import {ClientAddressFields,ClientAddressSummary} from './components/client-address-fields';
 import {normalizePartyAddress,type PartyAddressValue} from '../backend/src/shared/party-address';
@@ -1279,21 +1279,21 @@ function CreateAccessoryModal({inventory,initialCategory="parking",close,save}:{
   return <FormModal title="Nové příslušenství" close={close} onSave={async()=>{const parsed=Number(amount.replace(/\s/g,"").replace(",","."));if(!code.trim())throw new Error("Doplňte označení příslušenství");if(!Number.isFinite(parsed)||parsed<0)throw new Error("Doplňte platnou cenu");await save({category,code:code.trim(),areaM2:area?Number(area.replace(",",".")):null,amount:parsed,relatedAccessoryId:category==="wallbox"&&relation?relation:null});}} saveLabel="Vytvořit"><div className="form-row"><label><span>Typ</span><select value={category} onChange={event=>setCategory(event.target.value as typeof category)}><option value="parking">Parkovací stání</option><option value="cellar">Sklep</option><option value="wallbox">Wallbox</option></select></label><label><span>Označení</span><input value={code} onChange={event=>setCode(event.target.value)} placeholder={category==="parking"?"P30":category==="cellar"?"S20":"W9"}/></label></div><div className="form-row">{category==="cellar"&&<label><span>Plocha m²</span><input inputMode="decimal" value={area} onChange={event=>setArea(event.target.value)}/></label>}<label><span>Cena včetně DPH</span><input inputMode="decimal" value={amount} onChange={event=>setAmount(event.target.value)}/></label>{category==="wallbox"&&<label><span>Navázané parkovací stání</span><select value={relation} onChange={event=>setRelation(event.target.value)}><option value="">Bez vazby</option>{inventory.filter(item=>item.category==="parking").map(item=><option key={item.id} value={item.id}>{item.code}</option>)}</select></label>}</div></FormModal>;
 }
 
-function ProjectOverview({ project, onTab,taskRows,paymentRows,handoverRows }: { project: ProjectRecord; onTab: (tab: ProjectTab) => void;taskRows:TaskRecord[];paymentRows:PaymentRecord[];handoverRows:HandoverRecord[] }) {
+export function ProjectOverview({ project, onTab,taskRows,paymentRows,handoverRows }: { project: ProjectRecord; onTab: (tab: ProjectTab) => void;taskRows:TaskRecord[];paymentRows:PaymentRecord[];handoverRows:HandoverRecord[] }) {
   const [projectActivity,setProjectActivity]=useState<TimelineRecord[]>([]);
   useEffect(()=>{const controller=new AbortController();const projectId=backendEntityId(project.backendId);if(!projectId){Promise.resolve().then(()=>setProjectActivity([]));return()=>controller.abort();}activityRepository.projectTimeline(projectId,controller.signal).then(setProjectActivity).catch(()=>setProjectActivity([]));return()=>controller.abort();},[project.backendId]);
   if(project.units===0)return <div className="project-empty-onboarding card"><span className="metric-icon green"><Building2 size={22}/></span><div><h2>Projekt je založený</h2><p>Zatím nemá strukturu ani jednotky. Souhrny se začnou počítat až ze skutečně vložených dat.</p><ol><li><CheckCircle2 size={16}/> Základní údaje projektu</li><li><Building2 size={16}/> Přidat etapy, budovy a sekce</li><li><Home size={16}/> Importovat nebo založit jednotky</li><li><KeyRound size={16}/> Doplnit příslušenství a ceny</li><li><Users size={16}/> Přiřadit uživatele projektu</li></ol><button className="primary-button" onClick={()=>onTab("units")}><Home size={16}/> Pokračovat k jednotkám</button></div></div>;
-  const projectTasks = taskRows.filter((task) => taskBelongsToProject(task,project));
-  const projectPayments = paymentRows;
-  const projectHandovers = handoverRows;
-  const projectUnitIds = units.filter((unit) => unitBelongsToProject(unit,project)).map((unit) => unit.id);
-  const firstUnit = projectUnitIds[0] || "—";
-  const nextPayment = projectPayments.find((payment) => payment.status !== "paid");
+  const projectTasks = taskRows.filter((task) => !task.done&&taskBelongsToProject(task,project));
+  const pendingContracts=contracts.filter(contract=>contractBelongsToProject(contract,project)&&contractNeedsAttention(contract));
+  const workCount=projectTasks.length+pendingContracts.length;
+  const belongs=(row:{projectId:string;project:string})=>project.backendId?row.projectId===project.backendId:projectMatchesName(project,row.project);
+  const projectPayments = paymentRows.filter(belongs);
+  const projectHandovers = handoverRows.filter(row=>belongs(row)&&row.status==="planned").sort((a,b)=>a.scheduledAt.localeCompare(b.scheduledAt));
+  const nextPayment = projectPayments.filter(payment=>payment.status!=="cancelled"&&payment.amount>payment.paid&&Number.isFinite(Date.parse(payment.dueAt))).sort((a,b)=>a.dueAt.localeCompare(b.dueAt))[0];
   const nextHandover = projectHandovers[0];
   const deadlines = [
-    { date: "23. 7.", detail: `Kontrola smluvních dat ${firstUnit}`, tab: "contracts" as ProjectTab, icon: FileText },
-    { date: nextPayment?formatPragueDate(nextPayment.dueAt):"—", detail: nextPayment ? `Splatnost · ${nextPayment.unit}` : "Bez nejbližší splatnosti", tab: "payments" as ProjectTab, icon: Clock3 },
-    { date: nextHandover?formatPragueDate(nextHandover.scheduledAt):project.plannedHandover, detail: nextHandover ? `Příprava předání ${nextHandover.unit}` : "Milník předávání projektu", tab: "handovers" as ProjectTab, icon: CalendarDays },
+    ...(nextPayment?[{ date: formatPragueDate(nextPayment.dueAt), detail: `Splatnost · ${nextPayment.unit}`, tab: "payments" as ProjectTab, icon: Clock3 }]:[]),
+    ...(nextHandover?[{ date: formatPragueDateTime(nextHandover.scheduledAt), detail: `Příprava předání ${nextHandover.unit}`, tab: "handovers" as ProjectTab, icon: CalendarDays }]:project.plannedHandover&&project.plannedHandover!=="—"?[{date:project.plannedHandover,detail:"Milník předávání projektu",tab:"handovers" as ProjectTab,icon:CalendarDays}]:[]),
   ];
   const paid = projectPayments.reduce((sum, payment) => sum + payment.paid, 0);
   const expected = projectPayments.reduce((sum, payment) => sum + payment.amount, 0);
@@ -1302,16 +1302,17 @@ function ProjectOverview({ project, onTab,taskRows,paymentRows,handoverRows }: {
     <div className="project-dashboard-grid">
       <div className="project-main-column">
         <section className="card project-work-card">
-          <div className="project-section-head"><div><h2>Úkoly a vyžaduje pozornost</h2><p>Nejdůležitější práce v kontextu projektu.</p></div><Badge tone="danger">{project.attention} položek</Badge></div>
+          <div className="project-section-head"><div><h2>Úkoly a vyžaduje pozornost</h2><p>Nejdůležitější práce v kontextu projektu.</p></div><Badge tone={workCount?"danger":"neutral"}>{workCount} položek</Badge></div>
           <div className="project-work-list">
             {projectTasks.slice(0, 3).map((task) => { const title = task.title.toLowerCase(); return <button key={task.id} onClick={() => onTab(title.includes("platb") ? "payments" : title.includes("předání") ? "handovers" : "units")}><span className={`attention-type ${task.priority === "Vysoká" ? "danger" : "warning"}`}><AlertTriangle size={17} /></span><span><strong>{task.title}</strong><small>{task.object} · {task.owner}</small></span><Badge>{task.due}</Badge><ChevronRight size={16} /></button>; })}
-            <button onClick={() => onTab("contracts")}><span className="attention-type blue"><FileText size={17} /></span><span><strong>Dokončit rozpracované smlouvy</strong><small>{contracts.filter((contract) => contractBelongsToProject(contract,project) && normalizeContractStatus(contract.statusCode??contract.state) !== "signed").length} smlouvy čekají na další krok</small></span><Badge tone="blue">Smlouvy</Badge><ChevronRight size={16} /></button>
+            {pendingContracts.length>0&&<button onClick={() => onTab("contracts")}><span className="attention-type blue"><FileText size={17} /></span><span><strong>Dokončit rozpracované smlouvy</strong><small>{pendingContracts.length} {pendingContracts.length===1?"smlouva čeká":pendingContracts.length<5?"smlouvy čekají":"smluv čeká"} na další krok</small></span><Badge tone="blue">Smlouvy</Badge><ChevronRight size={16} /></button>}
+            {!workCount&&<div className="empty-filter-state"><CheckCircle2 size={20}/><strong>Žádné otevřené úkoly ani rozpracované smlouvy</strong></div>}
           </div>
         </section>
         <section className="card project-activity-card"><div className="project-section-head"><div><h2>Poslední aktivita</h2><p>Smlouvy, platby, dokumenty a změny jednotek.</p></div><Badge tone="neutral">{project.name}</Badge></div><div className="timeline-mini project-activity-list">{projectActivity.length ? projectActivity.slice(0, 5).map((item) => <div key={item.id}><span className={`timeline-icon ${item.icon}`}><Activity size={16} /></span><span><strong>{item.title}</strong><small>{item.detail}</small></span><time>{formatPragueDateTime(item.date)}</time></div>) : <div><span className="timeline-icon"><Activity size={16} /></span><span><strong>Zatím bez nové aktivity</strong><small>Nové změny projektu se zobrazí zde.</small></span></div>}</div></section>
       </div>
       <aside className="project-side-column">
-        <section className="card project-deadlines-card"><SectionTitle title="Nejbližší termíny" /><div>{deadlines.map((deadline) => { const Icon = deadline.icon; return <button key={`${deadline.date}-${deadline.detail}`} onClick={() => onTab(deadline.tab)}><Icon size={18} /><span><strong>{deadline.date}</strong><small>{deadline.detail}</small></span><ChevronRight size={16} /></button>; })}</div></section>
+        <section className="card project-deadlines-card"><SectionTitle title="Nejbližší termíny" /><div>{deadlines.map((deadline) => { const Icon = deadline.icon; return <button key={`${deadline.date}-${deadline.detail}`} onClick={() => onTab(deadline.tab)}><Icon size={18} /><span><strong>{deadline.date}</strong><small>{deadline.detail}</small></span><ChevronRight size={16} /></button>; })}{!deadlines.length&&<p>Žádné evidované termíny.</p>}</div></section>
         <section className={`card project-brief-card ${(refundable??0)>0?"refund-project-brief":""}`}><div className="project-section-head"><div><h2>Platby</h2><p>Stručný finanční přehled.</p></div><button className="text-button" onClick={() => onTab("payments")}>Detail <ArrowRight size={14} /></button></div><strong>{formatMoney(paid)}</strong><small>uhrazeno z evidovaných {formatMoney(expected)}</small><span className="payment-progress"><i style={{ width: `${expected ? paid / expected * 100 : 0}%` }} /></span>{(refundable??0)>0?<p><b>K vrácení {formatMoney(refundable??0)}</b> · otevřít detail plateb</p>:<p>{projectPayments.filter((payment) => payment.status === "overdue").length} položek po splatnosti</p>}</section>
         <section className="card project-brief-card"><div className="project-section-head"><div><h2>Připravovaná předání</h2><p>Nejbližší jednotky k dokončení.</p></div><button className="text-button" onClick={() => onTab("handovers")}>Detail <ArrowRight size={14} /></button></div>{projectHandovers.length ? projectHandovers.slice(0, 3).map((handover) => <button className="project-brief-row" key={handover.id} onClick={() => onTab("handovers")}><span><strong>{handover.unit}</strong><small>{handover.client || "Bez klienta"}</small></span><Badge>{formatPragueDate(handover.scheduledAt)}</Badge></button>) : <p>Termíny předání zatím nejsou naplánované.</p>}</section>
       </aside>

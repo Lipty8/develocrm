@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {getUnitContext,currentCaseContracts,contractBelongsToUnit,currentCaseReleaseBlocker} from '../app/lib/business-context';
 import {projectUnitSalesWorkflow} from '../app/lib/unit-sales-workflow';
-import {paymentNeedsAttention,taskNeedsAttention} from '../app/lib/dashboard-attention';
+import {contractNeedsAttention,paymentNeedsAttention,taskNeedsAttention} from '../app/lib/dashboard-attention';
 import type {UnitRecord,UnitCommercialContext,ContractRecord,TaskRecord} from '../app/crm-data';
 import type {PaymentRecord} from '../app/repositories/payment-repository';
 
@@ -46,4 +46,15 @@ test('pozornost úkolům znamená blížící se termín nebo vysokou prioritu',
   assert.equal(taskNeedsAttention(task,now),true);
   assert.equal(taskNeedsAttention({...task,done:true},now),false);
   assert.equal(taskNeedsAttention({...task,dueAt:'2026-11-20T12:00:00Z'},now),false);
+});
+
+test('rozpracované smlouvy nezahrnují ukončené dokumenty ani dokumenty uzavřeného obchodu',()=>{
+ for(const statusCode of ['draft','sent','negotiation','approved','signing']){
+  const working=contract('working','unit-a','case-a',statusCode);
+  assert.equal(contractNeedsAttention({...working,salesCaseStatus:'active'}),true);
+  for(const salesCaseStatus of ['cancelled','closed','completed','lost'])assert.equal(contractNeedsAttention({...working,salesCaseStatus}),false);
+ }
+ for(const statusCode of ['signed','cancelled','terminated'])assert.equal(contractNeedsAttention({...contract('final','unit-a','case-a',statusCode),salesCaseStatus:'active'}),false);
+ assert.equal(contractNeedsAttention({...contract('legacy','unit-a','case-a','draft'),salesCaseStatus:undefined}),true);
+ assert.equal(contractNeedsAttention({...contract('label','unit-a','case-a'),statusCode:undefined,state:'Ukončená'}),false);
 });

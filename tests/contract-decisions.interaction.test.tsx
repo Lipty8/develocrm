@@ -16,7 +16,7 @@ import {contractSummaryCategory,contractSummaryCounts,type ContractSummaryCatego
 import {contractStageHistory,contractWorkflowPresentation} from '../app/lib/contract-stage-history';
 import {ContractWorkflowSteps} from '../app/components/contract-workflow-steps';
 import {PackageOpen,UserRound,Users} from "lucide-react";
-import {Projects,UnitContracts,ContractDetail,ContractWorkflowModal,ClientChangeStatusModal,ComplaintDetailModal,ContractAddendumModal,ContractNoteModal,FormModal,PaymentDetailModal,PaymentRefundForm,paymentRefundAvailability,EditClientModal} from "../app/CRMApp";
+import {Projects,ProjectOverview,UnitContracts,ContractDetail,ContractWorkflowModal,ClientChangeStatusModal,ComplaintDetailModal,ContractAddendumModal,ContractNoteModal,FormModal,PaymentDetailModal,PaymentRefundForm,paymentRefundAvailability,EditClientModal} from "../app/CRMApp";
 import {paymentRepository} from '../app/repositories/payment-repository';
 import {relatedUnitHref,relatedClientHref} from '../app/lib/entity-navigation';
 import {preferredSalesPartyId} from '../app/lib/business-context';
@@ -267,6 +267,35 @@ test('rozhodnutí o vratce neslibuje převod peněz a zachová explicitní rozho
   assert.deepEqual(saved!.refundDecisions,[{obligationId:payment.id,decision:'partial',amount:400}]);
   assert.equal(saved!.to,'cancelled');assert.equal(typeof saved!.idempotencyKey,'string');
  }finally{paymentRepository.list=original;}
+});
+
+test('přehled projektu nabízí jen otevřenou práci a skutečné termíny vlastního projektu',async()=>{
+ const original=[...sampleContracts];let tab='';
+ const project={...sampleProjects[0],backendId:'technical-project',units:1,attention:99,plannedHandover:'—'};
+ const base={...original[0],projectId:project.backendId,project:project.name,salesCaseStatus:'active'};
+ const payment:PaymentRecord={id:'pending',label:'Splátka',paid:0,unit:'TECH-A',unitId:'unit',projectId:project.backendId,project:project.name,client:'Technický klient',salesCaseId:'case',type:'installment',amount:1000,currency:'CZK',dueAt:'2026-11-03',status:'pending',transactions:[],events:[]};
+ const handover:import('../app/repositories/handover-repository').HandoverRecord={id:'planned',projectId:project.backendId,project:project.name,unitId:'unit',unit:'TECH-A',scheduledAt:'2026-11-04T10:00:00Z',client:'Technický klient',owner:'Technik',salesCaseId:'case',status:'planned',readiness:50,attention:null,place:null,note:null,completedAt:null,participants:[],history:[]};
+ try{
+  sampleContracts.splice(0,sampleContracts.length,{...base,id:'cancelled',statusCode:'cancelled'},{...base,id:'closed-approved',statusCode:'approved',salesCaseStatus:'cancelled'},{...base,id:'current',statusCode:'draft'},{...base,id:'foreign',projectId:'other-project',statusCode:'draft'},{...base,id:'signed',statusCode:'signed'});
+  render(<ProjectOverview project={project} onTab={value=>{tab=value;}} taskRows={[{id:'done',title:'Hotový úkol',object:'Jednotka',project:project.name,projectId:project.backendId,due:'',priority:'Vysoká',owner:'Technik',done:true}]} paymentRows={[{...payment,id:'cancelled',unit:'CANCELLED',status:'cancelled',dueAt:'2026-01-01'},{...payment,id:'foreign',projectId:'other-project',unit:'FOREIGN',dueAt:'2026-01-01'},payment]} handoverRows={[{...handover,id:'completed',unit:'COMPLETED',status:'handed_over',scheduledAt:'2026-01-01T10:00:00Z'},{...handover,id:'foreign',unit:'FOREIGN',projectId:'other-project'},handover]}/>);
+  assert.ok(screen.getByText('1 položek'));assert.ok(screen.getByText('1 smlouva čeká na další krok'));
+  assert.equal(screen.queryByText('Hotový úkol'),null);assert.equal(screen.queryByText(/Kontrola smluvních dat/),null);
+  assert.ok(screen.getByRole('button',{name:/3\. 11\. 2026\s*Splatnost · TECH-A/}));
+  assert.ok(screen.getByRole('button',{name:/4\. 11\. 2026 11:00\s*Příprava předání TECH-A/}));
+  assert.equal(screen.queryByText(/COMPLETED|FOREIGN/),null);
+  await userEvent.setup({document}).click(screen.getByRole('button',{name:/Dokončit rozpracované smlouvy/}));assert.equal(tab,'contracts');
+ }finally{sampleContracts.splice(0,sampleContracts.length,...original);}
+});
+
+test('přehled bez otevřené práce nemá falešné CTA ani smyšlený termín',()=>{
+ const original=[...sampleContracts];const project={...sampleProjects[0],backendId:'technical-project',units:1,attention:99,plannedHandover:'—'};
+ try{
+  sampleContracts.splice(0,sampleContracts.length,{...original[0],id:'historical',projectId:project.backendId,salesCaseStatus:'cancelled',statusCode:'approved'});
+  render(<ProjectOverview project={project} onTab={()=>{}} taskRows={[]} paymentRows={[]} handoverRows={[]}/>);
+  assert.equal(screen.queryByRole('button',{name:/Dokončit rozpracované smlouvy/}),null);
+  assert.ok(screen.getByText('Žádné otevřené úkoly ani rozpracované smlouvy'));assert.ok(screen.getByText('Žádné evidované termíny.'));
+  assert.equal(screen.queryByText('23. 7.'),null);assert.equal(screen.queryByText('99 položek'),null);
+ }finally{sampleContracts.splice(0,sampleContracts.length,...original);}
 });
 
 test('seznam smluv jednotky zachová historický návrh bez akce na změnu stavu',()=>{
