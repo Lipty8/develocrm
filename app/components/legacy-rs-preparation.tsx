@@ -4,7 +4,7 @@ import {FilePenLine} from 'lucide-react';
 import {commercialRepository,LegacyRsPreparationRejectedError,type LegacyRsPreparationInput,type LegacyRsPreparationPreview} from '../repositories/commercial-repository';
 import {originalMoney,sumOriginalMoney} from '../../backend/src/contracts/original-money';
 import {formatMoney} from '../crm-data';
-import {FormModal} from './form-modal';
+import {FormModal,FormConfirmation} from './form-modal';
 
 function amount(raw:string){
   const compact=raw.trim().replace(/\s/g,'').replace(/Kč$/i,'').replace(',','.');
@@ -76,7 +76,7 @@ export function LegacyRsPreparation({contractId,unitLabel,disabled,onSaved}:{con
         {preview.currentUnitPrice!==null&&<button type="button" className="secondary-button compact" disabled={pending||saved} onClick={()=>{setPrice(displayAmount(preview.currentUnitPrice!));setConfirmed(false);}}>Použít aktuální cenu jednotky</button>}
         <dl className="rs-preparation-summary"><div><dt>Sjednaná cena včetně uvedeného příslušenství</dt><dd>{money(total)}</dd></div></dl>
         <label><span>Důvod přípravy</span><textarea rows={2} maxLength={1000} value={reason} disabled={pending||saved} onChange={e=>setReason(e.target.value)} placeholder="Např. doplnění potvrzených údajů importované smlouvy"/></label>
-        <label className="checkbox-label"><input type="checkbox" checked={confirmed} disabled={pending||saved} onChange={e=>setConfirmed(e.target.checked)}/><span>Potvrzuji sjednanou cenu a uvedené příslušenství.</span></label>
+        <FormConfirmation checked={confirmed} disabled={pending||saved} onChange={setConfirmed}>Potvrzuji sjednanou cenu a uvedené příslušenství.</FormConfirmation>
       </>}
     </FormModal>}
   </>;

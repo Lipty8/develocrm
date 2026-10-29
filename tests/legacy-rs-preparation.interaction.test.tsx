@@ -38,6 +38,7 @@ test('copying current price is deliberate and editing money clears confirmation'
  fireEvent.click(screen.getByRole('button',{name:'Použít aktuální cenu jednotky'}));
  assert.equal((screen.getByLabelText(/Sjednaná cena jednotky/) as HTMLInputElement).value.replace(/\s/g,''),'13770000');
  assert.equal((screen.getByLabelText(/Rezervační poplatek/) as HTMLInputElement).value,'');
+ assert.ok(screen.getByRole('checkbox').closest('label')?.classList.contains('form-confirmation'));
  fill();fireEvent.change(screen.getByLabelText(/Rezervační poplatek/),{target:{value:'101'}});
  assert.equal((screen.getByRole('checkbox') as HTMLInputElement).checked,false);
 });

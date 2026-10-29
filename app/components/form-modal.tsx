@@ -2,6 +2,12 @@
 import {useId,useRef,useState,type ReactNode} from 'react';
 import {AlertTriangle,X} from 'lucide-react';
 
+export function FormConfirmation({checked,disabled=false,onChange,children}:{checked:boolean;disabled?:boolean;onChange:(checked:boolean)=>void;children:ReactNode}){
+  return <label className={`form-confirmation${checked?' is-confirmed':''}`} aria-disabled={disabled||undefined}>
+    <input type="checkbox" checked={checked} disabled={disabled} onChange={event=>onChange(event.target.checked)}/><span>{children}</span>
+  </label>;
+}
+
 export function FormModal({title,subtitle,headerAside,className='',close,onSave,children,saveLabel='Uložit',submitDisabled=false}:{
   title:string;subtitle?:string;headerAside?:ReactNode;className?:string;close:()=>void;onSave:()=>Promise<void>;children:ReactNode;saveLabel?:string;submitDisabled?:boolean;
 }){

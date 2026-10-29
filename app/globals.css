@@ -876,20 +876,20 @@ button.summary-stat:hover { border-color:#b8c8d7; background:#fff; }
 .signature-note[open] summary>svg:last-child{transform:rotate(180deg)}
 .signature-note label{display:block;padding-bottom:14px}
 .signature-record-modal .signature-note textarea{min-height:72px;font-size:12px;line-height:1.5}
-.signature-record-modal .signature-confirmation{display:flex;align-items:flex-start;gap:11px;margin:0;padding:15px;border:1px solid var(--line-strong);border-radius:var(--radius-control);background:var(--surface);cursor:pointer;transition:border-color .16s ease,background-color .16s ease,box-shadow .16s ease}
-.signature-record-modal .signature-confirmation:hover{border-color:var(--brand-blue);box-shadow:0 0 0 2px var(--blue-soft)}
-.signature-record-modal .signature-confirmation:focus-within{outline:3px solid rgba(20,105,200,.24);outline-offset:2px}
-.signature-record-modal .signature-confirmation input{flex:0 0 19px;width:19px;height:19px;min-height:19px;margin:1px 0 0;padding:0;accent-color:var(--brand-blue);cursor:pointer}
-.signature-record-modal .signature-confirmation>span{flex:1;min-width:0;margin:0;font-size:12px;line-height:1.5;color:var(--ink)}
+.form-modal :is(.form-confirmation,.signature-confirmation){display:flex;align-items:flex-start;gap:11px;margin:0;padding:15px;border:1px solid var(--line-strong);border-radius:var(--radius-control);background:var(--surface);cursor:pointer;transition:border-color .16s ease,background-color .16s ease,box-shadow .16s ease}
+.form-modal :is(.form-confirmation,.signature-confirmation):hover{border-color:var(--brand-blue);box-shadow:0 0 0 2px var(--blue-soft)}
+.form-modal :is(.form-confirmation,.signature-confirmation):focus-within{outline:3px solid rgba(20,105,200,.24);outline-offset:2px}
+.form-modal :is(.form-confirmation,.signature-confirmation) input{flex:0 0 19px;width:19px;height:19px;min-height:19px;margin:1px 0 0;padding:0;accent-color:var(--brand-blue);cursor:pointer}
+.form-modal :is(.form-confirmation,.signature-confirmation)>span{flex:1;min-width:0;margin:0;font-size:12px;line-height:1.5;color:var(--ink)}
 .signature-confirmation strong{font-weight:600;overflow-wrap:anywhere}
 .signature-confirmation small{display:block;margin-top:6px;font-size:11px;font-weight:400;color:var(--muted)}
 .signature-confirmation-check{flex:none;margin-top:1px;color:var(--brand-blue);opacity:0;transition:opacity .16s ease}
-.signature-record-modal .signature-confirmation.is-confirmed{border-color:#8ab5e7;background:var(--blue-soft)}
+.form-modal :is(.form-confirmation,.signature-confirmation).is-confirmed{border-color:#8ab5e7;background:var(--blue-soft)}
 .signature-confirmation.is-confirmed .signature-confirmation-check{opacity:1}
 .signature-record-notice{display:flex;align-items:flex-start;gap:8px;color:var(--muted);font-size:11px;line-height:1.5}
 .signature-record-notice svg{flex:none;margin-top:1px}
 @media(max-width:560px){.signature-record-modal>.modal-head{padding:19px 18px}.signature-record-modal .modal-head h2{font-size:18px}.signature-record-modal>.modal-form{padding:18px;gap:16px}.signature-record-modal>.modal-foot{padding:14px 18px}.signature-record-modal .modal-foot button{flex:1;padding-inline:11px}.signature-record-emblem{display:none}.signature-document-card{padding:14px}.signature-confirmation-check{display:none}}
-@media(prefers-reduced-motion:reduce){.signature-note summary>svg:last-child,.signature-record-modal .signature-confirmation,.signature-confirmation-check{transition:none}}
+@media(prefers-reduced-motion:reduce){.signature-note summary>svg:last-child,.form-modal :is(.form-confirmation,.signature-confirmation),.signature-confirmation-check{transition:none}}
 .party-picker{max-height:250px;overflow:auto;display:grid;gap:6px}.party-picker label{display:grid;grid-template-columns:18px 30px 1fr;align-items:center;gap:9px;padding:8px;border:1px solid var(--line);border-radius:8px;cursor:pointer}.party-picker label.selected{border-color:#86abc8;background:#f1f7fb}.party-picker label>span strong,.party-picker label>span small{display:block}.party-picker label>span small{margin-top:2px;color:var(--muted);font-size:11px}.party-picker input{width:14px;min-height:14px;padding:0}
 @media(max-width:720px){.sales-action-strip{align-items:flex-start;flex-direction:column}.sales-action-strip>div{width:100%}.sales-action-strip button{flex:1}.client-quick-views{overflow:hidden}.client-view-options{width:100%}}
 .document-link-copy{border:0;background:transparent;text-align:left;padding:0;color:inherit}.document-link-copy:hover strong{color:var(--green)}
