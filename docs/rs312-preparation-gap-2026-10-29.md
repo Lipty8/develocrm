@@ -103,9 +103,12 @@ The approved catalogue of this exact unit was selected as appendix 1:
 document `2f4be9f1-9d83-4cb6-bcf3-4c21a0b310cb`, version
 `46ad20bc-0433-43e7-9104-db218b28eff3`. The approved combined cellar/parking
 plan was selected for position 2 and standards for position 5, both v1.
-Position 3 rejected the same combined plan because of a duplicate-document
-guard; it was not silently saved. This is tracked in
-`shared-appendix-positions-2026-10-29.md`.
+Position 3 initially rejected the same combined plan because of a duplicate-
+document guard; it was not silently saved. After the tested migration 0081
+and backend `shared-17c0d49`, the exact same document/version was successfully
+selected for position 3 as well. Positions **1, 2, 3 and 5** and the confirmed
+amounts survived an explicit browser reload. See
+`shared-appendix-positions-2026-10-29.md` for reproduction and release evidence.
 
 Adam explicitly requested continuing **without** filling buyer personal facts.
 No personal fields were invented or copied from unrelated records. Actual
