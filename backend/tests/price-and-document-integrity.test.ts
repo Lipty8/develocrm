@@ -43,12 +43,15 @@ async function fixture(postgresUrl?:string){
     close:async()=>{if(memory)await memory.close();if(pool)await pool.end();if(admin){await admin.query(`DROP DATABASE "${databaseName}"`);await admin.end();}},
   };
   const directory=new URL("../migrations/",import.meta.url);
-  for(const name of (await readdir(directory)).filter(n=>/^\d+.*\.sql$/.test(n)&&!n.startsWith('0057')).sort())await db.exec(await readFile(new URL(name,directory),'utf8'));
+  for(const name of (await readdir(directory)).filter(n=>/^\d+.*\.sql$/.test(n)&&!n.startsWith('0057')&&!n.startsWith('0083')).sort())await db.exec(await readFile(new URL(name,directory),'utf8'));
   const normalized=normalizeBootstrapInput({entraTenantId:randomUUID(),adminOid:randomUUID(),adminEmail:"evidence@example.test",adminName:"Evidence Test",workspaceName:"Evidence Test",workspaceId:randomUUID()});
   const ids=bootstrapIds(normalized);const client={query:async(sql:string,values?:unknown[])=>{if(!values&&sql.includes(';')){await db.exec(sql);return{rows:[],rowCount:null};}const r=await db.query(sql,values);return{rows:r.rows,rowCount:r.affectedRows??null};}} as SqlClient;
   await bootstrapPilotWorkspace(client,{...normalized,...ids});
   await importDejvice(client,await readFile(new URL('../seeds/0004_pilot_rezidence_dejvice.sql',import.meta.url),'utf8'),{tenantId:ids.tenantId,membershipId:ids.membershipId,dryRun:false});
   await db.exec(await readFile(new URL('0057_price_and_signed_document_integrity.sql',directory),'utf8'));
+  // This fixture imports reviewed legacy rows before 0057. Its dependent
+  // nonlocking validator split must follow that deferred evidence migration.
+  await db.exec(await readFile(new URL('0083_nonlocking_contract_document_readiness.sql',directory),'utf8'));
   const context={tenantId:ids.tenantId,userId:ids.userId,membershipId:ids.membershipId};
   const database={withContext:async(_input:unknown,work:(c:SqlClient)=>Promise<unknown>)=>{await db.exec('BEGIN');try{await db.query("SELECT set_config('app.tenant_id',$1,true),set_config('app.user_id',$2,true)",[ids.tenantId,ids.userId]);const r=await work(client);await db.exec('COMMIT');return r;}catch(e){await db.exec('ROLLBACK');throw e;}}} as unknown as Database;
   const projectId=(await db.query<{id:string}>("SELECT id FROM projects WHERE tenant_id=$1 LIMIT 1",[ids.tenantId])).rows[0].id;
@@ -77,6 +80,35 @@ async function fixture(postgresUrl?:string){
 
 for(const usePostgres of [false,true])test(`price creation and signed document integrity (${usePostgres?'PostgreSQL':'PGlite'})`,{skip:usePostgres&&!process.env.WORKFLOW_TEST_DATABASE_URL},async t=>{
   const f=await fixture(usePostgres?process.env.WORKFLOW_TEST_DATABASE_URL:undefined);try{
+    if(f.connectionUrl)await t.test('commercial snapshot is a true read-only projection after an external document upload',async()=>{
+      const c=await f.database.withContext(f.context,()=>f.start());await f.external(c);
+      const runtime=new Database(f.connectionUrl!);
+      const readOnly={withContext:async(context:typeof f.context,work:(client:SqlClient)=>Promise<unknown>)=>runtime.withContext(context,async client=>{
+        await client.query('SET LOCAL ROLE develocrm_app');
+        assert.equal((await client.query<{allowed:boolean}>("SELECT has_function_privilege(current_user,'app.check_contract_document(uuid,uuid,uuid,uuid)','EXECUTE') allowed")).rows[0].allowed,false,'the shared validation core is not a new public API');
+        return work(client);
+      },{readOnly:true})} as unknown as Database;
+      try{const result=await new CommercialRepository(readOnly).getSnapshot(f.context);
+        const contract=result.contracts.find(row=>row.id===c.contract_id);assert.ok(contract);
+        assert.equal((contract.versions[0] as typeof contract.versions[0]&{documentReady:boolean}).documentReady,true);
+      }finally{await runtime.close();}
+    });
+    if(f.connectionUrl)await t.test('readiness does not wait on a final document lock; write validation still does',async()=>{
+      const c=await f.database.withContext(f.context,()=>f.start());const file=await f.external(c);
+      const pool=new Pool({connectionString:f.connectionUrl,max:3}),a=await pool.connect(),b=await pool.connect();
+      const args=[f.context.tenantId,c.contract_id,file.documentId,file.documentVersionId];
+      try{
+        for(const client of [a,b]){await client.query('BEGIN');await client.query("SET LOCAL ROLE develocrm_app;SET LOCAL statement_timeout='2s'");await client.query("SELECT set_config('app.tenant_id',$1,true),set_config('app.user_id',$2,true)",[f.context.tenantId,f.context.userId]);}
+        await a.query('SELECT app.assert_contract_document($1,$2,$3,$4)',args);
+        assert.equal((await b.query<{ready:boolean}>('SELECT app.contract_document_is_ready($1,$2,$3,$4) ready',args)).rows[0].ready,true);
+        for(const bad of [[f.context.tenantId,randomUUID(),file.documentId,file.documentVersionId],[randomUUID(),c.contract_id,file.documentId,file.documentVersionId],[f.context.tenantId,c.contract_id,file.documentId,randomUUID()]])
+          assert.equal((await b.query<{ready:boolean}>('SELECT app.contract_document_is_ready($1,$2,$3,$4) ready',bad)).rows[0].ready,false);
+        const pid=(await b.query<{id:number}>('SELECT pg_backend_pid() id')).rows[0].id;
+        const pending=b.query('SELECT app.assert_contract_document($1,$2,$3,$4)',args).then(()=>null,error=>error as Error);
+        let waiting=false;for(let i=0;i<100&&!waiting;i++){waiting=(await pool.query<{waiting:boolean}>("SELECT wait_event_type='Lock' waiting FROM pg_stat_activity WHERE pid=$1",[pid])).rows[0].waiting;if(!waiting)await new Promise(resolve=>setTimeout(resolve,10));}
+        assert.ok(waiting,'mutations must retain their document row lock');await a.query('ROLLBACK');assert.equal(await pending,null);
+      }finally{for(const client of [a,b]){await client.query('ROLLBACK');client.release();}await pool.end();}
+    });
     await t.test('RS payment symbol is the exact numeric unit code, not the contract reference; retries and old evidence are preserved',async()=>{
       for(const code of ['007401','7402']){
         await f.inventory.createUnit({...f.context,projectId:f.projectId,row:{rowNumber:1,code,areaM2:50,price:5000000},idempotencyKey:randomUUID()});

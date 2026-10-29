@@ -31,12 +31,13 @@ async function fixture(postgresUrl?:string){
     return {rows:result.rows,rowCount:result.affectedRows??null};
   }} as SqlClient;
   const directory=new URL("../migrations/",import.meta.url);
-  for(const name of (await readdir(directory)).filter(name=>/^\d+.*\.sql$/.test(name)&&!name.startsWith('0057')).sort())await client.query(await readFile(new URL(name,directory),"utf8"));
+  for(const name of (await readdir(directory)).filter(name=>/^\d+.*\.sql$/.test(name)&&!name.startsWith('0057')&&!name.startsWith('0083')).sort())await client.query(await readFile(new URL(name,directory),"utf8"));
   const normalized=normalizeBootstrapInput({entraTenantId:randomUUID(),adminOid:randomUUID(),adminEmail:"safety.admin@example.test",adminName:"Workflow Safety Test",workspaceName:"Isolated safety tests",workspaceId:randomUUID()});
   const ids=bootstrapIds(normalized);
   await bootstrapPilotWorkspace(client,{...normalized,...ids});
   await importDejvice(client,await readFile(new URL("../seeds/0004_pilot_rezidence_dejvice.sql",import.meta.url),"utf8"),{tenantId:ids.tenantId,membershipId:ids.membershipId,dryRun:false});
   await client.query(await readFile(new URL('0057_price_and_signed_document_integrity.sql',directory),'utf8'));
+  await client.query(await readFile(new URL('0083_nonlocking_contract_document_readiness.sql',directory),'utf8'));
   async function start(){
     const unit=(await client.query<{id:string}>(`SELECT id FROM units WHERE tenant_id=$1 AND commercial_status='available'
       AND NOT EXISTS(SELECT 1 FROM sales_cases WHERE tenant_id=$1 AND unit_id=units.id AND status='active') ORDER BY code LIMIT 1`,[ids.tenantId])).rows[0];
