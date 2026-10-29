@@ -128,3 +128,56 @@ The read was taking signing-document row locks and participating in a deadlock.
 This prompted a separate tested 0083 package, not a change to the approved
 unsigned-successor rule. See `commercial-read-deadlock-2026-10-29.md` for
 the preserved diagnostic evidence and subsequent verification.
+
+## Completed live TECH83 E2E, 29 October
+
+This supersedes the pending human-action checkpoint above. Adam completed the
+synthetic RS signature manually; no signature confirmation was automated.
+The browser showed its exact v1 PDF and the recorded signature.
+
+The standard SBK preparation initially rejected an unpaid reservation fee, as
+required by the approved SBK payment snapshot. The failed operation rolled back.
+Using the ordinary payment UI, the test then recorded **CZK 1 solely in this
+owned synthetic case**, with an explicit no-bank-transfer technical note.
+No real money moved and no real buyer or historical pilot transaction changed.
+SBK creation then succeeded in the same sales case, without a duplicate.
+
+Through the browser, the same clearly nonlegal synthetic PDF was uploaded for
+SBK `28f8ab09-20bd-4692-bcd7-d8b1ed56d128`, which advanced Draft -> Sent ->
+Approved, without any signature. RS termination then ran once through the
+existing workflow with a technical reason and the explicit no-refund decision
+for the simulated CZK 1. No refund was created.
+
+Read-only evidence executions, under the non-bypass application role:
+
+- Before: `job-develocrm-hold-expiry-zsr83cu`, Succeeded.
+- After: `job-develocrm-hold-expiry-zu2v47n`, Succeeded, receipt 19:10:13 UTC.
+- Unit: reserved -> available. Case: active/reservation -> cancelled/interest,
+  with closed_at. Signature-created reservation: cancelled, no active hold.
+- Persisted end outcome: released, no blocking reasons; exactly one termination
+  audit and one outbox event.
+- The SBK remains Approved, unsigned, with zero recorded party signatures.
+- Both exact document versions remain physically readable through managed
+  identity / Graph, with content hashes verified against CRM.
+- Financial rows (one obligation, transaction and allocation, each CZK 1;
+  zero refunds) are unchanged: before/after SHA-256
+  `a4df1f3acbb31cab6680cf6057b3b4bcf520ef72e267b99f193a437e79fe1f36`.
+- Exact contract/document version evidence is unchanged: before/after SHA-256
+  `9042d01059b9d46ade7b9b8ce5953b2f8cc63bcfb6c105cbe56fe536ad6457fc`.
+
+Authenticated UI displayed “Obchod ukončen – jednotka uvolněna.” after reload,
+and unit 7483 showed Volný with its historical contracts retained. The Approved
+SBK explicitly explains that the case is closed and the working contract cannot
+advance or be signed; no active signature or status-change CTA is present.
+Backend rejection of signature entry points on a closed case is covered by the
+native PostgreSQL suite, not by attempting to bypass the human signature dialog.
+
+This closes the focused live unsigned-successor release gate. It does not
+reconcile TECH60 history, make RS312 ready, or complete unrelated open gates.
+Current runtime is revision `ca-develocrm-api-pilot--readiness-7dedd5b` with
+migration 0083; compatible private Sites 187 is unchanged. These follow-up
+records require no new deployment or migration.
+
+Post-test bounded log sample on that revision: 420 completed requests,
+41/41 commercial GETs HTTP 200, zero HTTP 5xx in the last 30 minutes.
+This is a finite observation window, not a claim of universal error absence.

@@ -157,3 +157,25 @@ Details: `commercial-read-deadlock-2026-10-29.md`.
 
 Sites 187 remains unchanged and compatible. This closes the specific read-lock
 defect, not the whole goal or the separate human-dependent TECH83 release test.
+
+## Follow-up: TECH83 live release gate completed
+
+After Adam manually recorded the synthetic RS signature, the authenticated
+browser created an unsigned SBK in the same case, uploaded its exact nonlegal
+PDF and advanced it to Approved. The approved-template fee prerequisite was
+satisfied through an explicitly simulated CZK 1 payment in TECH83 only; no real
+bank transfer or pilot buyer transaction occurred.
+
+Terminating the test RS released unit 7483 and closed its case. The Approved
+unsigned SBK and both exact documents remained intact; the UI prevents further
+advancement/signature of the historical SBK and explains why. The result survived
+reload. Read-only before/after executions `job-develocrm-hold-expiry-zsr83cu`
+and `job-develocrm-hold-expiry-zu2v47n` both Succeeded: financial/version hashes
+identical, two physical SharePoint versions verified, no active hold, exactly
+one termination audit/outbox event. Full receipt:
+`unsigned-successor-release-2026-10-29.md`.
+
+The earlier pending-human-action statements are historical checkpoints, now
+superseded for TECH83. RS312's actual missing data/variant/files and the other
+explicit open requirements remain unresolved. No real historical case was
+automatically reconciled and no new deployment was necessary for this evidence.
