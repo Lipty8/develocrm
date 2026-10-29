@@ -120,3 +120,11 @@ repository returned 32 contracts and 80 UUID/code price-breakdown entries with
 rollbackOnly=true and noBusinessWrites=true. The initial request failure did
 not reproduce. Its original root cause remains unconfirmed; a successful retry
 must not be presented as proof that an underlying defect has been fixed.
+
+**Later evidence supersedes the unconfirmed-cause checkpoint above:**
+PostgreSQLLogs at 17:12:20.678 UTC records 40P01 in the commercial SELECT,
+with context `assert_contract_document -> app.contract_document_is_ready`.
+The read was taking signing-document row locks and participating in a deadlock.
+This prompted a separate tested 0083 package, not a change to the approved
+unsigned-successor rule. See `commercial-read-deadlock-2026-10-29.md` for
+the preserved diagnostic evidence and subsequent verification.

@@ -139,3 +139,21 @@ blockers concern applicability and missing actual facts/files, not permission
 to invent contractual content. The unsigned-state policy question has now been
 answered explicitly; its focused implementation is tracked separately.
 No new feature module or repeated audit is a substitute for resolving them.
+
+## Follow-up: confirmed and corrected commercial read deadlock
+
+The separate commercial-refresh 500 observed during TECH83 now has runtime
+PostgreSQL evidence: 40P01 at 17:12:20.678 UTC in the readiness SELECT, whose
+validator unnecessarily locked final documents. Migration 0083 separates the
+nonlocking advisory read from the still-locked write assertion, with one shared
+validation body and no business-data changes.
+
+Commit `7dedd5b`, revision `ca-develocrm-api-pilot--readiness-7dedd5b` is Healthy,
+health/ready 200, 100% traffic; exactly 83 migration checksums verified. All 644
+backend tests pass including native PostgreSQL. Pilot strict READ ONLY parallel
+commercial reads and authenticated browser unit -> contract / reload pass.
+The bounded new-revision log sample has 9/9 commercial GETs 200 and no 5xx.
+Details: `commercial-read-deadlock-2026-10-29.md`.
+
+Sites 187 remains unchanged and compatible. This closes the specific read-lock
+defect, not the whole goal or the separate human-dependent TECH83 release test.
