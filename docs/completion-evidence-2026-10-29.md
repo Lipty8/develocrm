@@ -118,7 +118,7 @@ post-handover negative test cannot be claimed as executed.
 | --- | --- | --- |
 | P0, case data | First real RS312 | Prices, plan and four appendices persisted. Buyer facts, dates, accessory rights, applicable reviewed variant and two deferred sources still block actual generation. Do not fill with dummy values. |
 | P0, historical technical finding | TECH60-BLOCKED | Current assessment permits release, but no explicit historical reconciliation has been authorized/executed. Use a supported audited process only; do not change status with raw SQL or exclude it by name. |
-| Business decision | Unsigned sent/negotiating/approved successor | Existing 0062 rule ignores only unsigned draft; these other unsigned states still block. Tests deliberately cover sent-first retaining reservation. Adam has been asked whether they should also be nonblocking, retaining partial-signature/KS/independent-hold protection. No rule change made while undecided. |
+| Approved safety correction | Unsigned sent/negotiating/approved successor | Adam confirmed on 29 October that an unsigned document alone must not block release. Migration 0082 extends the existing central predicate, retaining every signature-evidence, KS/ownership and independent-hold guard. Native concurrency and closed-case signature regressions pass; deployment evidence is tracked in `unsigned-successor-release-2026-10-29.md`. Historical cases are not reconciled automatically. |
 | P1, verification | New changes after completed handover | Native PostgreSQL and UI tests pass. Live browser guard proof still needs an owned completed technical handover; no real completed sale will be used as a mutation target. |
 | P1, historical evidence | 11 warnings / 8 legacy findings | Preserve discrepancies and originals. No guessed prices, invented historical document hash or silent metadata repair. |
 | Operator readiness | Short working instructions | Added `rs-sbk-operator-guide.md`, using actual current UI labels, clear stop conditions and no implementation jargon. |
@@ -135,6 +135,7 @@ or legal approval of a different buyer/accessory variant.
 The technical RS/SBK pipeline is demonstrated. **First real RS312 is not ready
 for generation/signature.** Generic content approval of the complete DOB
 variants is already recorded and must not be requested again. The remaining
-blockers concern applicability, missing actual facts/files and the explicit
-unsigned-state policy question, not permission to invent contractual content.
+blockers concern applicability and missing actual facts/files, not permission
+to invent contractual content. The unsigned-state policy question has now been
+answered explicitly; its focused implementation is tracked separately.
 No new feature module or repeated audit is a substitute for resolving them.
