@@ -243,6 +243,32 @@ test('ukončení smlouvy vyžaduje viditelné potvrzení bez systémového dialo
  }finally{paymentRepository.list=original;window.confirm=originalConfirm;}
 });
 
+test('rozhodnutí o vratce neslibuje převod peněz a zachová explicitní rozhodnutí',async()=>{
+ const original=paymentRepository.list;
+ const payment:PaymentRecord={id:'technical-obligation',label:'Rezervační poplatek',paid:1000,unit:'TECH',unitId:'technical-unit',projectId:'technical-project',project:'Technický projekt',client:'Technický klient',salesCaseId:'technical-case',type:'reservation_fee',amount:1000,currency:'CZK',dueAt:'2026-10-29',status:'paid',transactions:[],events:[]};
+ paymentRepository.list=async()=>({payments:[payment],source:'postgresql'});
+ let saved:Parameters<React.ComponentProps<typeof ContractWorkflowModal>['save']>[0]|undefined;
+ try{
+  const user=userEvent.setup({document});
+  render(<ContractWorkflowModal contract={{...sampleContracts[0],id:'technical-contract',reference:'TECH-RS',type:'RS',statusCode:'signed'}} close={()=>{}} save={async value=>{saved=value;}}/>);
+  await user.selectOptions(screen.getByRole('combobox',{name:'Nový stav'}),'cancelled');
+  const group=await screen.findByRole('group',{name:'Rozhodnutí o přijatých platbách'});
+  assert.match(group.textContent??'',/CRM peníze neposílá/);
+  assert.match(group.textContent??'',/provedenou vratku pak zaevidujete v detailu platby/i);
+  assert.doesNotMatch(group.textContent??'',/peníze se odešlou/);
+  await user.type(screen.getByRole('textbox',{name:'Důvod'}),'Technický test');
+  await user.click(screen.getByRole('checkbox',{name:'Potvrzuji zrušení nebo ukončení smlouvy TECH-RS.'}));
+  await user.click(screen.getByRole('button',{name:'Uložit'}));
+  await screen.findByText('Rozhodněte o přijaté platbě Rezervační poplatek');assert.equal(saved,undefined);
+  await user.selectOptions(screen.getByRole('combobox',{name:'Rozhodnutí o Rezervační poplatek'}),'partial');
+  await user.type(screen.getByRole('spinbutton',{name:'Částka k vrácení'}),'400');
+  await user.click(screen.getByRole('button',{name:'Uložit'}));
+  await waitFor(()=>assert.ok(saved));
+  assert.deepEqual(saved!.refundDecisions,[{obligationId:payment.id,decision:'partial',amount:400}]);
+  assert.equal(saved!.to,'cancelled');assert.equal(typeof saved!.idempotencyKey,'string');
+ }finally{paymentRepository.list=original;}
+});
+
 test('seznam smluv jednotky zachová historický návrh bez akce na změnu stavu',()=>{
  const original=[...sampleContracts];
  try{
