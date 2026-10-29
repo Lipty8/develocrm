@@ -83,13 +83,23 @@ text-input sizing and appeared oversized/stacked. A frontend-only follow-up
 adds a shared FormConfirmation and reuses the existing compact signature
 confirmation styling through a common selector. Existing signature JSX and
 business logic are unchanged. Its 214 interactions, 145 static tests,
-typecheck, lint and production build passed. This follow-up still needs
-matching frontend publication and another visual check before closure.
+typecheck, lint and production build passed. The follow-up was published as
+Sites **187**, source `aae303eafa307bbe1d4c0a4e6e5655863356448a`, deployment
+`appgdep_6ae2f9e5bb7c8191af9c6a657f875580`, Succeeded. Its source tree
+`27dc8ed11726a4b942fa2bcb922533dc755f577e` matches GitHub `c9255c9`.
+Desktop visual/DOM QA confirmed a 19 by 19 pixel unchecked native checkbox
+with its inline label and focus state, not a stretched text input. Separate
+small-viewport visual verification was not completed. The backend source
+tree is identical to fe83c3c; no API redeploy was needed for this UI-only fix.
+Live Sites metadata later confirmed owner-private access (one user, zero
+groups and external visitors).
 
 ## Overall readiness is still not complete
 
 This closes the technical missing-legacy-terms path after its final visual
-verification, not the full RS/SBK production goal. RS312 still needs explicit
-agreed amounts, buyer facts, applicable reviewed legal variant and exact
-appendices. Deferred accessory rights/files remain deferred. No legal clause
-was removed or guessed, and no actual signature/financial transaction ran.
+verification, not the full RS/SBK production goal. RS312 subsequently received
+explicitly confirmed agreed amounts and an authorized new working version;
+see the dated follow-up in `rs312-preparation-gap-2026-10-29.md`. Buyer facts,
+applicable reviewed legal variant and exact appendices remain incomplete.
+Deferred accessory rights/files remain deferred. No legal clause was removed
+or guessed, and no actual signature/financial transaction ran.

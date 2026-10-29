@@ -2,7 +2,8 @@
 
 Adam selected the existing DEJ-312-RS as the first real preparation case.
 This is not approval of an inferred price, fee, legal variant or signature.
-No real business mutation was made during this inspection.
+No real business mutation was made during the initial inspection. The
+explicitly authorized preparation below supersedes its missing-amount findings.
 
 ## Authenticated browser evidence
 
@@ -78,3 +79,37 @@ to bypass these blockers.
   price. A missing price basis still has no generation CTA.
 - This correction is prepared locally for the next matching frontend package;
   it is not yet evidence of a new pilot deployment or completed RS312.
+
+## Authorized preparation follow-up (29 October)
+
+The explicit legacy preparation operation was implemented and verified first
+on new TECH82 data; see `legacy-rs-preparation-deployment-2026-10-29.md`.
+Sites 187 is live with the compact confirmation follow-up. Adam then confirmed
+the total CZK 15,350,000 including P18 and S2 and specified a reservation fee
+of **10%**, i.e. CZK 1,535,000. No default fee was inferred.
+
+Through the authenticated UI the operation created working contract version 2
+and reopened preparation, preserving imported version 1. Unit price is
+CZK 13,770,000; accessories CZK 1,580,000; total CZK 15,350,000. These values
+and fee CZK 1,535,000 survived an explicit browser reload. This was not a
+generation, signature, payment or modification of catalog prices.
+
+The existing signature-anchored payment-plan operation was then used: fee
+CZK 1,535,000, variable symbol **312**, three Czech working days after the last
+required actual signature. The preparation does not materialize an obligation
+or invent an actual signing/due date.
+
+The approved catalogue of this exact unit was selected as appendix 1:
+document `2f4be9f1-9d83-4cb6-bcf3-4c21a0b310cb`, version
+`46ad20bc-0433-43e7-9104-db218b28eff3`. The approved combined cellar/parking
+plan was selected for position 2 and standards for position 5, both v1.
+Position 3 rejected the same combined plan because of a duplicate-document
+guard; it was not silently saved. This is tracked in
+`shared-appendix-positions-2026-10-29.md`.
+
+Adam explicitly requested continuing **without** filling buyer personal facts.
+No personal fields were invented or copied from unrelated records. Actual
+generation remains blocked on those mandatory fields, planned signing dates,
+the applicable reviewed legal variant, accessory legal rights, and deferred
+coordination-plan/power-of-attorney sources. Content approval is not revoked;
+it does not prove that the complete garden/garage/outdoor variant fits unit 312.

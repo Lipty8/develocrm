@@ -39,10 +39,11 @@ async function fixture(postgresUrl?:string){
     const hold=(await c.query<{sales_case_id:string}>("SELECT * FROM app.create_party_and_unit_hold($1,$2,'pre_reservation',now()+interval '48 hours',$3,$4,'Technical appendix test','individual',NULL,'Technical','Buyer',NULL,NULL,'appendix-buyer@example.test',NULL)",[ids.tenantId,unit.id,ids.membershipId,randomUUID()])).rows[0];
     return(await c.query<{contract_id:string;version_id:string}>("SELECT * FROM app.create_contract_with_payment($1,$2,'rs',$3,'Technical RS',$4,NULL,$5,'fixed',250000,now()+interval '7 days')",[ids.tenantId,hold.sales_case_id,`APP-${randomUUID()}`,ids.membershipId,randomUUID()])).rows[0];
   });
-  async function document(projectId=unit.project_id,status='ready'){
+  async function document(projectId=unit.project_id,status='ready',existingDocumentId?:string){
     return context(async c=>{
-      const operation=(await c.query<{id:string}>("SELECT app.reserve_document_upload($1,$2,$3,$4,'create',NULL,'other','Technical appendix','appendix.pdf','application/pdf',16,$5,'v1',$6,NULL,NULL,NULL,NULL,NULL,$7) id",[ids.tenantId,projectId,randomUUID(),'a'.repeat(64),`sha256:${'b'.repeat(64)}`,status,ids.membershipId])).rows[0].id;
-      await c.query("SELECT app.record_document_graph_upload($1,$2,'fixture-drive',$3,'https://sharepoint.example.test/appendix','etag','1.0',16,$4)",[ids.tenantId,operation,randomUUID(),ids.membershipId]);
+      const operation=(await c.query<{id:string}>("SELECT app.reserve_document_upload($1,$2,$3,$4,$8,$9,'other','Technical appendix','appendix.pdf','application/pdf',16,$5,'v1',$6,NULL,NULL,NULL,NULL,NULL,$7) id",[ids.tenantId,projectId,randomUUID(),'a'.repeat(64),`sha256:${'b'.repeat(64)}`,status,ids.membershipId,existingDocumentId?'version':'create',existingDocumentId??null])).rows[0].id;
+      const itemId=existingDocumentId?(await c.query<{external_item_id:string}>('SELECT external_item_id FROM documents WHERE tenant_id=$1 AND id=$2',[ids.tenantId,existingDocumentId])).rows[0].external_item_id:randomUUID();
+      await c.query("SELECT app.record_document_graph_upload($1,$2,'fixture-drive',$3,'https://sharepoint.example.test/appendix','etag',$5,16,$4)",[ids.tenantId,operation,itemId,ids.membershipId,existingDocumentId?'2.0':'1.0']);
       return(await c.query<{document_id:string;document_version_id:string}>('SELECT * FROM app.finalize_document_upload($1,$2,$3)',[ids.tenantId,operation,ids.membershipId])).rows[0];
     });
   }
@@ -82,8 +83,11 @@ for(const native of [false,true])test(`exact appendix version binding (${native?
       const id=await f.set(1,a);assert.ok(id);assert.equal(await f.set(1,a),id);assert.deepEqual(await f.counts(),{links:1,audit:1,outbox:1});
       await assert.rejects(f.set(1,b),/APPENDIX_CHANGED/);
       const next=await f.set(1,b,undefined,undefined,undefined,undefined,a.document_version_id);assert.notEqual(next,id);assert.deepEqual(await f.counts(),{links:1,audit:2,outbox:2});
-      await assert.rejects(f.set(2,b),/DOCUMENT_ALREADY_LINKED/);
-      assert.equal(await f.set(1,null,undefined,undefined,undefined,undefined,b.document_version_id),null);assert.equal(await f.set(1,null),null);assert.deepEqual(await f.counts(),{links:0,audit:3,outbox:3});
+      const shared=await f.set(2,b);assert.ok(shared);assert.notEqual(shared,next);
+      assert.equal(await f.set(2,b),shared);
+      assert.deepEqual(await f.counts(),{links:2,audit:3,outbox:3});
+      await f.set(2,null,undefined,undefined,undefined,undefined,b.document_version_id);
+      assert.equal(await f.set(1,null,undefined,undefined,undefined,undefined,b.document_version_id),null);assert.equal(await f.set(1,null),null);assert.deepEqual(await f.counts(),{links:0,audit:5,outbox:5});
       assert.equal((await f.client.query<{n:number}>('SELECT count(*)::int n FROM document_versions WHERE id IN ($1,$2)',[a.document_version_id,b.document_version_id])).rows[0].n,2);
     });
     await t.test('invalid, missing, draft and cross-project versions are rejected atomically',async()=>{
@@ -99,10 +103,31 @@ for(const native of [false,true])test(`exact appendix version binding (${native?
       await assert.rejects(f.set(1,a,undefined,undefined,randomUUID()),/permission|tenant/);
       await assert.rejects(f.set(1,a,undefined,undefined,undefined,randomUUID()),/permission/);
     });
+    await t.test('shared positions cannot silently mix different business versions of one file',async()=>{
+      const doc=await f.document(),next=await f.document(undefined,'ready',doc.document_id);
+      assert.equal(next.document_id,doc.document_id);assert.notEqual(next.document_version_id,doc.document_version_id);
+      const before=await f.counts();
+      await f.set(2,doc);
+      await assert.rejects(f.set(3,next),/DOCUMENT_ALREADY_LINKED/);
+      const after=await f.counts();assert.equal(after.links,before.links+1);assert.equal(after.audit,before.audit+1);assert.equal(after.outbox,before.outbox+1);
+      await f.set(3,doc);
+      await f.set(2,null,undefined,undefined,undefined,undefined,doc.document_version_id);
+      await f.set(3,null,undefined,undefined,undefined,undefined,doc.document_version_id);
+    });
     if(native)await t.test('simultaneous same assignment produces one row and one audit/outbox pair',async()=>{
       const before=await f.counts();const results=await Promise.all(Array.from({length:6},()=>f.set(3,a)));
       assert.equal(new Set(results).size,1);const after=await f.counts();assert.equal(after.links,before.links+1);assert.equal(after.audit,before.audit+1);assert.equal(after.outbox,before.outbox+1);
       await f.set(3,null,undefined,undefined,undefined,undefined,a.document_version_id);
+    });
+    if(native)await t.test('one exact file can be selected concurrently for two numbered positions without copies',async()=>{
+      const doc=await f.document(),before=await f.counts();
+      const ids=await Promise.all([f.set(2,doc),f.set(3,doc),f.set(2,doc),f.set(3,doc)]);
+      assert.equal(new Set(ids).size,2);
+      const after=await f.counts();assert.equal(after.links,before.links+2);assert.equal(after.audit,before.audit+2);assert.equal(after.outbox,before.outbox+2);
+      await f.set(2,null,undefined,undefined,undefined,undefined,doc.document_version_id);
+      const remaining=(await f.client.query<{n:number}>('SELECT count(*)::int n FROM contract_documents WHERE contract_version_id=$1 AND document_id=$2',[f.contract.version_id,doc.document_id])).rows[0];
+      assert.equal(remaining.n,1,'removing one position does not remove the other position or physical document');
+      await f.set(3,null,undefined,undefined,undefined,undefined,doc.document_version_id);
     });
     if(native)await t.test('competing selections cannot silently overwrite one another',async()=>{
       const before=await f.counts();
@@ -252,6 +277,9 @@ for(const native of [false,true])test(`generation pins the exact appendix bundle
   try{
     const documents:Awaited<ReturnType<typeof f.document>>[]=[];
     for(let index=0;index<6;index++)documents.push(await f.document());
+    // The approved combined plan occupies cellar and parking positions, but
+    // remains one exact physical file. Generation must keep both positions.
+    documents[2]=documents[1];
     const spare=await f.document();
     for(let index=0;index<documents.length;index++)await f.set(index+1,documents[index]);
     const source=await f.document(),templateId=randomUUID(),templateVersionId=randomUUID();
