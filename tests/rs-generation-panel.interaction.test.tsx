@@ -22,6 +22,22 @@ test('přílohy otevírají přímo dokumentovou záložku správného projektu 
   const route=parseCrmRoute(href!);assert.equal(route.projectId,projectId);assert.equal(route.projectTab,'documents');
 });
 function ready():RsReadiness{return{ready:true,contractId,issues:[],summary:{project:{id:'p',label:'Testovací projekt'},unit:{id:'u',label:'TEST-101'},buyers:[{id:'b',label:'Jan Testovací'}],seller:'Testovací společnost',unitPrice:7_000_000,totalPrice:7_500_000,reservationFee:150_000,reservationFeeDueDays:5,reservationPeriodDays:30,accessories:['P1','S1'],template:{name:'Projektová RS',version:'v2',effectiveFrom:'2026-10-01'}}};}
+test('missing legacy RS basis offers explicit preparation, not an automatic repair',async()=>{
+ const value=ready();value.ready=false;value.summary!.unitPrice=null;value.summary!.totalPrice=null;value.summary!.reservationFee=null;
+ value.issues=[{code:'price',field:'unit.price',message:'Doplňte smluvní cenu.'}];let reads=0;
+ mock.method(commercialRepository,'getRsReadiness',async()=>value);
+ mock.method(commercialRepository,'getLegacyRsPreparation',async()=>{reads++;throw new Error('Not requested automatically');});
+ const view=render(<RsGenerationPanel contractId={contractId} canGenerate onChanged={()=>{}}/>);
+ await screen.findByRole('button',{name:'Doplnit smluvní údaje'});assert.equal(reads,0);
+ view.unmount();
+ for(const state of [{contractType:'sbk' as const,canGenerate:true},{contractType:'rs' as const,canGenerate:false}]){
+  const next=render(<RsGenerationPanel contractId={contractId} {...state} onChanged={()=>{}}/>);await screen.findByText('Doplňte smluvní cenu.');
+  assert.equal(screen.queryByRole('button',{name:'Doplnit smluvní údaje'}),null);next.unmount();
+ }
+ value.issues.push({code:'closed_case',field:'contract',message:'Obchod ukončen.'});
+ render(<RsGenerationPanel contractId={contractId} canGenerate onChanged={()=>{}}/>);await screen.findByText('Obchod ukončen.');
+ assert.equal(screen.queryByRole('button',{name:'Doplnit smluvní údaje'}),null);assert.equal(reads,0);
+});
 for(const contractType of ['rs','sbk'] as const){
  test(`${contractType}: absent historical price basis does not claim the unit has no accessories`,async()=>{
   const value=ready();value.ready=false;value.summary!.unitPrice=null;value.summary!.totalPrice=null;value.summary!.accessories=[];

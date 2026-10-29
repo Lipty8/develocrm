@@ -36,17 +36,14 @@ invalid input 422, unexpected failure 500. The public response never contains
 raw database messages. Logs contain correlation ID and allowlisted codes, not
 request money/contact data or SQL. Retry returns 200, first preparation 201.
 
-There is still no frontend/BFF action and no new pilot deployment. Do not
-report this as a finished preparation feature. Remaining gates:
+At the HTTP-only checkpoint there was no frontend/BFF action or new pilot
+deployment. The following UI package implements the form below. Remaining gates:
 
 - Extend remaining negative fixtures as needed during UI integration. Correct
   project/contract-edit/price-read scope, suspended memberships and signed
   evidence protections are now tested under real non-bypass roles.
-- Wire authorized preview and explicit confirmation UI into the existing
-  preparation panel; show agreed unit/accessory/total amounts and missing fee
-  without defaults. Do not offer this for signed/financially active cases.
-- Interaction tests, production builds, matching deployment and authenticated
-  E2E on new technical data. RS312 stays unchanged pending agreed amounts and
+- Matching deployment and authenticated E2E on new technical data. RS312 stays
+  unchanged pending agreed amounts and
   an applicable reviewed legal variant.
 
 ## Current verification
@@ -99,3 +96,47 @@ those skips were separately executed in the 27-pass native/core run above;
 this does not claim that all other gated suites ran. Backend build, full
 TypeScript typecheck and lint passed. No frontend source was changed in this
 follow-up, no new migration was added, and no deployment or pilot write ran.
+
+## UI package and release gates
+
+The existing RS preparation panel now offers `Doplnit smluvní údaje` only for
+an editable/manageable RS candidate with absent unit/total price and fee, no
+current final document and no closed-case issue. Backend eligibility remains
+authoritative: price scope, evidence, financial history and current state are
+rechecked before a preview or write is permitted.
+
+The shared FormModal shows current list price/assignments separately from the
+explicitly agreed unit price, current accessory price and resulting agreed
+total. Both money inputs start empty. `Použít aktuální cenu jednotky` is a
+deliberate copy action; the fee is never inferred. The existing CZK formatter
+and exact money parser are reused. Exact addition is shared with the backend,
+not another independent pricing projection. Changing amounts clears the
+confirmation checkbox. The submit label explicitly creates a working version,
+not a generated or signed document.
+
+Unknown network/server outcomes freeze the command and retain its idempotency
+key, including closing/reopening the modal. A proven rejection requires a new
+preview/confirmation. A successful write followed by a failed refresh offers
+refresh only, never another write. API/BFF transport disables global invalidation;
+successful preparation refreshes the existing commercial/preparation context.
+Changing contract aborts the old preview rather than filling the next case.
+
+- Frontend interaction suite: **214 passed, no failures/skips**.
+- Targeted original legal/template/snapshot/payment/SBK and preparation tests:
+  **86 passed, no failures/skips**, including native PostgreSQL.
+- Full backend regression, static tests, backend build, frontend typecheck,
+  lint and frontend production build passed. Broad backend environment-gated
+  suites remain distinguished from the explicitly executed native subset.
+- No migration files changed compared with deployed 8d34cbd.
+
+The narrow TECH82 operator is prepared for pilot E2E: new unit 7482, one new
+technical accessory/buyer/hold and a new *synthetic imported* unsigned RS in the
+previously owned TECH74 project. It verifies exact project ID plus existing
+ownership audit marker, active admin/non-bypass role, and its own idempotent
+fixture audit marker; it never identifies safe data from names alone. New
+legacy-style rows use the existing import record shape from the start, not
+UPDATEs that erase a normal contract's terms/evidence. The operator neither
+signs nor generates nor creates a payment obligation or SharePoint file.
+Verification expects browser-created v02, one preparation audit/outbox pair,
+unchanged original payload and unchanged unit/accessory catalog prices.
+Its availability is not evidence that the live test already ran.

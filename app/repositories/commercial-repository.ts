@@ -11,6 +11,11 @@ export type ContractCreateResult={id:string;versionId:string;paymentObligationId
 export type ContextualContractInput={unitId:string;type:"rs"|"sbk"|"ks";idempotencyKey:string;paymentTiming?:'fixed_date'|'signature';paymentCalculationType?:"percentage"|"fixed";paymentInputValue?:number;paymentDueAt?:string};
 import type {RsReadiness,RsReadinessIssue} from '../../backend/src/shared/rs-readiness';
 import type {ContractAppendixInput} from '../../backend/src/shared/contract-appendices';
+import type {LegacyRsPreparationInput,LegacyRsPreparationPreview} from '../../backend/src/contracts/legacy-rs-preparation';
+export type {LegacyRsPreparationInput,LegacyRsPreparationPreview} from '../../backend/src/contracts/legacy-rs-preparation';
+export class LegacyRsPreparationRejectedError extends Error{
+  constructor(message:string,readonly status:number){super(message);this.name='LegacyRsPreparationRejectedError';}
+}
 export type {RsReadiness,RsReadinessIssue} from '../../backend/src/shared/rs-readiness';
 
 // This route returns 422 with structured issues only before reserving/rendering.
@@ -45,6 +50,8 @@ export interface CommercialRepository {
   signContract(input:{contractId:string;versionId:string;signedAt:string;note?:string}):Promise<{completed:boolean;alreadySigned:boolean;versionId:string}>;
   createContractAssignment(input:{unitId:string;buyers?:Array<{partyId:string;role:"buyer"|"co_buyer";isPrimary:boolean;share?:number|null}>;newParty?:{kind:"individual"|"organization";salutation?:string;firstName?:string;lastName?:string;legalName?:string;registrationNumber?:string;email?:string;phone?:string};effectiveAt:string;note?:string;idempotencyKey:string}):Promise<{contractId:string;versionId:string;type:string;parentContractId:string}>;
   getRsReadiness(contractId:string,signal?:AbortSignal):Promise<RsReadiness>;
+  getLegacyRsPreparation(contractId:string,signal?:AbortSignal):Promise<LegacyRsPreparationPreview>;
+  prepareLegacyRs(contractId:string,input:LegacyRsPreparationInput):Promise<{versionId:string;replayed:boolean}>;
   setSigningPlan(contractId:string,value:{versionId:string;sellerPlannedOn:string|null;buyerPlannedOn:string|null}):Promise<void>;
   preparePaymentTerms(contractId:string,versionId:string):Promise<void>;
   setContractAppendix(contractId:string,input:ContractAppendixInput):Promise<void>;
@@ -174,6 +181,24 @@ class ApiCommercialRepository implements CommercialRepository {
     const response=await apiFetch(`/api/commercial/units/${encodeURIComponent(input.unitId)}/contract-assignment`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});
     if(response.ok)return response.json() as Promise<{contractId:string;versionId:string;type:string;parentContractId:string}>;
     const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??"Postoupení smlouvy nelze vytvořit");
+  }
+  async getLegacyRsPreparation(contractId:string,signal?:AbortSignal){
+    let response:Response;
+    try{response=await apiFetch(`/api/commercial/contracts/${encodeURIComponent(contractId)}/legacy-preparation`,{signal,cache:'no-store'});}
+    catch{throw new Error('Náhled smluvních údajů se nepodařilo načíst. Zkuste to prosím znovu.');}
+    const payload=await response.json().catch(()=>({})) as {preview?:LegacyRsPreparationPreview;error?:string};
+    if(response.ok&&payload.preview?.contractId===contractId)return payload.preview;
+    throw new Error(response.status>=500?'Náhled smluvních údajů se nepodařilo načíst. Zkuste to prosím znovu.':payload.error??'Náhled smluvních údajů se nepodařilo načíst.');
+  }
+  async prepareLegacyRs(contractId:string,input:LegacyRsPreparationInput){
+    let response:Response;
+    try{response=await apiFetch(`/api/commercial/contracts/${encodeURIComponent(contractId)}/legacy-preparation`,{method:'POST',dataInvalidation:'none',headers:{'content-type':'application/json'},body:JSON.stringify(input)});}
+    catch{throw new Error('Výsledek uložení se nepodařilo ověřit. Zkuste ověřit stejný požadavek.');}
+    const payload=await response.json().catch(()=>({})) as {preparation?:{versionId:string;replayed:boolean};error?:string};
+    if(response.ok&&payload.preparation)return payload.preparation;
+    const message=response.status>=500?'Výsledek uložení se nepodařilo ověřit. Zkuste ověřit stejný požadavek.':payload.error??'Smluvní údaje se nepodařilo uložit.';
+    if([400,403,404,409,422].includes(response.status))throw new LegacyRsPreparationRejectedError(message,response.status);
+    throw new Error(message);
   }
   async setSigningPlan(contractId:string,value:{versionId:string;sellerPlannedOn:string|null;buyerPlannedOn:string|null}){const response=await apiFetch(`/api/commercial/contracts/${encodeURIComponent(contractId)}/signing-plan`,{method:'POST',dataInvalidation:'none',headers:{'content-type':'application/json'},body:JSON.stringify(value)});if(response.ok)return;const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??'Plánovaná data podpisu se nepodařilo uložit.');}
   async preparePaymentTerms(contractId:string,versionId:string){const response=await apiFetch(`/api/commercial/contracts/${encodeURIComponent(contractId)}/payment-terms`,{method:'POST',dataInvalidation:'none',headers:{'content-type':'application/json'},body:JSON.stringify({versionId})});if(response.ok)return;const payload=await response.json().catch(()=>({})) as {error?:string};throw new Error(payload.error??'Platební plán se nepodařilo připravit.');}

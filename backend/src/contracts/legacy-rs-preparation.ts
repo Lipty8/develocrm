@@ -1,5 +1,5 @@
 import {createHash} from 'node:crypto';
-import {originalMoney} from './original-money.js';
+import {originalMoney,sumOriginalMoney} from './original-money.js';
 
 export class LegacyRsPreparationError extends Error{
   constructor(readonly code:string){super('Přípravu smlouvy se nepodařilo dokončit.');this.name='LegacyRsPreparationError';}
@@ -23,6 +23,7 @@ function money(value:unknown){
   if(typeof value!=='string')return fail('invalid_money');
   try{return originalMoney(value).decimal;}catch{return fail('invalid_money');}
 }
+function sum(values:string[]){try{return sumOriginalMoney(values);}catch{return fail('invalid_money');}}
 export type LegacyRsPriceBasis={contractId:string;projectId:string;unitId:string;salesCaseId:string;versionId:string;
   currentUnitPrice:string|null;accessories:Array<{assignmentId:string;accessoryId:string;code:string;type:string;amount:string}>};
 
@@ -35,16 +36,16 @@ export function legacyRsPriceBasis(basis:LegacyRsPriceBasis){
   const currentUnitPrice=basis.currentUnitPrice===null?null:money(basis.currentUnitPrice);
   const normalized={contractId:basis.contractId,projectId:basis.projectId,unitId:basis.unitId,salesCaseId:basis.salesCaseId,versionId:basis.versionId,currentUnitPrice,accessories};
   const previewToken=createHash('sha256').update(JSON.stringify(normalized)).digest('hex');
-  const accessoryMinor=accessories.reduce((sum,item)=>sum+originalMoney(item.amount).minor,BigInt(0));
-  return{...normalized,previewToken,accessoryPrice:decimal(accessoryMinor),currentTotalPrice:currentUnitPrice===null?null:decimal(originalMoney(currentUnitPrice).minor+accessoryMinor)};
+  const accessoryPrice=sum(accessories.map(item=>item.amount));
+  return{...normalized,previewToken,accessoryPrice,currentTotalPrice:currentUnitPrice===null?null:sum([currentUnitPrice,accessoryPrice])};
 }
-function decimal(minor:bigint){const result=`${minor/BigInt(100)}.${String(minor%BigInt(100)).padStart(2,'0')}`;return money(result);}
+export type LegacyRsPreparationPreview=ReturnType<typeof legacyRsPriceBasis>;
 
 export function legacyRsAgreedTerms(basis:LegacyRsPriceBasis,input:LegacyRsPreparationInput){
   const preview=legacyRsPriceBasis(basis);
   if(input.expectedVersionId!==basis.versionId||input.previewToken!==preview.previewToken)return fail('stale_preview');
   const agreedUnitPrice=money(input.agreedUnitPrice),reservationFee=money(input.reservationFee);
-  const totalPrice=decimal(originalMoney(agreedUnitPrice).minor+originalMoney(preview.accessoryPrice).minor);
+  const totalPrice=sum([agreedUnitPrice,preview.accessoryPrice]);
   if(originalMoney(totalPrice).minor<=BigInt(0)||originalMoney(reservationFee).minor<=BigInt(0)
     ||originalMoney(reservationFee).minor>originalMoney(totalPrice).minor)return fail('invalid_fee');
   // The caller explicitly supplies the agreed unit price. Never substitute

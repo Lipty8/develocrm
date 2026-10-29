@@ -14,6 +14,12 @@ export function originalMoney(value:number|string){
   return{minor,decimal,display,words};
 }
 
+/** Exact addition shared by contract preparation and its editable preview. */
+export function sumOriginalMoney(values:readonly (number|string)[]){
+  const minor=values.reduce<bigint>((sum,value)=>sum+originalMoney(value).minor,BigInt(0));
+  return originalMoney(`${minor/BigInt(100)}.${String(minor%BigInt(100)).padStart(2,'0')}`).decimal;
+}
+
 const small=['nula','jedna','dvě','tři','čtyři','pět','šest','sedm','osm','devět','deset','jedenáct','dvanáct','třináct','čtrnáct','patnáct','šestnáct','sedmnáct','osmnáct','devatenáct'];
 function chunk(value:number,gender:'generic'|'masculine'|'feminine'='generic'){
   const parts:string[]=[];

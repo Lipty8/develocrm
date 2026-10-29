@@ -45,6 +45,7 @@ test('rejects invalid money, implicit number coercion and unreasonable fee witho
   for(const value of [1000,null])assert.throws(()=>legacyRsPreparationInput({...input(),agreedUnitPrice:value}),error('invalid_input'));
   assert.throws(()=>legacyRsPreparationInput({...input(),reservationFee:'0'}),error('fee_required'));
   assert.throws(()=>legacyRsAgreedTerms(basis,{...input(),reservationFee:'99999999.00'}),error('invalid_fee'));
+  assert.throws(()=>legacyRsAgreedTerms(basis,{...input(),agreedUnitPrice:'999999999999.99'}),error('invalid_money'));
   const pennies=legacyRsAgreedTerms(basis,{...input(),agreedUnitPrice:'13000000.03',reservationFee:'250000.01'});
   assert.equal(pennies.totalPrice,'14580000.03');assert.equal(pennies.reservationFee,'250000.01');
 });
