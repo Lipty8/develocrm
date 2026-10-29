@@ -107,3 +107,16 @@ without repeating the upload. Existing sanitized logging records errorName
 `error`, not a sufficient technical cause. Do not attribute this to rollout,
 RLS or migration 0082 without evidence; its root cause remains unconfirmed.
 No unrelated logging/refactor change was included in this package.
+
+A forced `READ ONLY` diagnostic execution
+`job-develocrm-hold-expiry-vhwob3k` returned SQLSTATE 25006 because existing
+`contract_document_is_ready` invokes the locking document validator. This
+diagnostic-mode mismatch is not evidence of the original HTTP 500 cause.
+A follow-up uses only the audited repository SELECTs, permits their existing
+row locks, applies a 10-second statement timeout and unconditionally rolls back;
+it does not change production validation/locks or commit any business data.
+Follow-up `job-develocrm-hold-expiry-kliwt5u` **Succeeded**: the same commercial
+repository returned 32 contracts and 80 UUID/code price-breakdown entries with
+rollbackOnly=true and noBusinessWrites=true. The initial request failure did
+not reproduce. Its original root cause remains unconfirmed; a successful retry
+must not be presented as proof that an underlying defect has been fixed.
