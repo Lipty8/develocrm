@@ -46,3 +46,36 @@ text. No read is converted to a write. Deferred real RS312 facts remain deferred
 
 Failure/race simulations are deterministic local interaction tests, not injected
 errors in the shared pilot. No business data was mutated by those tests.
+
+## Initial publication and end-to-end follow-up
+
+- GitHub source `024d153b53b1ccfaef223a19c1178479de39c654`.
+- Matching Sites `9b239b4ccad93dadbd3127cc797128f80419312b`;
+  643 source files matched, both Git trees
+  `09242ea5cfa847be6f4a18e0b2bc16537bcfb9a0`.
+- Private Sites 190, deployment `appgdep_6ae4475ab9848191919a19d15ebccd32`
+  Succeeded. Owner-only audience/environment revision 3 unchanged.
+- Authenticated browser loaded TECH74 activity, selected Rezidence Dejvice
+  through the actual global-search project link, and reloaded that project.
+  Each overview showed its own history; TECH74 termination events did not
+  persist under the Dejvice heading. No form or business mutation was submitted.
+- Bounded 15-minute backend sample: 198 completed requests, 4/4 project timeline
+  reads HTTP 200, zero HTTP 5xx. The initial query used the frontend route name
+  and matched zero activity requests; the reported 4/4 is the corrected query
+  for the actual backend `/v1/projects/:projectId/timeline` route.
+- Backend remains `ca-develocrm-api-pilot--readiness-7dedd5b`, migration 0083;
+  health/ready each HTTP 200, no backend build or migration.
+
+Source inspection of that BFF route then found that it dropped backend
+correlation headers and did not forward the cancellation signal. A small
+follow-up forwards the configured tenant/auth context, AbortSignal and validated
+request correlation, returns the backend correlation header, and uses no-store
+responses. Redirects are not followed; transport errors return safe HTTP 502
+with correlation and log only errorName/status, not raw exception details.
+Missing runtime configuration retains its existing fail-closed response.
+
+A fifth transport test verifies the configured backend URL, scope headers,
+correlation in both directions, cancellation signal, redirect rejection and
+safe transport failure. The final full run passes **222 interaction tests**,
+**145 static tests**, frontend typecheck, lint and production build. These
+network failure simulations were local tests, not pilot fault injection.

@@ -19,6 +19,7 @@ import {PackageOpen,UserRound,Users} from "lucide-react";
 import {Projects,ProjectOverview,UnitContracts,ContractDetail,ContractWorkflowModal,ClientChangeStatusModal,ComplaintDetailModal,ContractAddendumModal,ContractNoteModal,FormModal,PaymentDetailModal,PaymentRefundForm,paymentRefundAvailability,EditClientModal} from "../app/CRMApp";
 import {paymentRepository} from '../app/repositories/payment-repository';
 import {activityRepository,type TimelineRecord} from '../app/repositories/activity-repository';
+import {GET as projectActivityRead} from '../app/api/activity/projects/[projectId]/route';
 import {relatedUnitHref,relatedClientHref} from '../app/lib/entity-navigation';
 import {preferredSalesPartyId} from '../app/lib/business-context';
 import {searchWorkspace} from '../app/lib/workspace-search';
@@ -334,6 +335,27 @@ test('projektová historie zachová bezpečný stav chyby a correlation ID z tra
  t.mock.method(entraAuth,'getAccessToken',async()=>null);
  t.mock.method(globalThis,'fetch',async()=>new Response('Do not display raw server details',{status:403,headers:{'x-correlation-id':'technical-correlation'}}));
  await assert.rejects(activityRepository.projectTimeline('11111111-1111-4111-8111-111111111111'),error=>error instanceof ReadError&&error.status===403&&error.correlationId==='technical-correlation'&&!error.message.includes('raw server'));
+});
+
+test('projektová historie přes BFF předá scope, signal a correlation ID a nepovolí redirect',async t=>{
+ const previous={url:process.env.DEVELOCRM_API_URL,tenant:process.env.DEVELOCRM_TENANT_ID};
+ process.env.DEVELOCRM_API_URL='https://backend.example.test';process.env.DEVELOCRM_TENANT_ID='configured-tenant';
+ const calls:Array<{url:string;init:RequestInit|undefined}>=[];let redirect=false,fail=false;
+ t.mock.method(globalThis,'fetch',async(url:unknown,init?:RequestInit)=>{calls.push({url:String(url),init});if(fail)throw new Error('Private transport details');return redirect?new Response(null,{status:302,headers:{location:'https://unrelated.example.test'}}):Response.json({error:'Denied'},{status:403,headers:{'x-correlation-id':'backend-correlation'}});});
+ try{
+  const request=new Request('https://crm.example.test/api/activity',{headers:{authorization:'Bearer synthetic-token','x-correlation-id':'frontend-correlation'}});
+  const params={params:Promise.resolve({projectId:'11111111-1111-4111-8111-111111111111'})};
+  const result=await projectActivityRead(request,params);
+  assert.equal(result.status,403);assert.equal(result.headers.get('x-correlation-id'),'backend-correlation');assert.equal(result.headers.get('cache-control'),'no-store');
+  assert.equal(calls[0].url,'https://backend.example.test/v1/projects/11111111-1111-4111-8111-111111111111/timeline');
+  const headers=new Headers(calls[0].init?.headers);assert.equal(headers.get('authorization'),'Bearer synthetic-token');assert.equal(headers.get('x-tenant-id'),'configured-tenant');assert.equal(headers.get('x-correlation-id'),'frontend-correlation');
+  assert.equal(calls[0].init?.signal,request.signal);assert.equal(calls[0].init?.redirect,'manual');
+  redirect=true;const denied=await projectActivityRead(request,params);assert.equal(denied.status,502);assert.equal(denied.headers.get('location'),null);assert.equal(denied.headers.get('x-correlation-id'),'frontend-correlation');
+  fail=true;const failed=await projectActivityRead(request,params);assert.equal(failed.status,502);assert.equal(failed.headers.get('x-correlation-id'),'frontend-correlation');assert.doesNotMatch(await failed.text(),/Private transport details/);
+ }finally{
+  if(previous.url===undefined)delete process.env.DEVELOCRM_API_URL;else process.env.DEVELOCRM_API_URL=previous.url;
+  if(previous.tenant===undefined)delete process.env.DEVELOCRM_TENANT_ID;else process.env.DEVELOCRM_TENANT_ID=previous.tenant;
+ }
 });
 
 test('seznam smluv jednotky zachová historický návrh bez akce na změnu stavu',()=>{
