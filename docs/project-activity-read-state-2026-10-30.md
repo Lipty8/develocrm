@@ -79,3 +79,22 @@ correlation in both directions, cancellation signal, redirect rejection and
 safe transport failure. The final full run passes **222 interaction tests**,
 **145 static tests**, frontend typecheck, lint and production build. These
 network failure simulations were local tests, not pilot fault injection.
+
+## Final publication
+
+- Follow-up GitHub commit `8f8dca0848d08772821cfafeaaf5baf677441e15` pushed.
+- Matching Sites `04059f46827430a0f1c41146c904cf5234f261b3`, exact shared tree
+  `1fe6e77e858aee8e1c16603a27fb50b25f83d908`, all 643 source files matched.
+- Private Sites **191**, deployment `appgdep_6ae4494ef8fc8191b6f157e87d3db24b`,
+  Succeeded. The source credential expired before the first packaging attempt;
+  it was renewed normally for the same Site, then the official helper completed.
+  No access rule, sharing setting or protection was bypassed or expanded.
+- Authenticated reload on the final publication showed the correct Dejvice
+  activity, without the preceding TECH74 events. No error/empty fallback was
+  substituted for that successful read. Final health and ready: HTTP 200 each.
+- No backend/migration deployment and no pilot business-data mutation. Only
+  read-only project navigation, search and reload were performed in the browser.
+
+This verifies the focused activity-read package, not every list's loading state
+or the deferred real-contract readiness gates. No blocked generation validation
+was removed in response to the instruction to skip missing data.
