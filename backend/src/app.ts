@@ -263,9 +263,17 @@ export function buildApp(dependencies: { database: Database; verifier: EntraToke
     }
   });
 
-  app.get('/v1/activity',async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:'Pracovní prostor není přístupný'});return{events:await activities.workspaceTimeline(context)};}catch(error){request.log.error({correlationId:request.id,errorName:error instanceof Error?error.name:'Error'},'workspace activity failed');return reply.code(500).send({error:'Aktivitu se nepodařilo načíst.',correlationId:request.id});}});
-  app.get<{Params:{unitId:string}}>("/v1/units/:unitId/timeline",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return{events:await activities.unitTimeline({...context,unitId:request.params.unitId})};}catch(error){return reply.code(403).send({error:error instanceof Error?error.message:"Historii nelze načíst"});}});
-  app.get<{Params:{projectId:string}}>("/v1/projects/:projectId/timeline",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return{events:await activities.projectTimeline({...context,projectId:request.params.projectId})};}catch(error){return reply.code(403).send({error:error instanceof Error?error.message:"Historii projektu nelze načíst"});}});
+  app.get('/v1/activity',async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:'Pracovní prostor není přístupný'});return{events:await activities.workspaceTimeline(context)};}catch(error){return activityReadFailure(error,request,reply);}});
+  app.get<{Params:{unitId:string}}>("/v1/units/:unitId/timeline",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return{events:await activities.unitTimeline({...context,unitId:request.params.unitId})};}catch(error){return activityReadFailure(error,request,reply);}});
+  app.get<{Params:{projectId:string}}>("/v1/projects/:projectId/timeline",async(request,reply)=>{
+    try{
+      const context=await sessionContext(request,dependencies.verifier,repository);
+      if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});
+      return{events:await activities.projectTimeline({...context,projectId:request.params.projectId})};
+    }catch(error){
+      return activityReadFailure(error,request,reply);
+    }
+  });
   app.get<{Querystring:{projectId?:string;unitId?:string}}>("/v1/client-changes",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return{clientChanges:await clientChangeRepository.list({...context,...request.query})};}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Klientské změny nelze načíst"});}});
   app.post<{Body:{projectId:string;unitId:string;partyId:string;title:string;description?:string;sourceType:"individual"|"catalog";catalogItemCode?:string;category:string;surchargeAmount?:number|null;currency?:string;requestedAt:string;dueAt?:string|null;assigneeMembershipId?:string|null}}>("/v1/client-changes",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.code(201).send(await clientChangeRepository.create({...context,...request.body}));}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Klientskou změnu nelze vytvořit",correlationId:request.id});}});
   app.patch<{Params:{changeId:string};Body:{reason:string}}>("/v1/client-changes/:changeId/archive",async(request,reply)=>{try{const context=await sessionContext(request,dependencies.verifier,repository);if(!context)return reply.code(403).send({error:"Workspace není uživateli přístupný"});return reply.send(await clientChangeRepository.archive({...context,changeId:request.params.changeId,reason:request.body.reason}));}catch(error){return reply.code(permissionError(error)?403:409).send({error:error instanceof Error?error.message:"Klientskou změnu nelze archivovat",correlationId:request.id});}});
@@ -818,6 +826,14 @@ async function authenticate(request: FastifyRequest, verifier: EntraTokenVerifie
 
 function headerValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
+}
+function activityReadFailure(error:unknown,request:FastifyRequest,reply:FastifyReply){
+  const denied=error instanceof Error&&['projects.read permission required','unit.read permission required','Uživatel nemá přístup do DeveloCRM'].includes(error.message);
+  const statusCode=denied?403:500;
+  const code=error&&typeof error==='object'&&'code' in error&&typeof error.code==='string'&&/^[0-9A-Z]{5}$/.test(error.code)?error.code:undefined;
+  const detail={event:'activity.read_failed',correlationId:request.id,route:request.routeOptions.url,statusCode,errorName:error instanceof Error?error.name:'Error',databaseCode:code};
+  if(denied)request.log.warn(detail,'activity read denied');else request.log.error(detail,'activity read failed');
+  return reply.code(statusCode).send({error:denied?'K těmto údajům nemáte oprávnění.':'Historii se nepodařilo načíst. Zkuste to znovu.',correlationId:request.id});
 }
 function permissionError(error:unknown){return error instanceof Error&&/permission|required|oprávnění/i.test(error.message);}
 function templateErrorReply(request:FastifyRequest,reply:FastifyReply,error:unknown){const code=error instanceof TemplateManagementError||error instanceof DocxTemplateError?error.code:undefined;
