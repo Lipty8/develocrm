@@ -47,3 +47,25 @@ unannotated mock callback; it was given the actual repository parameter type,
 not any or a weakened compiler option, before the final complete green run.
 
 No fault was injected into pilot PostgreSQL or anyone's access to test 403/500.
+
+## Pilot deployment and read-only smoke
+
+- Code commit: `901678f4042bc47903d4754273d7501d75522236`, pushed to private
+  GitHub main. ACR run `cg5y` succeeded using a minimal 170-file tracked build
+  context without local output, credentials, dependencies or user files.
+- API image digest:
+  `sha256:5a80584a380c3367fa222811fda427a2e4425d5f8b9c1282d3fe9814def897ac`.
+- Active revision: `ca-develocrm-api-pilot--activity-errors-901678f`;
+  Healthy, Running, Provisioned, latest-ready and 100% latest traffic.
+- Previous healthy rollback revision: `ca-develocrm-api-pilot--readiness-7dedd5b`.
+- After traffic switched, `/health` and `/ready` both returned 200.
+- Authenticated browser: reloaded Rezidence Dejvice overview and verified its
+  project activity; opened technical unit 7483 history and verified its existing
+  events; navigated to Dashboard and verified workspace activity. No form was
+  submitted and no business record was changed.
+- Bounded new-revision Log Analytics sample: 56 completed requests, zero HTTP
+  5xx; project timeline, unit timeline and workspace activity each had a 200.
+  This is a bounded observation, not proof that no future failure can occur.
+- No migration, frontend source change or Sites publication was needed.
+  Existing private Sites 191 remains in use. Managed identity, secrets, probes,
+  authorization and infrastructure configuration were not changed.
