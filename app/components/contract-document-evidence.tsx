@@ -44,16 +44,27 @@ export function ContractVersionDocumentAction({contractId,version}:{contractId:s
   if(version.documentVersionId&&version.documentReady)return <ExactContractDocumentDownload key={`${contractId}:${version.id}`} contractId={contractId} version={version} label={`Stáhnout dokument v${version.number}`}/>;
   return <small>{version.evidenceState==='legacy_missing'?'Podepsaný dokument dosud není doložen.':version.documentVersionId?'Dokument není dostupný.':'Bez dokumentu.'}</small>;
 }
-export function ContractDocumentEvidence({contractId,version,canUpload,onChanged,verifying=false}:{contractId:string;version?:ContractDocumentVersion;canUpload:boolean;onChanged:()=>void;verifying?:boolean}){
+type ContractDocumentEvidenceProps={contractId:string;version?:ContractDocumentVersion;canUpload:boolean;onChanged:()=>void;verifying?:boolean};
+export function ContractDocumentEvidence(props:ContractDocumentEvidenceProps){
+  // A selected file belongs to this exact editing context, not the next detail
+  // React happens to render in the same component position.
+  const identity=JSON.stringify([props.contractId,props.version?.id,props.version?.documentVersionId,props.version?.status,props.canUpload]);
+  return <ContractDocumentEvidenceForm key={identity} {...props}/>;
+}
+function ContractDocumentEvidenceForm({contractId,version,canUpload,onChanged,verifying=false}:ContractDocumentEvidenceProps){
   const [file,setFile]=useState<File|null>(null);const [busy,setBusy]=useState(false);const [error,setError]=useState("");const [key,setKey]=useState(()=>crypto.randomUUID());
+  const request=useRef<AbortController|null>(null);const reader=useRef<FileReader|null>(null);
+  useEffect(()=>()=>{request.current?.abort();reader.current?.abort();},[]);
   const signed=version?.status==='signed';
-  async function upload(){if(!file||busy)return;setBusy(true);setError("");try{
+  async function upload(){if(!file||busy||request.current||!canUpload||signed)return;const controller=new AbortController();request.current=controller;setBusy(true);setError("");try{
     if(file.size>4*1024*1024)throw new Error("Soubor je příliš velký. Maximální velikost je 4 MB.");
-    const base64=await new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(",")[1]);reader.onerror=()=>reject(new Error("Soubor nelze načíst."));reader.readAsDataURL(file);});
+    const base64=await new Promise<string>((resolve,reject)=>{const input=new FileReader();reader.current=input;input.onload=()=>resolve(String(input.result).split(",")[1]);input.onerror=()=>reject(new Error("Soubor nelze načíst."));input.onabort=()=>reject(new Error("Čtení souboru bylo zrušeno."));input.readAsDataURL(file);});
+    if(controller.signal.aborted)return;
     const mimeType=file.type||(file.name.toLowerCase().endsWith('.docx')?'application/vnd.openxmlformats-officedocument.wordprocessingml.document':file.name.toLowerCase().endsWith('.pdf')?'application/pdf':'');
-    const response=await apiFetch(`/api/commercial/contracts/${encodeURIComponent(contractId)}/external-document`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({fileName:file.name,mimeType,contentBase64:base64,idempotencyKey:key})});
+    const response=await apiFetch(`/api/commercial/contracts/${encodeURIComponent(contractId)}/external-document`,{method:"POST",signal:controller.signal,dataInvalidation:'none',headers:{"content-type":"application/json"},body:JSON.stringify({fileName:file.name,mimeType,contentBase64:base64,idempotencyKey:key})});
+    if(controller.signal.aborted)return;
     if(!response.ok){const payload=await response.json().catch(()=>null) as {error?:unknown}|null;throw new Error(typeof payload?.error==='string'?payload.error:"Finální dokument se nepodařilo uložit.");}setFile(null);setKey(crypto.randomUUID());onChanged();
-  }catch(e){setError(e instanceof Error?e.message:"Dokument se nepodařilo uložit.");}finally{setBusy(false);}}
+  }catch(e){if(!controller.signal.aborted)setError(e instanceof Error?e.message:"Dokument se nepodařilo uložit.");}finally{if(request.current===controller){request.current=null;reader.current=null;}if(!controller.signal.aborted)setBusy(false);}}
   return <section className="card module-card"><div className="tab-card-header"><div><h2>{signed?"Podepsaný dokument":version?.documentReady?"Dokument připraven":"Finální dokument smlouvy"}</h2>
     {version?.documentVersionId&&<p>Verze {version.number} · {version.documentName}{signed&&version.signatureRecordedAt?` · Evidováno ${formatPragueDateTime(version.signatureRecordedAt)}`:""}</p>}
     {signed&&version?.evidenceState==='legacy_missing'&&<p>Historický podpis · čeká na doložení podepsaného dokumentu. Původní evidence podpisu zůstává zachována.</p>}

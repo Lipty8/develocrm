@@ -83,3 +83,53 @@ test('přepnutí obchodního kontextu zruší request a pozdní odpověď nestá
   await act(async()=>pending[1].resolve(new Response('new-bytes')));await waitFor(()=>assert.deepEqual(files,['new.docx']));
   view.unmount();
 });
+
+for(const change of ['contract','version'] as const)test(`externí soubor nelze přenést do jiného kontextu: ${change}`,()=>{
+  const props={contractId:'a',version:{id:'v1',number:1,status:'working'},canUpload:true,onChanged:()=>{}};
+  const view=render(<ContractDocumentEvidence {...props}/>);
+  fireEvent.change(screen.getByLabelText('Externí dokument (DOCX nebo PDF, do 4 MB)'),{target:{files:[new TestFile(['technical'], 'for-a.pdf',{type:'application/pdf'})]}});
+  assert.equal((screen.getByRole('button',{name:'Nahrát externí dokument'}) as HTMLButtonElement).disabled,false);
+  view.rerender(<ContractDocumentEvidence {...props} contractId={change==='contract'?'b':'a'} version={{...props.version,id:change==='version'?'v2':'v1'}}/>);
+  assert.equal((screen.getByRole('button',{name:'Nahrát externí dokument'}) as HTMLButtonElement).disabled,true);
+  assert.equal((screen.getByLabelText('Externí dokument (DOCX nebo PDF, do 4 MB)') as HTMLInputElement).files?.length,0);
+});
+
+test('po změně smlouvy se upload zruší a jeho pozdní odpověď neovlivní nový formulář',async t=>{
+  t.mock.method(entraAuth,'getAccessToken',async()=>null);
+  const pending:Array<{resolve:(r:Response)=>void;signal:AbortSignal;url:string;key:string}>=[];let changedA=0,changedB=0;
+  t.mock.method(globalThis,'fetch',async(url:unknown,init?:RequestInit)=>new Promise<Response>(resolve=>pending.push({resolve,signal:init!.signal as AbortSignal,url:String(url),key:JSON.parse(String(init?.body)).idempotencyKey})));
+  const view=render(<ContractDocumentEvidence contractId="a" version={{id:'v1',number:1,status:'working'}} canUpload onChanged={()=>changedA++}/>);
+  const select=()=>fireEvent.change(screen.getByLabelText('Externí dokument (DOCX nebo PDF, do 4 MB)'),{target:{files:[new TestFile(['technical'], 'final.pdf',{type:'application/pdf'})]}});
+  select();fireEvent.click(screen.getByRole('button',{name:'Nahrát externí dokument'}));await waitFor(()=>assert.equal(pending.length,1));
+  view.rerender(<ContractDocumentEvidence contractId="b" version={{id:'v2',number:1,status:'working'}} canUpload onChanged={()=>changedB++}/>);
+  assert.equal(pending[0].signal.aborted,true);
+  select();fireEvent.click(screen.getByRole('button',{name:'Nahrát externí dokument'}));await waitFor(()=>assert.equal(pending.length,2));
+  assert.deepEqual(pending.map(p=>p.url),['/api/commercial/contracts/a/external-document','/api/commercial/contracts/b/external-document']);
+  assert.notEqual(pending[0].key,pending[1].key);
+  await act(async()=>pending[0].resolve(Response.json({error:'late old rejection'},{status:409})));
+  assert.equal(screen.queryByRole('alert'),null);assert.equal((screen.getByRole('button',{name:'Ukládám…'}) as HTMLButtonElement).disabled,true);
+  await act(async()=>pending[1].resolve(Response.json({ok:true})));await waitFor(()=>assert.equal(changedB,1));assert.equal(changedA,0);
+});
+
+test('opuštění detailu během čtení souboru nesmí spustit opožděný upload',async t=>{
+  const readers:FileReader[]=[];let requests=0,changed=0;
+  t.mock.method(FileReader.prototype,'readAsDataURL',function(this:FileReader){readers.push(this);});
+  t.mock.method(globalThis,'fetch',async()=>{requests++;return Response.json({ok:true});});
+  const view=render(<ContractDocumentEvidence contractId="a" version={{id:'v1',number:1,status:'working'}} canUpload onChanged={()=>changed++}/>);
+  fireEvent.change(screen.getByLabelText('Externí dokument (DOCX nebo PDF, do 4 MB)'),{target:{files:[new TestFile(['technical'], 'final.pdf',{type:'application/pdf'})]}});
+  fireEvent.click(screen.getByRole('button',{name:'Nahrát externí dokument'}));assert.equal(readers.length,1);
+  view.unmount();
+  await act(async()=>{Object.defineProperty(readers[0],'result',{value:'data:application/pdf;base64,dGVjaG5pY2Fs'});readers[0].onload?.call(readers[0],new window.ProgressEvent('load') as ProgressEvent<FileReader>);});
+  assert.equal(requests,0);assert.equal(changed,0);
+});
+
+test('odebrání možnosti uploadu zruší request a pozdní úspěch neobnoví starý detail',async t=>{
+  t.mock.method(entraAuth,'getAccessToken',async()=>null);let complete:(r:Response)=>void=()=>assert.fail('request not started');let signal:AbortSignal|undefined;let changed=0;
+  t.mock.method(globalThis,'fetch',async(_url:unknown,init?:RequestInit)=>new Promise<Response>(resolve=>{complete=resolve;signal=init?.signal as AbortSignal;}));
+  const props={contractId:'a',version:{id:'v1',number:1,status:'working'},canUpload:true,onChanged:()=>changed++};
+  const view=render(<ContractDocumentEvidence {...props}/>);
+  fireEvent.change(screen.getByLabelText('Externí dokument (DOCX nebo PDF, do 4 MB)'),{target:{files:[new TestFile(['technical'], 'final.pdf',{type:'application/pdf'})]}});
+  fireEvent.click(screen.getByRole('button',{name:'Nahrát externí dokument'}));await waitFor(()=>assert.ok(signal));
+  view.rerender(<ContractDocumentEvidence {...props} canUpload={false}/>);assert.equal(signal?.aborted,true);
+  await act(async()=>complete(Response.json({ok:true})));assert.equal(changed,0);assert.equal(screen.queryByRole('alert'),null);assert.equal(screen.queryByRole('button',{name:'Nahrát externí dokument'}),null);
+});
