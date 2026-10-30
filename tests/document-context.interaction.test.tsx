@@ -3,8 +3,8 @@ import {before,afterEach,test,mock} from 'node:test';
 import React from 'react';
 import {JSDOM} from 'jsdom';
 import {AppRouterContext,type AppRouterInstance} from 'next/dist/shared/lib/app-router-context.shared-runtime.js';
-import {UnitDocuments,ClientDocuments,WorkflowDocuments} from '../app/CRMApp';
-import {units,clients} from '../app/crm-data';
+import {UnitDocuments,ClientDocuments,WorkflowDocuments,ContractDetail} from '../app/CRMApp';
+import {units,clients,contracts} from '../app/crm-data';
 import {documentRepository,type DocumentRecord,type DocumentListResponse} from '../app/repositories/document-repository';
 import {ReadError} from '../app/lib/read-state';
 let render:typeof import('@testing-library/react').render,screen:typeof import('@testing-library/react').screen,cleanup:typeof import('@testing-library/react').cleanup,fireEvent:typeof import('@testing-library/react').fireEvent,waitFor:typeof import('@testing-library/react').waitFor,act:typeof import('@testing-library/react').act;
@@ -13,6 +13,58 @@ afterEach(()=>{cleanup();mock.restoreAll();});
 const unitA={...units[0],id:'TECH-A',backendId:'10000000-0000-4000-8000-000000000001'},unitB={...units[0],id:'TECH-B',backendId:'10000000-0000-4000-8000-000000000002'};
 function result(name:string):DocumentListResponse{const doc:DocumentRecord={id:name,projectId:'project-test',projectName:'Test',name,category:'contract',typeCode:'reservation_contract',typeName:'RS',status:'ready',note:null,mimeType:'application/pdf',fileSize:100,storageProvider:'sharepoint',webUrl:null,etag:null,sensitivity:'normal',createdAt:'',updatedAt:'',author:null,version:'v1',units:[],parties:[],contracts:[],salesCases:[],clientChanges:[],complaints:[],handovers:[]};return{documents:[doc],connection:{status:'connected',syncStatus:'idle',lastSuccessfulSyncAt:null},source:'backend-api'};}
 function deferred<T>(){let resolve!:(value:T)=>void;let reject!:(error:unknown)=>void;const promise=new Promise<T>((done,fail)=>{resolve=done;reject=fail;});return{promise,resolve,reject};}
+
+const contractProps={close:()=>{},openUnit:()=>{},openClient:()=>{},openDocument:()=>{},canManage:false,isAdmin:false,onChanged:()=>{}};
+const contractA={...contracts[0],id:'contract-a',typeCode:'rs',statusCode:'cancelled',state:'Zrušená',versions:[]};
+test('contract documents: switching contract immediately hides the previous documents',async()=>{
+ const pending=deferred<DocumentListResponse>();
+ mock.method(documentRepository,'listContract',async(id:string)=>id==='contract-a'?result('CONTRACT-A-DOC'):pending.promise);
+ const view=render(<ContractDetail {...contractProps} contract={contractA}/>);
+ fireEvent.click(screen.getByRole('button',{name:/^Dokumenty$/}));await screen.findByText('CONTRACT-A-DOC');
+ view.rerender(<ContractDetail {...contractProps} contract={{...contractA,id:'contract-b'}}/>);
+ assert.equal(Boolean(screen.queryByText('CONTRACT-A-DOC')),false);assert.ok(screen.getByRole('status'));
+ await act(async()=>pending.resolve(result('CONTRACT-B-DOC')));await screen.findByText('CONTRACT-B-DOC');
+});
+
+test('contract documents: an aborted response cannot overwrite the new contract',async()=>{
+ const pending=deferred<DocumentListResponse>();let previousSignal:AbortSignal|undefined;
+ mock.method(documentRepository,'listContract',async(id:string,signal?:AbortSignal)=>{if(id==='contract-a'){previousSignal=signal;return pending.promise;}return result('CURRENT-CONTRACT-DOC');});
+ const view=render(<ContractDetail {...contractProps} contract={contractA}/>);
+ fireEvent.click(screen.getByRole('button',{name:/^Dokumenty$/}));
+ view.rerender(<ContractDetail {...contractProps} contract={{...contractA,id:'contract-b'}}/>);
+ await screen.findByText('CURRENT-CONTRACT-DOC');assert.equal(previousSignal?.aborted,true);
+ await act(async()=>pending.resolve(result('LATE-CONTRACT-DOC')));
+ assert.equal(Boolean(screen.queryByText('LATE-CONTRACT-DOC')),false);assert.ok(screen.getByText('CURRENT-CONTRACT-DOC'));
+});
+
+for(const status of [403,500])test(`contract documents: HTTP ${status} is not an empty list and supports retry`,async()=>{
+ let requests=0;mock.method(documentRepository,'listContract',async()=>{if(++requests===1)throw new ReadError(status);return result('RECOVERED-CONTRACT-DOC');});
+ render(<ContractDetail {...contractProps} contract={contractA}/>);
+ fireEvent.click(screen.getByRole('button',{name:/^Dokumenty$/}));
+ assert.match((await screen.findByRole('alert')).textContent??'',status===403?/Nedostatečné oprávnění/:/Údaje se nepodařilo načíst/);
+ assert.equal(Boolean(screen.queryByText('Žádné dokumenty v tomto rozsahu')),false);
+ fireEvent.click(screen.getByRole('button',{name:'Zkusit znovu'}));await screen.findByText('RECOVERED-CONTRACT-DOC');assert.equal(requests,2);
+});
+
+test('contract documents: a real empty response and a technical exception are different',async()=>{
+ mock.method(documentRepository,'listContract',async()=>{throw new Error('PRIVATE_SQL_DETAIL');});
+ const view=render(<ContractDetail {...contractProps} contract={contractA}/>);
+ fireEvent.click(screen.getByRole('button',{name:/^Dokumenty$/}));await screen.findByRole('alert');
+ assert.equal(Boolean(screen.queryByText(/PRIVATE_SQL_DETAIL/)),false);
+ mock.method(documentRepository,'listContract',async()=>({...result('empty'),documents:[]}));
+ view.rerender(<ContractDetail {...contractProps} contract={{...contractA,id:'contract-b'}}/>);
+ await screen.findByText('Žádné dokumenty v tomto rozsahu');assert.equal(Boolean(screen.queryByRole('alert')),false);
+});
+
+test('contract documents: leaving the tab aborts its read without rendering a late error',async()=>{
+ const pending=deferred<DocumentListResponse>();let signal:AbortSignal|undefined;
+ mock.method(documentRepository,'listContract',async(_id:string,value?:AbortSignal)=>{signal=value;return pending.promise;});
+ render(<ContractDetail {...contractProps} contract={contractA}/>);
+ fireEvent.click(screen.getByRole('button',{name:/^Dokumenty$/}));
+ fireEvent.click(screen.getByRole('button',{name:/^Historie$/}));assert.equal(signal?.aborted,true);
+ await act(async()=>pending.reject(new Error('LATE_PRIVATE_DETAIL')));
+ assert.equal(Boolean(screen.queryByRole('alert')),false);assert.equal(Boolean(screen.queryByText(/LATE_PRIVATE_DETAIL/)),false);
+});
 test('workflow documents: switching target hides the prior rows and selected project document immediately',async()=>{
  const pending=deferred<DocumentListResponse>();
  mock.method(documentRepository,'listHandover',async(id:string)=>id==='handover-a'?result('LINKED-A'):pending.promise);
