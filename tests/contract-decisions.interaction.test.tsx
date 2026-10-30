@@ -18,6 +18,7 @@ import {ContractWorkflowSteps} from '../app/components/contract-workflow-steps';
 import {PackageOpen,UserRound,Users} from "lucide-react";
 import {Projects,ProjectOverview,UnitContracts,ContractDetail,ContractWorkflowModal,ClientChangeStatusModal,ComplaintDetailModal,ContractAddendumModal,ContractNoteModal,FormModal,PaymentDetailModal,PaymentRefundForm,paymentRefundAvailability,EditClientModal} from "../app/CRMApp";
 import {paymentRepository} from '../app/repositories/payment-repository';
+import {activityRepository,type TimelineRecord} from '../app/repositories/activity-repository';
 import {relatedUnitHref,relatedClientHref} from '../app/lib/entity-navigation';
 import {preferredSalesPartyId} from '../app/lib/business-context';
 import {searchWorkspace} from '../app/lib/workspace-search';
@@ -296,6 +297,43 @@ test('přehled bez otevřené práce nemá falešné CTA ani smyšlený termín'
   assert.ok(screen.getByText('Žádné otevřené úkoly ani rozpracované smlouvy'));assert.ok(screen.getByText('Žádné evidované termíny.'));
   assert.equal(screen.queryByText('23. 7.'),null);assert.equal(screen.queryByText('99 položek'),null);
  }finally{sampleContracts.splice(0,sampleContracts.length,...original);}
+});
+
+test('projektová aktivita při přepnutí ihned skryje stará data a ignoruje opožděnou odpověď',async()=>{
+ const original=activityRepository.projectTimeline;
+ const pending=new Map<string,{finish:(rows:TimelineRecord[])=>void;signal:AbortSignal|undefined}>();
+ activityRepository.projectTimeline=(id,signal)=>new Promise(resolve=>pending.set(id,{finish:resolve,signal}));
+ const a='11111111-1111-4111-8111-111111111111',b='22222222-2222-4222-8222-222222222222',c='33333333-3333-4333-8333-333333333333';
+ const row=(title:string):TimelineRecord=>({id:title,title,detail:'Technický záznam',date:'2026-10-29T12:00:00Z',icon:'history',action:'test'});
+ const overview=(id:string)=><ProjectOverview project={{...sampleProjects[0],backendId:id,name:'Stejný název',units:1}} onTab={()=>{}} taskRows={[]} paymentRows={[]} handoverRows={[]}/>;
+ try{
+  const view=render(overview(a));
+  assert.ok(screen.getByRole('status',{name:''}));assert.equal(screen.queryByText('Zatím bez nové aktivity'),null);
+  await act(async()=>pending.get(a)!.finish([row('Aktivita A')]));assert.ok(screen.getByText('Aktivita A'));
+  view.rerender(overview(b));assert.equal(screen.queryByText('Aktivita A'),null);assert.equal(pending.get(a)!.signal?.aborted,true);
+  view.rerender(overview(c));assert.equal(pending.get(b)!.signal?.aborted,true);
+  await act(async()=>pending.get(b)!.finish([row('Opožděná aktivita B')]));assert.equal(screen.queryByText('Opožděná aktivita B'),null);
+  await act(async()=>pending.get(c)!.finish([row('Aktivita C')]));assert.ok(screen.getByText('Aktivita C'));
+  view.unmount();assert.equal(pending.get(c)!.signal?.aborted,true);
+ }finally{activityRepository.projectTimeline=original;}
+});
+
+for(const status of [403,500])test(`projektová aktivita rozliší chybu ${status} od prázdné historie a dovolí retry`,async()=>{
+ const original=activityRepository.projectTimeline;let calls=0;
+ activityRepository.projectTimeline=async()=>{calls++;if(calls===1)throw new ReadError(status,'technical-correlation');return[];};
+ try{
+  render(<ProjectOverview project={{...sampleProjects[0],backendId:'11111111-1111-4111-8111-111111111111',units:1}} onTab={()=>{}} taskRows={[]} paymentRows={[]} handoverRows={[]}/>);
+  const alert=await screen.findByRole('alert');assert.match(alert.textContent??'',status===403?/Nedostatečné oprávnění/:/Údaje se nepodařilo načíst/);
+  assert.equal(screen.queryByText('Zatím bez nové aktivity'),null);
+  await userEvent.setup({document}).click(within(alert).getByRole('button',{name:'Zkusit znovu'}));
+  await screen.findByText('Zatím bez nové aktivity');assert.equal(calls,2);assert.equal(screen.queryByRole('alert'),null);
+ }finally{activityRepository.projectTimeline=original;}
+});
+
+test('projektová historie zachová bezpečný stav chyby a correlation ID z transportu',async t=>{
+ t.mock.method(entraAuth,'getAccessToken',async()=>null);
+ t.mock.method(globalThis,'fetch',async()=>new Response('Do not display raw server details',{status:403,headers:{'x-correlation-id':'technical-correlation'}}));
+ await assert.rejects(activityRepository.projectTimeline('11111111-1111-4111-8111-111111111111'),error=>error instanceof ReadError&&error.status===403&&error.correlationId==='technical-correlation'&&!error.message.includes('raw server'));
 });
 
 test('seznam smluv jednotky zachová historický návrh bez akce na změnu stavu',()=>{
